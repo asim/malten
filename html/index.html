@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Malten</title>
+    <link rel="stylesheet" type="text/css" href="malten.css">
+  </head>
+  <body>
+    <div id="main">
+      <h1>A stream of consciousness</h1>
+      <form action="/post" method="post">
+        <input id="text" name="text" value="" placeholder="What are you thinking?" autocomplete="off">
+      </form>
+      <div id="thoughts"></div>
+    </div>
+    <script src="malten.js"></script>
+    <script type="text/javascript">(thoughts)();</script>
+  </body>
+</html>
