@@ -14,6 +14,8 @@ input {
 }
 ul {
   list-style: none;
+  margin: 0;
+  padding: 0;
 }
 ul li {
   padding: 10px;
