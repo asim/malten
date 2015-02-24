@@ -19,6 +19,7 @@ ul {
 }
 ul li {
   padding: 10px;
+  word-wrap: break-word;
 }
 #main {
   margin: 0 auto;
