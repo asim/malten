@@ -6,7 +6,7 @@ function makeUL(array) {
         for(i = 0; i < array.length; i++) {
                 var item = document.createElement('li');
                 var div = document.createElement('div');
-		var text = document.createTextNode(array[i]);
+		var text = document.createTextNode(array[i].Text);
 		div.appendChild(text);
                 item.appendChild(div);
                 list.appendChild(item);
@@ -15,10 +15,29 @@ function makeUL(array) {
         return list;
 };
 
+function submitThought(t) {
+	$.post(t.action, $("#form").serialize());
+	location.reload();
+	return false;
+};
+
 function thoughts() {
+	var params = "";
+	var stream = "";
+	if (window.location.hash.length > 0) {
+		stream = window.location.hash.replace('#', '');
+		params = "?stream="+ stream;
+		var form = document.getElementById('form');
+		var input = document.createElement('input');
+		input.setAttribute('type', 'hidden');
+		input.setAttribute('name', 'stream');
+		input.setAttribute('id', 'stream');
+		input.setAttribute('value', stream);
+		form.appendChild(input);
+	}
         var xmlHttp = null;
         xmlHttp = new XMLHttpRequest();
-        xmlHttp.open("GET", '/thoughts', false);
+        xmlHttp.open("GET", '/thoughts' + params, false);
         xmlHttp.send(null);
 
         if (xmlHttp.status == 200) {

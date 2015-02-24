@@ -7,13 +7,14 @@
   </head>
   <body>
     <div id="main">
-      <h1>A stream of consciousness</h1>
-      <form action="/post" method="post">
+      <h1>Streams of consciousness</h1>
+      <form action="/thoughts" method="post" id="form" onsubmit="return submitThought(this);">
         <input id="text" name="text" value="" placeholder="What are you thinking?" autocomplete="off">
       </form>
       <p>
       <div id="thoughts"></div>
     </div>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
     <script src="malten.js"></script>
     <script type="text/javascript">(thoughts)();</script>
   </body>
