@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"code.google.com/p/go-uuid/uuid"
+	"github.com/hashicorp/golang-lru"
 )
 
 const (
@@ -37,7 +38,7 @@ type Thought struct {
 
 type Consciousness struct {
 	Created  int64
-	Streams  map[string]*Stream
+	Streams  *lru.Cache
 	Requests chan *Request
 	Updates  chan *Thought
 }
@@ -47,9 +48,14 @@ var (
 )
 
 func newConsciousness() *Consciousness {
+	streams, err := lru.New(maxStreams)
+	if err != nil {
+		panic(err.Error())
+	}
+
 	return &Consciousness{
 		Created:  time.Now().UnixNano(),
-		Streams:  make(map[string]*Stream),
+		Streams:  streams,
 		Requests: make(chan *Request, 100),
 		Updates:  make(chan *Thought, 100),
 	}
@@ -122,11 +128,15 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Consciousness) Save(thought *Thought) {
-	stream, ok := c.Streams[thought.Stream]
-	if !ok {
+	var stream *Stream
+
+	if object, ok := c.Streams.Get(thought.Stream); ok {
+		stream = object.(*Stream)
+	} else {
 		stream = newStream(thought.Stream)
-		c.Streams[thought.Stream] = stream
+		c.Streams.Add(thought.Stream, stream)
 	}
+
 	stream.Thoughts = append(stream.Thoughts, thought)
 	if len(stream.Thoughts) > maxThoughts {
 		stream.Thoughts = stream.Thoughts[1:]
@@ -135,8 +145,11 @@ func (c *Consciousness) Save(thought *Thought) {
 }
 
 func (c *Consciousness) Retrieve(thought string, streem string) []*Thought {
-	stream, ok := c.Streams[streem]
-	if !ok {
+	var stream *Stream
+
+	if object, ok := c.Streams.Get(streem); ok {
+		stream = object.(*Stream)
+	} else {
 		return []*Thought{}
 	}
 
