@@ -28,12 +28,7 @@ function thoughts() {
 		stream = window.location.hash.replace('#', '');
 		params = "?stream="+ stream;
 		var form = document.getElementById('form');
-		var input = document.createElement('input');
-		input.setAttribute('type', 'hidden');
-		input.setAttribute('name', 'stream');
-		input.setAttribute('id', 'stream');
-		input.setAttribute('value', stream);
-		form.appendChild(input);
+		form.elements["stream"].value = stream;
 	}
         var xmlHttp = null;
         xmlHttp = new XMLHttpRequest();

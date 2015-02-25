@@ -10,6 +10,7 @@
       <h1>Streams of consciousness</h1>
       <form action="/thoughts" method="post" id="form" onsubmit="return submitThought(this);">
         <input id="text" name="text" value="" placeholder="What are you thinking?" autocomplete="off">
+        <input id="stream" name="stream" type="hidden">
       </form>
       <p>
       <div id="thoughts"></div>
