@@ -5,7 +5,7 @@
     <title>Malten</title>
     <link rel="stylesheet" type="text/css" href="malten.css">
   </head>
-  <body>
+  <body onhashchange="thoughts();">
     <div id="main">
       <h1>Streams of consciousness</h1>
       <form action="/thoughts" method="post" id="form" onsubmit="return submitThought(this);">
