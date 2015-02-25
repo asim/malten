@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"code.google.com/p/go-uuid/uuid"
-	"github.com/hashicorp/golang-lru"
+	"github.com/golang/groupcache/lru"
 )
 
 const (
@@ -48,14 +48,9 @@ var (
 )
 
 func newConsciousness() *Consciousness {
-	streams, err := lru.New(maxStreams)
-	if err != nil {
-		panic(err.Error())
-	}
-
 	return &Consciousness{
 		Created:  time.Now().UnixNano(),
-		Streams:  streams,
+		Streams:  lru.New(maxStreams),
 		Requests: make(chan *Request, 100),
 		Updates:  make(chan *Thought, 100),
 	}
