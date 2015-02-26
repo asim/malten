@@ -7,9 +7,13 @@
   </head>
   <body onhashchange="thoughts();">
     <div id="main">
-      <h1>Streams of consciousness</h1>
+      <div id="head">
+        <a href="/"><img src="logo.jpg" style="width:20px;height:20px;vertical-align:middle;"/> malten</a><span> - streams of consciousness</span>
+	<a id="current" href="/">#_</a>
+      </div>
+
       <form action="/thoughts" method="post" id="form" onsubmit="return submitThought(this);">
-        <input id="text" name="text" value="" placeholder="What are you thinking?" autocomplete="off" autofocus>
+        <input id="text" name="text" value="" placeholder="What's on your mind?" autocomplete="off" autofocus>
         <input id="stream" name="stream" type="hidden">
       </form>
       <p>

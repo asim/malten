@@ -24,13 +24,20 @@ function submitThought(t) {
 
 function thoughts() {
 	var params = "";
-	var stream = "";
+	var text = '#_';
+
 	if (window.location.hash.length > 0) {
-		stream = window.location.hash.replace('#', '');
-		params = "?stream="+ stream;
 		var form = document.getElementById('form');
+		var stream = window.location.hash.replace('#', '');
+		params = "?stream="+ stream;
 		form.elements["stream"].value = stream;
-	}
+		text = window.location.hash;
+	};
+
+	var current = document.getElementById('current');
+	current.text = text;
+	current.href = window.location.href;
+
         var xmlHttp = null;
         xmlHttp = new XMLHttpRequest();
         xmlHttp.open("GET", '/thoughts' + params, false);
