@@ -27,6 +27,9 @@
 		$.ajaxSetup({isLocal:true});
 	    };
 	    thoughts();
+	    setInterval(function(){
+	        thoughts();
+	    }, 5000);
 	});
     </script>
   </body>
