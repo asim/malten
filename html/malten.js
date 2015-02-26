@@ -17,7 +17,8 @@ function makeUL(array) {
 
 function submitThought(t) {
 	$.post(t.action, $("#form").serialize());
-	location.reload();
+	form.elements["text"].value = '';
+	thoughts();
 	return false;
 };
 

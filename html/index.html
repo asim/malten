@@ -17,6 +17,13 @@
     </div>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
     <script src="malten.js"></script>
-    <script type="text/javascript">(thoughts)();</script>
+    <script type="text/javascript">
+	$(document).ready(function() {
+            if (window.navigator.standalone) {
+		$.ajaxSetup({isLocal:true});
+	    };
+	    thoughts();
+	});
+    </script>
   </body>
 </html>
