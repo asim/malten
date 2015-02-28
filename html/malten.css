@@ -5,13 +5,13 @@ html, body {
   font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
 }
 input {
-        width: 100%;
-        font-size: 20px;
-        -webkit-box-sizing: border-box;
-        -moz-box-sizing: border-box; 
-        box-sizing: border-box;
-        padding: 10px;
-        text-align: center;
+  width: 100%;
+  font-size: 20px;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box; 
+  box-sizing: border-box;
+  padding: 10px;
+  text-align: center;
 }
 ul {
   list-style: none;
@@ -39,4 +39,7 @@ ul li {
   margin: 0 auto;
   text-align: center;
   max-width: 650px;
+}
+#thoughts a {
+  color: #1763A3;
 }
