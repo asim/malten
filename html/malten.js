@@ -13,7 +13,8 @@ String.prototype.parseUsername = function() {
 String.prototype.parseHashTag = function() {
 	return this.replace(/[#]+[A-Za-z0-9-_]+/g, function(t) {
 		//var tag = t.replace("#","%23")
-		return t.link(window.location+t);
+		var url = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '');
+		return t.link(url + '/' + t);
 	});
 };
 
