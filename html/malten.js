@@ -1,4 +1,5 @@
 var typing = false;
+var maxChars = 500;
 
 String.prototype.parseURL = function() {
 	return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
@@ -18,6 +19,19 @@ String.prototype.parseHashTag = function() {
 		var url = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '');
 		return t.link(url + '/' + t);
 	});
+};
+
+function chars() {
+	var i = document.getElementById('text').value.length;
+	var c = maxChars;
+
+	if (i > maxChars) {
+		c = i - maxChars;
+	} else {
+		c = maxChars - i;
+	}
+
+	document.getElementById('chars').innerHTML = c;
 };
 
 function escapeHTML(str) {

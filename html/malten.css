@@ -12,6 +12,10 @@ input {
   box-sizing: border-box;
   padding: 10px;
   text-align: center;
+  border: 1px solid #1763A3;
+}
+input:focus {
+  outline: none;
 }
 ul {
   list-style: none;
@@ -22,7 +26,15 @@ ul li {
   padding: 10px;
   word-wrap: break-word;
 }
-
+#chars {
+  color: #8899a6;
+  font-size: 0.8em;
+  font-weight: bold;
+  float: right;
+}
+#controls {
+  padding: 5px;
+}
 #current {
   float: right;
 }
