@@ -62,13 +62,15 @@ function submitThought(t) {
 function thoughts() {
 	var params = "";
 	var text = '#_';
+	var form = document.getElementById('form');
+	var stream = window.location.hash.replace('#', '');
 
 	if (window.location.hash.length > 0) {
-		var form = document.getElementById('form');
-		var stream = window.location.hash.replace('#', '');
 		params = "?stream="+ stream;
 		form.elements["stream"].value = stream;
 		text = window.location.hash;
+	} else {
+		form.elements["stream"].value = '';
 	};
 
 	var current = document.getElementById('current');
