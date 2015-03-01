@@ -42,6 +42,14 @@ function makeUL(array) {
         return list;
 };
 
+function pollThoughts() {
+	thoughts();
+
+	setTimeout(function() {
+	    pollThoughts();
+	}, 5000)
+};
+
 function submitThought(t) {
 	$.post(t.action, $("#form").serialize());
 	form.elements["text"].value = '';

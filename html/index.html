@@ -27,10 +27,7 @@
             if (window.navigator.standalone) {
 		$.ajaxSetup({isLocal:true});
 	    };
-	    thoughts();
-	    setInterval(function(){
-	        thoughts();
-	    }, 5000);
+	    pollThoughts();
 	});
     </script>
   </body>
