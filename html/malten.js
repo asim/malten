@@ -1,3 +1,5 @@
+var typing = false;
+
 String.prototype.parseURL = function() {
 	return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
 		var pretty = url.replace(/^http(s)?:\/\/(www\.)?/, '');
@@ -19,10 +21,10 @@ String.prototype.parseHashTag = function() {
 };
 
 function escapeHTML(str) {
-    var div = document.createElement('div');
-    div.style.display = 'none';
-    div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
+	var div = document.createElement('div');
+	div.style.display = 'none';
+	div.appendChild(document.createTextNode(str));
+	return div.innerHTML;
 };
 
 function makeUL(array) {
@@ -43,13 +45,21 @@ function makeUL(array) {
 };
 
 function pollThoughts() {
-	setTimeout(function() {
-	    thoughts();
-	}, 0);
+	if (typing == false) {
+		thoughts();
+	};
 
 	setTimeout(function() {
 	    pollThoughts();
 	}, 5000);
+};
+
+function start() {
+	typing = false;
+};
+
+function stop() {
+	typing = true;
 };
 
 function submitThought(t) {
