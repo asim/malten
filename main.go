@@ -15,6 +15,7 @@ const (
 	maxThoughtSize = 512
 	maxThoughts    = 1000
 	maxStreams     = 1000
+	streamTTL      = 86400
 )
 
 type Request struct {
@@ -162,12 +163,24 @@ func (c *Consciousness) Retrieve(thought string, streem string) []*Thought {
 }
 
 func (c *Consciousness) Think() {
+	tick := time.NewTicker(time.Hour)
+	streams := make(map[string]int64)
+
 	for {
 		select {
 		case thought := <-c.Updates:
 			c.Save(thought)
+			streams[thought.Stream] = time.Now().Unix()
 		case req := <-c.Requests:
 			req.Response <- c.Retrieve(req.Thought, req.Stream)
+		case <-tick.C:
+			now := time.Now().Unix()
+			for stream, u := range streams {
+				if d := now - u; d > streamTTL {
+					c.Streams.Remove(stream)
+					delete(streams, stream)
+				}
+			}
 		}
 	}
 }
