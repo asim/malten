@@ -87,24 +87,18 @@ function thoughts() {
 	current.text = text;
 	current.href = window.location.href;
 
-        var xmlHttp = null;
-        xmlHttp = new XMLHttpRequest();
-        xmlHttp.open("GET", '/thoughts' + params, false);
-        xmlHttp.send(null);
-
-        if (xmlHttp.status == 200) {
-                var things = JSON.parse(xmlHttp.responseText);
-                if (things == null) {
-                        return false;
-                }
-
+	$.get('/thoughts' + params, function(data) {
                 var list = document.getElementById('thoughts');
                 while (list.lastChild) {
                         list.removeChild(list.lastChild);
                 }
-                list.appendChild(makeUL(things));     
+                list.appendChild(makeUL(data));     
                 list.style.display = 'block';
-        }
+	})
+	.fail(function(err) {
+		console.log(err);
+	})
+	.done();
 
         return false;
 };
