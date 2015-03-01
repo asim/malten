@@ -43,11 +43,13 @@ function makeUL(array) {
 };
 
 function pollThoughts() {
-	thoughts();
+	setTimeout(function() {
+	    thoughts();
+	}, 0);
 
 	setTimeout(function() {
 	    pollThoughts();
-	}, 5000)
+	}, 5000);
 };
 
 function submitThought(t) {
