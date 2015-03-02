@@ -4,6 +4,11 @@ html, body {
   margin: 0;
   font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
 }
+html a {
+  color: #333;
+  font-weight: bold;
+  text-decoration: none;
+}
 input {
   width: 100%;
   font-size: 20px;
@@ -54,5 +59,6 @@ ul li {
 }
 #thoughts a {
   color: #1763A3;
+  font-weight: normal;
   text-decoration: none;
 }
