@@ -41,6 +41,15 @@ function escapeHTML(str) {
 	return div.innerHTML;
 };
 
+function gotoStream(t) {
+	var stream = document.getElementById("goto").elements['gstream'].value.replace(/^#+/, '');
+	if (stream.length > 0) {
+		document.getElementById("goto").elements['gstream'].value = '';
+		window.location = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '') + '/#' + stream;
+	};
+	return false;
+};
+
 function makeUL(array) {
         var list = document.createElement('ul');
 

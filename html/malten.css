@@ -4,6 +4,7 @@ html, body {
   margin: 0;
   font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
   font-weight: 300;
+  word-wrap: break-word;
 }
 html a {
   color: #333;
@@ -30,7 +31,6 @@ ul {
 }
 ul li {
   padding: 10px;
-  word-wrap: break-word;
 }
 ul li:after {
   content: "...";
@@ -44,14 +44,20 @@ ul li:after {
 #controls {
   padding: 5px;
 }
-#current {
-  float: right;
-}
 #desc {
   margin: 0 auto;
   display: none;
   width: 80%;
-  padding-bottom: 10px;
+}
+#goto {
+  display: inline-block;
+}
+#gstream {
+  font-size: 0.8em;
+  margin-left: 2px;
+  padding: 5px;
+  width: 100px;
+  text-align: left;
 }
 #head {
   text-align: left;
@@ -59,7 +65,6 @@ ul li:after {
 }
 #head a {
   color: #333;
-  font-weight: bold;
   text-decoration: none;
 }
 #main {
@@ -67,8 +72,19 @@ ul li:after {
   text-align: center;
   max-width: 650px;
 }
+#nav {
+  float: right;
+}
+
+#think {
+  margin: 30px 0 30px;
+}
 #thoughts a {
   color: #1763A3;
   font-weight: normal;
   text-decoration: none;
+}
+#title {
+  width: 80%;
+  margin: 0 auto;
 }
