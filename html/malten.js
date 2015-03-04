@@ -86,9 +86,11 @@ function stop() {
 };
 
 function submitThought(t) {
-	$.post(t.action, $("#form").serialize());
-	form.elements["text"].value = '';
-	thoughts();
+        if (form.elements["text"].value.length > 0) {
+                $.post(t.action, $("#form").serialize());
+                form.elements["text"].value = '';
+                thoughts();
+        }
 	return false;
 };
 
