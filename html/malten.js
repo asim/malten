@@ -94,7 +94,7 @@ function submitThought(t) {
 
 function thoughts() {
 	var params = "";
-	var text = '#_';
+	var text = 'malten';
 	var form = document.getElementById('form');
 	var stream = window.location.hash.replace('#', '');
 

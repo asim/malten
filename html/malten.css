@@ -26,7 +26,7 @@ ul li {
   padding: 10px;
 }
 ul li:after {
-  content: "...";
+  content: "~";
 }
 #chars {
   color: #8899a6;
@@ -87,8 +87,4 @@ ul li:after {
   color: #1763A3;
   font-weight: normal;
   text-decoration: none;
-}
-#title {
-  width: 80%;
-  margin: 0 auto;
 }
