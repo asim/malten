@@ -2,6 +2,7 @@ var last = "0";
 var typing = false;
 var maxChars = 500;
 var maxThoughts = 1000;
+var seen = {};
 
 String.prototype.parseURL = function() {
 	return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
@@ -41,6 +42,8 @@ function clearThoughts() {
 	while (list.lastChild) {
 		list.removeChild(list.lastChild);
 	}
+	last = "0";
+	seen = {};
 };
 
 function clipThoughts() {
@@ -71,12 +74,17 @@ function displayThoughts(array) {
 	var list = document.getElementById('thoughts');
 
         for(i = 0; i < array.length; i++) {
+		if (array[i].Id in seen) {
+			continue;
+		};
+
                 var item = document.createElement('li');
                 var div = document.createElement('div');
 		var html = escapeHTML(array[i].Text);
 		div.innerHTML = html.parseURL().parseHashTag();
                 item.appendChild(div);
                 list.insertBefore(item, list.firstChild);
+		seen[array[i].Id] = array[i];
         }
 };
 
