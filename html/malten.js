@@ -60,16 +60,6 @@ function escapeHTML(str) {
 	return div.innerHTML;
 };
 
-function gotoStream(t) {
-	var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
-	if (stream.length > 0) {
-		document.getElementById('goto').elements['gstream'].value = '';
-		window.location = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '') + '/#' + stream;
-		clearThoughts();
-	};
-	return false;
-};
-
 function displayThoughts(array) {
 	var list = document.getElementById('thoughts');
 
@@ -88,40 +78,17 @@ function displayThoughts(array) {
         }
 };
 
-function pollThoughts() {
-	if (typing == false) {
-		thoughts();
+function gotoStream(t) {
+	var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
+	if (stream.length > 0) {
+		document.getElementById('goto').elements['gstream'].value = '';
+		window.location = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '') + '/#' + stream;
+		clearThoughts();
 	};
-
-	setTimeout(function() {
-	    pollThoughts();
-	}, 5000);
-};
-
-function setCurrent(text) {
-	var current = document.getElementById('current');
-	current.text = text;
-	current.href = window.location.href;
-};
-
-function start() {
-	typing = false;
-};
-
-function stop() {
-	typing = true;
-};
-
-function submitThought(t) {
-        if (form.elements["text"].value.length > 0) {
-                $.post(t.action, $("#form").serialize());
-                form.elements["text"].value = '';
-                thoughts();
-        }
 	return false;
 };
 
-function thoughts() {
+function loadThoughts() {
 	var params = "?last=" + last;
 	var text = 'malten';
 	var form = document.getElementById('form');
@@ -155,3 +122,42 @@ function thoughts() {
 
         return false;
 };
+
+function pollThoughts() {
+	if (typing == false) {
+		loadThoughts();
+	};
+
+	setTimeout(function() {
+	    pollThoughts();
+	}, 5000);
+};
+
+function setCurrent(text) {
+	var current = document.getElementById('current');
+	current.text = text;
+	current.href = window.location.href;
+};
+
+function showThoughts() {
+	clearThoughts();
+	loadThoughts();
+}
+
+function start() {
+	typing = false;
+};
+
+function stop() {
+	typing = true;
+};
+
+function submitThought(t) {
+        if (form.elements["text"].value.length > 0) {
+                $.post(t.action, $("#form").serialize());
+                form.elements["text"].value = '';
+                loadThoughts();
+        }
+	return false;
+};
+
