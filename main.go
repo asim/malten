@@ -130,7 +130,6 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case C.Updates <- newThought(thought, stream):
-		http.Redirect(w, r, r.Referer(), 302)
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating thought", 504)
 	}
