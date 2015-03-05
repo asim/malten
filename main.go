@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"code.google.com/p/go-uuid/uuid"
@@ -44,6 +45,9 @@ type Consciousness struct {
 	Streams  *lru.Cache
 	Requests chan *Request
 	Updates  chan *Thought
+
+	mtx     sync.RWMutex
+	streams map[string]int64
 }
 
 var (
@@ -56,6 +60,7 @@ func newConsciousness() *Consciousness {
 		Streams:  lru.New(maxStreams),
 		Requests: make(chan *Request, 100),
 		Updates:  make(chan *Thought, 100),
+		streams:  make(map[string]int64),
 	}
 }
 
@@ -108,6 +113,12 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, string(b))
 }
 
+func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	b, _ := json.Marshal(C.List())
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, string(b))
+}
 func postHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	thought := r.Form.Get("text")
@@ -133,6 +144,13 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating thought", 504)
 	}
+}
+
+func (c *Consciousness) List() map[string]int64 {
+	c.mtx.RLock()
+	streams := c.streams
+	c.mtx.RUnlock()
+	return streams
 }
 
 func (c *Consciousness) Save(thought *Thought) {
@@ -188,7 +206,8 @@ func (c *Consciousness) Retrieve(thought string, streem string, last int64) []*T
 }
 
 func (c *Consciousness) Think() {
-	tick := time.NewTicker(time.Hour)
+	t1 := time.NewTicker(time.Hour)
+	t2 := time.NewTicker(time.Minute)
 	streams := make(map[string]int64)
 
 	for {
@@ -198,7 +217,7 @@ func (c *Consciousness) Think() {
 			streams[thought.Stream] = time.Now().Unix()
 		case req := <-c.Requests:
 			req.Response <- c.Retrieve(req.Thought, req.Stream, req.Last)
-		case <-tick.C:
+		case <-t1.C:
 			now := time.Now().Unix()
 			for stream, u := range streams {
 				if d := now - u; d > streamTTL {
@@ -206,6 +225,10 @@ func (c *Consciousness) Think() {
 					delete(streams, stream)
 				}
 			}
+		case <-t2.C:
+			c.mtx.Lock()
+			c.streams = streams
+			c.mtx.Unlock()
 		}
 	}
 }
@@ -214,6 +237,15 @@ func main() {
 	go C.Think()
 
 	http.Handle("/", http.FileServer(http.Dir("html")))
+
+	http.HandleFunc("/streams", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			getStreamsHandler(w, r)
+		default:
+			http.Error(w, "unsupported method "+r.Method, 400)
+		}
+	})
 
 	http.HandleFunc("/thoughts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

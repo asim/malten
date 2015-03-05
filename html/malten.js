@@ -3,6 +3,7 @@ var typing = false;
 var maxChars = 500;
 var maxThoughts = 1000;
 var seen = {};
+var streams = {};
 
 String.prototype.parseURL = function() {
 	return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
@@ -68,6 +69,9 @@ function displayThoughts(array) {
 			continue;
 		};
 
+		// tagging
+		array[i].Text = tagText(array[i].Text);
+
                 var item = document.createElement('li');
                 var div = document.createElement('div');
 		var html = escapeHTML(array[i].Text);
@@ -76,7 +80,19 @@ function displayThoughts(array) {
                 list.insertBefore(item, list.firstChild);
 		seen[array[i].Id] = array[i];
         }
+
+	last = array[array.length -1].Created;
 };
+
+function getStreams() {
+	$.get('/streams', function(data) {
+		streams = data;
+	})
+	.fail(function(err) {
+		console.log(err);
+	})
+	.done();
+}
 
 function gotoStream(t) {
 	var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
@@ -112,7 +128,6 @@ function loadThoughts() {
 		if (data != undefined && data.length > 0) {
 			displayThoughts(data);
 			clipThoughts();
-			last = data[data.length -1].Created;
 		}
 	})
 	.fail(function(err) {
@@ -140,6 +155,7 @@ function setCurrent(text) {
 };
 
 function showThoughts() {
+	getStreams();
 	clearThoughts();
 	loadThoughts();
 }
@@ -161,3 +177,12 @@ function submitThought(t) {
 	return false;
 };
 
+function tagText(text) {
+	var parts = text.split(" ");
+	for (j = 0; j < parts.length; j++) {
+		if (parts[j] in streams) {
+			parts[j] = '#' + parts[j];
+		}
+	}
+	return parts.join(" ");
+};
