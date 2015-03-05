@@ -54,6 +54,7 @@ function gotoStream(t) {
 	if (stream.length > 0) {
 		document.getElementById('goto').elements['gstream'].value = '';
 		window.location = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '') + '/#' + stream;
+		clearThoughts();
 	};
 	return false;
 };
