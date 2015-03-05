@@ -126,7 +126,6 @@ function thoughts() {
 
 	$.get('/thoughts' + params, function(data) {
 		if (data != undefined && data.length > 0) {
-			console.log(data);
 			displayThoughts(data);
 			last = data[data.length -1].Created;
 		}

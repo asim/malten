@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -105,7 +104,6 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 	thoughts := <-req.Response
 
 	b, _ := json.Marshal(thoughts)
-	log.Printf("%+v %d %+v", thoughts, last, string(b))
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
 }
