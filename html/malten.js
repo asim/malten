@@ -1,3 +1,4 @@
+var last = "0";
 var typing = false;
 var maxChars = 500;
 
@@ -34,6 +35,13 @@ function chars() {
 	document.getElementById('chars').innerHTML = c;
 };
 
+function clearThoughts() {
+	var list = document.getElementById('thoughts');
+	while (list.lastChild) {
+		list.removeChild(list.lastChild);
+	}
+};
+
 function escapeHTML(str) {
 	var div = document.createElement('div');
 	div.style.display = 'none';
@@ -42,18 +50,16 @@ function escapeHTML(str) {
 };
 
 function gotoStream(t) {
-	var stream = document.getElementById("goto").elements['gstream'].value.replace(/^#+/, '');
+	var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
 	if (stream.length > 0) {
-		document.getElementById("goto").elements['gstream'].value = '';
+		document.getElementById('goto').elements['gstream'].value = '';
 		window.location = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '') + '/#' + stream;
 	};
 	return false;
 };
 
-function makeUL(array) {
-        var list = document.createElement('ul');
-
-        array = array.reverse();
+function displayThoughts(array) {
+	var list = document.getElementById('thoughts');
 
         for(i = 0; i < array.length; i++) {
                 var item = document.createElement('li');
@@ -61,10 +67,8 @@ function makeUL(array) {
 		var html = escapeHTML(array[i].Text);
 		div.innerHTML = html.parseURL().parseHashTag();
                 item.appendChild(div);
-                list.appendChild(item);
+                list.insertBefore(item, list.firstChild);
         }
-
-        return list;
 };
 
 function pollThoughts() {
@@ -75,6 +79,12 @@ function pollThoughts() {
 	setTimeout(function() {
 	    pollThoughts();
 	}, 5000);
+};
+
+function setCurrent(text) {
+	var current = document.getElementById('current');
+	current.text = text;
+	current.href = window.location.href;
 };
 
 function start() {
@@ -95,13 +105,15 @@ function submitThought(t) {
 };
 
 function thoughts() {
-	var params = "";
+	var params = "?last=" + last;
 	var text = 'malten';
 	var form = document.getElementById('form');
 	var stream = window.location.hash.replace('#', '');
+	var list = document.getElementById('thoughts');
 
+	// stream provided?
 	if (window.location.hash.length > 0) {
-		params = "?stream="+ stream;
+		params += "&stream="+ stream;
 		form.elements["stream"].value = stream;
 		text = window.location.hash;
 		document.getElementById('desc').style.display = 'none';
@@ -110,17 +122,14 @@ function thoughts() {
 		form.elements["stream"].value = '';
 	};
 
-	var current = document.getElementById('current');
-	current.text = text;
-	current.href = window.location.href;
+	setCurrent(text)
 
 	$.get('/thoughts' + params, function(data) {
-                var list = document.getElementById('thoughts');
-                while (list.lastChild) {
-                        list.removeChild(list.lastChild);
-                }
-                list.appendChild(makeUL(data));     
-                list.style.display = 'block';
+		if (data != undefined && data.length > 0) {
+			console.log(data);
+			displayThoughts(data);
+			last = data[data.length -1].Created;
+		}
 	})
 	.fail(function(err) {
 		console.log(err);
