@@ -1,6 +1,7 @@
 var last = "0";
 var typing = false;
 var maxChars = 500;
+var maxThoughts = 1000;
 
 String.prototype.parseURL = function() {
 	return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
@@ -38,6 +39,13 @@ function chars() {
 function clearThoughts() {
 	var list = document.getElementById('thoughts');
 	while (list.lastChild) {
+		list.removeChild(list.lastChild);
+	}
+};
+
+function clipThoughts() {
+	var list = document.getElementById('thoughts');
+	while (list.length > maxThoughts) {
 		list.removeChild(list.lastChild);
 	}
 };
@@ -128,6 +136,7 @@ function thoughts() {
 	$.get('/thoughts' + params, function(data) {
 		if (data != undefined && data.length > 0) {
 			displayThoughts(data);
+			clipThoughts();
 			last = data[data.length -1].Created;
 		}
 	})
