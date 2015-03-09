@@ -116,9 +116,7 @@ function loadThoughts() {
 		params += "&stream="+ stream;
 		form.elements["stream"].value = stream;
 		text = window.location.hash;
-		document.getElementById('desc').style.display = 'none';
 	} else {
-		document.getElementById('desc').style.display = 'block';
 		form.elements["stream"].value = '';
 	};
 
