@@ -167,7 +167,7 @@ function stop() {
 };
 
 function submitThought(t) {
-        if (form.elements["text"].value.length > 0) {
+        if (form.elements["text"].value.length > 0 && !form.elements["text"].value.match(/^\s+$/)) {
                 $.post(t.action, $("#form").serialize());
                 form.elements["text"].value = '';
                 loadThoughts();
