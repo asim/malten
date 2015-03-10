@@ -106,6 +106,7 @@ function displayThoughts(array) {
 		d1.className = 'time';
 		d2.className = 'thought';
 		d1.innerHTML = parseDate(array[i].Created);
+		d1.setAttribute('data-time', array[i].Created);
 		d2.innerHTML = html.parseURL().parseHashTag();
                 item.appendChild(d1);
                 item.appendChild(d2);
@@ -175,6 +176,7 @@ function pollThoughts() {
 
 	setTimeout(function() {
 	    pollThoughts();
+	    updateTimestamps();
 	}, 5000);
 };
 
@@ -215,4 +217,12 @@ function tagText(text) {
 		}
 	}
 	return parts.join(" ");
+};
+
+function updateTimestamps() {
+	var divs = document.getElementsByClassName('time');
+	for (i = 0; i < divs.length; i++) {
+		var time = divs[i].getAttribute('data-time');
+		divs[i].innerHTML = parseDate(time);
+	};
 };
