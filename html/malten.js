@@ -25,6 +25,32 @@ String.prototype.parseHashTag = function() {
 	});
 };
 
+function parseDate(tdate) {
+    var system_date = new Date(tdate/1e6);
+    var user_date = new Date();
+    if (K.ie) {
+        system_date = Date.parse(tdate.replace(/( \+)/, ' UTC$1'))
+    }
+    var diff = Math.floor((user_date - system_date) / 1000);
+    if (diff < 60) {return diff + "s";}
+    if (diff <= 90) {return "1m";}
+    if (diff <= 3540) {return Math.round(diff / 60) + "m";}
+    if (diff <= 5400) {return "1 hour ago";}
+    if (diff <= 86400) {return Math.round(diff / 3600) + "h";}
+    if (diff <= 129600) {return "1 day ago";}
+    if (diff < 604800) {return Math.round(diff / 86400) + "d";}
+    if (diff <= 777600) {return "1w";}
+    return "on " + system_date;
+}
+
+// from http://widgets.twimg.com/j/1/widget.js
+var K = function () {
+    var a = navigator.userAgent;
+    return {
+        ie: a.match(/MSIE\s([^;]*)/)
+    }
+}();
+
 function chars() {
 	var i = document.getElementById('text').value.length;
 	var c = maxChars;
@@ -73,10 +99,15 @@ function displayThoughts(array) {
 		array[i].Text = tagText(array[i].Text);
 
                 var item = document.createElement('li');
-                var div = document.createElement('div');
+                var d1 = document.createElement('div');
+                var d2 = document.createElement('div');
 		var html = escapeHTML(array[i].Text);
-		div.innerHTML = html.parseURL().parseHashTag();
-                item.appendChild(div);
+		d1.className = 'time';
+		d2.className = 'thought';
+		d1.innerHTML = parseDate(array[i].Created);
+		d2.innerHTML = html.parseURL().parseHashTag();
+                item.appendChild(d1);
+                item.appendChild(d2);
                 list.insertBefore(item, list.firstChild);
 		seen[array[i].Id] = array[i];
         }

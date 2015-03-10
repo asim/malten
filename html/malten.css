@@ -87,3 +87,10 @@ ul li:after {
   font-weight: normal;
   text-decoration: none;
 }
+
+.time {
+  margin-left: 5px;
+  float: right;
+  font-size: 0.8em;
+  color: #ccc;
+}
