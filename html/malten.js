@@ -7,6 +7,12 @@ var streams = {};
 
 String.prototype.parseURL = function() {
 	return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
+		var match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
+		if (match && match[2].length == 11) {
+        		return '<div class="iframe">'+
+			'<iframe src="//www.youtube.com/embed/' + match[2] +
+			'" frameborder="0" allowfullscreen></iframe>' + '</div>';
+		};
 		var pretty = url.replace(/^http(s)?:\/\/(www\.)?/, '');
 		return pretty.link(url);
 	});
