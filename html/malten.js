@@ -32,6 +32,7 @@ function parseDate(tdate) {
         system_date = Date.parse(tdate.replace(/( \+)/, ' UTC$1'))
     }
     var diff = Math.floor((user_date - system_date) / 1000);
+    if (diff < 0) {return "0s";}
     if (diff < 60) {return diff + "s";}
     if (diff <= 90) {return "1m";}
     if (diff <= 3540) {return Math.round(diff / 60) + "m";}
