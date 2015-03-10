@@ -36,9 +36,9 @@ function parseDate(tdate) {
     if (diff < 60) {return diff + "s";}
     if (diff <= 90) {return "1m";}
     if (diff <= 3540) {return Math.round(diff / 60) + "m";}
-    if (diff <= 5400) {return "1 hour ago";}
+    if (diff <= 5400) {return "1h";}
     if (diff <= 86400) {return Math.round(diff / 3600) + "h";}
-    if (diff <= 129600) {return "1 day ago";}
+    if (diff <= 129600) {return "1d";}
     if (diff < 604800) {return Math.round(diff / 86400) + "d";}
     if (diff <= 777600) {return "1w";}
     return "on " + system_date;
