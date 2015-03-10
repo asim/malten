@@ -23,7 +23,7 @@ ul {
   padding: 0;
 }
 ul li {
-  padding: 10px 0 10px 0;
+  padding: 10px 5px 10px 5px;
 }
 ul li:after {
   content: "~";
@@ -63,7 +63,7 @@ ul li:after {
 }
 #main {
   margin: 0 auto;
-  max-width: 960px;
+  max-width: 600px;
 }
 #nav {
   float: right;
