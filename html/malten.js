@@ -1,4 +1,4 @@
-var last = "0";
+var last = timeAgo();
 var typing = false;
 var maxChars = 500;
 var maxThoughts = 1000;
@@ -31,6 +31,11 @@ String.prototype.parseHashTag = function() {
 	});
 };
 
+function timeAgo() {
+	var ts = new Date().getTime() / 1000;
+	return (ts - 86400) * 1e9;
+};
+
 function parseDate(tdate) {
     var system_date = new Date(tdate/1e6);
     var user_date = new Date();
@@ -48,7 +53,7 @@ function parseDate(tdate) {
     if (diff < 604800) {return Math.round(diff / 86400) + "d";}
     if (diff <= 777600) {return "1w";}
     return "on " + system_date;
-}
+};
 
 // from http://widgets.twimg.com/j/1/widget.js
 var K = function () {
@@ -76,7 +81,7 @@ function clearThoughts() {
 	while (list.lastChild) {
 		list.removeChild(list.lastChild);
 	}
-	last = "0";
+	last = timeAgo();
 	seen = {};
 };
 
@@ -165,6 +170,7 @@ function loadThoughts() {
 		if (data != undefined && data.length > 0) {
 			displayThoughts(data);
 			clipThoughts();
+	    		updateTimestamps();
 		}
 	})
 	.fail(function(err) {
@@ -182,8 +188,13 @@ function pollThoughts() {
 
 	setTimeout(function() {
 	    pollThoughts();
-	    updateTimestamps();
 	}, 5000);
+};
+
+function pollTimestamps() {
+	setTimeout(function() {
+	    pollTimestamps();
+	}, 60000);
 };
 
 function setCurrent(text) {
