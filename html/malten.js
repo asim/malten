@@ -77,10 +77,7 @@ function chars() {
 };
 
 function clearThoughts() {
-	var list = document.getElementById('thoughts');
-	while (list.lastChild) {
-		list.removeChild(list.lastChild);
-	}
+	document.getElementById('thoughts').innerHTML = "";
 	last = timeAgo();
 	seen = {};
 };
@@ -192,6 +189,8 @@ function pollThoughts() {
 };
 
 function pollTimestamps() {
+	updateTimestamps();
+
 	setTimeout(function() {
 	    pollTimestamps();
 	}, 60000);
