@@ -170,7 +170,7 @@ function loadGif(q) {
 			return false;
 		}
 		var i = Math.floor(Math.random() * data.data.length)
-		form.elements["text"].value = data.data[i].images.fixed_width.url;
+		form.elements["text"].value = data.data[i].images.original.url;
 		submitThought();
 	});
 };
