@@ -13,6 +13,9 @@ String.prototype.parseURL = function() {
 			'<iframe src="//www.youtube.com/embed/' + match[2] +
 			'" frameborder="0" allowfullscreen></iframe>' + '</div>';
 		};
+		if (url.match(/^.*giphy.com\/media\/[a-zA-Z0-9]+\/[a-zA-Z0-9]+.gif$/)) {
+			return '<div class="animation"><img src="'+url+'"></div>';
+		}
 		var pretty = url.replace(/^http(s)?:\/\/(www\.)?/, '');
 		return pretty.link(url);
 	});
@@ -89,6 +92,21 @@ function clipThoughts() {
 	}
 };
 
+function command(q) {
+	var parts = q.split(" ");
+	if (parts.length < 3) {
+		return false;
+	}
+
+	if (parts[1] == "image") {
+		return false;
+	} else if (parts[1] == "animate") {
+		loadGif(parts.slice(2).join(" "));
+	}
+
+	return false;
+}
+
 function escapeHTML(str) {
 	var div = document.createElement('div');
 	div.style.display = 'none';
@@ -143,6 +161,18 @@ function gotoStream(t) {
 		clearThoughts();
 	};
 	return false;
+};
+
+function loadGif(q) {
+	var xhr = $.get("http://api.giphy.com/v1/gifs/search?q="+q+"&api_key=dc6zaTOxFJmzC");
+	xhr.done(function(data) {
+		if (data.data.length == 0) {
+			return false;
+		}
+		var i = Math.floor(Math.random() * data.data.length)
+		form.elements["text"].value = data.data[i].images.fixed_width.url;
+		submitThought();
+	});
 };
 
 function loadThoughts() {
@@ -217,11 +247,22 @@ function stop() {
 };
 
 function submitThought(t) {
-        if (form.elements["text"].value.length > 0 && !form.elements["text"].value.match(/^\s+$/)) {
-                $.post(t.action, $("#form").serialize());
-                form.elements["text"].value = '';
-                loadThoughts();
-        }
+	if (form.elements["text"].value.length <= 0) {
+		return false;
+	}
+
+	if (form.elements["text"].value.match(/^\s+$/)) {
+		return false;
+	}
+
+	if (form.elements["text"].value.match(/^\/malten\s/)) {
+		command(form.elements["text"].value);
+		return false;
+	}
+ 
+        $.post("/thoughts", $("#form").serialize());
+        form.elements["text"].value = '';
+        loadThoughts();
 	return false;
 };
 
