@@ -98,10 +98,10 @@ function command(q) {
 		return false;
 	}
 
-	if (parts[1] == "image") {
-		return false;
-	} else if (parts[1] == "animate") {
+	if (parts[1] == "animate") {
 		loadGif(parts.slice(2).join(" "));
+	} else {
+		postThought();
 	}
 
 	return false;
@@ -226,6 +226,14 @@ function pollTimestamps() {
 	}, 60000);
 };
 
+
+function postThought() {
+        $.post("/thoughts", $("#form").serialize());
+        form.elements["text"].value = '';
+        loadThoughts();
+	return false;
+};
+
 function setCurrent(text) {
 	var current = document.getElementById('current');
 	current.text = text;
@@ -246,7 +254,7 @@ function stop() {
 	typing = true;
 };
 
-function submitThought(t) {
+function submitThought() {
 	if (form.elements["text"].value.length <= 0) {
 		return false;
 	}
@@ -260,10 +268,7 @@ function submitThought(t) {
 		return false;
 	}
  
-        $.post("/thoughts", $("#form").serialize());
-        form.elements["text"].value = '';
-        loadThoughts();
-	return false;
+	return postThought();
 };
 
 function tagText(text) {
