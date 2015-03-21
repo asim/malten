@@ -65,7 +65,7 @@ func fetchAll() {
 }
 
 func main() {
-	tick := time.NewTicker(time.Second * 10)
+	tick := time.NewTicker(time.Minute * 10)
 	for _ = range tick.C {
 		fetchAll()
 	}
