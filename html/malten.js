@@ -94,11 +94,8 @@ function clipThoughts() {
 
 function command(q) {
 	var parts = q.split(" ");
-	if (parts.length < 3) {
-		return false;
-	}
 
-	if (parts[1] == "animate") {
+	if (parts.length > 2 && parts[1] == "animate") {
 		loadGif(parts.slice(2).join(" "));
 	} else {
 		postThought();
