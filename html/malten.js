@@ -5,17 +5,19 @@ var maxThoughts = 1000;
 var seen = {};
 var streams = {};
 
-String.prototype.parseURL = function() {
+String.prototype.parseURL = function(embed) {
 	return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
-		var match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
-		if (match && match[2].length == 11) {
-        		return '<div class="iframe">'+
-			'<iframe src="//www.youtube.com/embed/' + match[2] +
-			'" frameborder="0" allowfullscreen></iframe>' + '</div>';
+		if (embed == true) {
+			var match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
+			if (match && match[2].length == 11) {
+				return '<div class="iframe">'+
+				'<iframe src="//www.youtube.com/embed/' + match[2] +
+				'" frameborder="0" allowfullscreen></iframe>' + '</div>';
+			};
+			if (url.match(/^.*giphy.com\/media\/[a-zA-Z0-9]+\/[a-zA-Z0-9]+.gif$/)) {
+				return '<div class="animation"><img src="'+url+'"></div>';
+			}
 		};
-		if (url.match(/^.*giphy.com\/media\/[a-zA-Z0-9]+\/[a-zA-Z0-9]+.gif$/)) {
-			return '<div class="animation"><img src="'+url+'"></div>';
-		}
 		var pretty = url.replace(/^http(s)?:\/\/(www\.)?/, '');
 		return pretty.link(url);
 	});
@@ -119,6 +121,12 @@ function displayThoughts(array) {
 			continue;
 		};
 
+		var embed = true;
+
+		if (array[i].Glimmer != null && array[i].Glimmer.Type != "player") {
+			embed = false;
+		}
+
 		// tagging
 		array[i].Text = tagText(array[i].Text);
 
@@ -130,9 +138,22 @@ function displayThoughts(array) {
 		d2.className = 'thought';
 		d1.innerHTML = parseDate(array[i].Created);
 		d1.setAttribute('data-time', array[i].Created);
-		d2.innerHTML = html.parseURL().parseHashTag();
+		d2.innerHTML = html.parseURL(embed).parseHashTag();
                 item.appendChild(d1);
                 item.appendChild(d2);
+
+		if (array[i].Glimmer != null && array[i].Glimmer.Type != "player") {
+			var d3 = document.createElement('div');
+			var img = document.createElement('img');
+			var a = document.createElement('a');
+			d3.className = 'image';
+			img.src = array[i].Glimmer.Image;
+			a.href = array[i].Glimmer.Url;
+			a.appendChild(img);
+			d3.appendChild(a);
+			item.appendChild(d3);
+		};
+
                 list.insertBefore(item, list.firstChild);
 		seen[array[i].Id] = array[i];
         }

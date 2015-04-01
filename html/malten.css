@@ -93,9 +93,10 @@ ul li:after {
   font-weight: normal;
   text-decoration: none;
 }
-.animation img {
+.animation img, .image img {
   width: 100%;
   height: auto;
+  margin-top: 5px;
 }
 .iframe {
     position: relative;
@@ -103,6 +104,7 @@ ul li:after {
     height: 0;
     padding-bottom: 60%;
     margin-bottom: 25px;
+    margin-top: 5px;
 }
 .time {
   margin: 2px 0 0 5px;
