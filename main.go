@@ -120,7 +120,11 @@ func getGlimmer(uri string) *Glimmer {
 		case "url":
 			g.Url = node.Attr[1].Val
 		case "image":
-			g.Image = node.Attr[1].Val
+			if len(p) > 2 && p[2] == "src" {
+				g.Image = node.Attr[1].Val
+			} else if len(g.Image) == 0 {
+				g.Image = node.Attr[1].Val
+			}
 		}
 	}
 
