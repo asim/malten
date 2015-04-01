@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"code.google.com/p/go-uuid/uuid"
+	"github.com/PuerkitoBio/goquery"
 	"github.com/golang/groupcache/lru"
 )
 
@@ -20,11 +24,11 @@ const (
 	streamTTL      = 86400
 )
 
-type Request struct {
-	Last     int64
-	Stream   string
-	Thought  string
-	Response chan []*Thought
+type Glimmer struct {
+	Created int64
+	Type    string
+	Image   string
+	Url     string
 }
 
 type Stream struct {
@@ -38,38 +42,34 @@ type Thought struct {
 	Text    string
 	Created int64 `json:",string"`
 	Stream  string
+	Glimmer *Glimmer
 }
 
 type Consciousness struct {
-	Created  int64
-	Streams  *lru.Cache
-	Requests chan *Request
-	Updates  chan *Thought
+	Created int64
+	Updates chan *Thought
 
-	mtx     sync.RWMutex
-	streams map[string]int64
+	mtx      sync.RWMutex
+	Streams  *lru.Cache
+	streams  map[string]int64
+	glimmers map[string]*Glimmer
 }
 
 var (
 	C = newConsciousness()
 )
 
+func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+}
+
 func newConsciousness() *Consciousness {
 	return &Consciousness{
 		Created:  time.Now().UnixNano(),
 		Streams:  lru.New(maxStreams),
-		Requests: make(chan *Request, 100),
 		Updates:  make(chan *Thought, 100),
 		streams:  make(map[string]int64),
-	}
-}
-
-func newRequest(thought, stream string, last int64) *Request {
-	return &Request{
-		Last:     last,
-		Thought:  thought,
-		Stream:   stream,
-		Response: make(chan []*Thought, 1),
+		glimmers: make(map[string]*Glimmer),
 	}
 }
 
@@ -89,6 +89,48 @@ func newThought(text, stream string) *Thought {
 	}
 }
 
+func getGlimmer(uri string) *Glimmer {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return nil
+	}
+
+	d, err := goquery.NewDocument(u.String())
+	if err != nil {
+		return nil
+	}
+
+	g := &Glimmer{
+		Created: time.Now().UnixNano(),
+	}
+
+	for _, node := range d.Find("meta").Nodes {
+		if len(node.Attr) < 2 {
+			continue
+		}
+
+		p := strings.Split(node.Attr[0].Val, ":")
+		if len(p) < 2 || p[0] != "twitter" {
+			continue
+		}
+
+		switch p[1] {
+		case "card":
+			g.Type = node.Attr[1].Val
+		case "url":
+			g.Url = node.Attr[1].Val
+		case "image":
+			g.Image = node.Attr[1].Val
+		}
+	}
+
+	if len(g.Type) == 0 || len(g.Image) == 0 {
+		return nil
+	}
+
+	return g
+}
+
 func getHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	thought := r.Form.Get("id")
@@ -104,10 +146,7 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 		stream = defaultStream
 	}
 
-	req := newRequest(thought, stream, last)
-	C.Requests <- req
-	thoughts := <-req.Response
-
+	thoughts := C.Retrieve(thought, stream, last)
 	b, _ := json.Marshal(thoughts)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
@@ -119,6 +158,7 @@ func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
 }
+
 func postHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	thought := r.Form.Get("text")
@@ -146,6 +186,20 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (c *Consciousness) Glimmer(t *Thought) {
+	parts := strings.Split(t.Text, " ")
+	for _, part := range parts {
+		g := getGlimmer(part)
+		if g == nil {
+			continue
+		}
+		c.mtx.Lock()
+		c.glimmers[t.Id] = g
+		c.mtx.Unlock()
+		return
+	}
+}
+
 func (c *Consciousness) List() map[string]int64 {
 	c.mtx.RLock()
 	streams := c.streams
@@ -154,6 +208,9 @@ func (c *Consciousness) List() map[string]int64 {
 }
 
 func (c *Consciousness) Save(thought *Thought) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
 	var stream *Stream
 
 	if object, ok := c.Streams.Get(thought.Stream); ok {
@@ -171,6 +228,9 @@ func (c *Consciousness) Save(thought *Thought) {
 }
 
 func (c *Consciousness) Retrieve(thought string, streem string, last int64) []*Thought {
+	c.mtx.RLock()
+	defer c.mtx.RUnlock()
+
 	var stream *Stream
 
 	if object, ok := c.Streams.Get(streem); ok {
@@ -179,17 +239,17 @@ func (c *Consciousness) Retrieve(thought string, streem string, last int64) []*T
 		return []*Thought{}
 	}
 
-	// retrieve all
-	if len(thought) == 0 && last <= 0 {
-		return stream.Thoughts
-	}
-
-	// retrieve delta
 	if len(thought) == 0 && last > 0 {
 		var thoughts []*Thought
 		for _, thought := range stream.Thoughts {
 			if thought.Created > last {
-				thoughts = append(thoughts, thought)
+				if g, ok := c.glimmers[thought.Id]; ok {
+					tc := *thought
+					tc.Glimmer = g
+					thoughts = append(thoughts, &tc)
+				} else {
+					thoughts = append(thoughts, thought)
+				}
 			}
 		}
 		return thoughts
@@ -197,8 +257,16 @@ func (c *Consciousness) Retrieve(thought string, streem string, last int64) []*T
 
 	// retrieve one
 	for _, t := range stream.Thoughts {
+		var thoughts []*Thought
 		if thought == t.Id {
-			return []*Thought{t}
+			if g, ok := c.glimmers[t.Id]; ok {
+				tc := *t
+				tc.Glimmer = g
+				thoughts = append(thoughts, &tc)
+			} else {
+				thoughts = append(thoughts, t)
+			}
+			return thoughts
 		}
 	}
 
@@ -214,17 +282,23 @@ func (c *Consciousness) Think() {
 		select {
 		case thought := <-c.Updates:
 			c.Save(thought)
-			streams[thought.Stream] = time.Now().Unix()
-		case req := <-c.Requests:
-			req.Response <- c.Retrieve(req.Thought, req.Stream, req.Last)
+			streams[thought.Stream] = time.Now().UnixNano()
+			go c.Glimmer(thought)
 		case <-t1.C:
-			now := time.Now().Unix()
+			now := time.Now().UnixNano()
 			for stream, u := range streams {
 				if d := now - u; d > streamTTL {
 					c.Streams.Remove(stream)
 					delete(streams, stream)
 				}
 			}
+			c.mtx.Lock()
+			for glimmer, g := range c.glimmers {
+				if d := now - g.Created; d > streamTTL {
+					delete(c.glimmers, glimmer)
+				}
+			}
+			c.mtx.Unlock()
 		case <-t2.C:
 			c.mtx.Lock()
 			c.streams = streams
