@@ -243,7 +243,7 @@ func (c *Consciousness) Retrieve(thought string, streem string, last int64) []*T
 		return []*Thought{}
 	}
 
-	if len(thought) == 0 && last > 0 {
+	if len(thought) == 0 {
 		var thoughts []*Thought
 		for _, thought := range stream.Thoughts {
 			if thought.Created > last {
