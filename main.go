@@ -21,7 +21,7 @@ const (
 	maxThoughtSize = 512
 	maxThoughts    = 1000
 	maxStreams     = 1000
-	streamTTL      = 86400
+	streamTTL      = 8.64e13
 )
 
 type Glimmer struct {
