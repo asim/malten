@@ -112,3 +112,6 @@ ul li:after {
   font-size: 0.8em;
   color: #ccc;
 }
+.title, .desc {
+  font-size: 0.8em;
+}
