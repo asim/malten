@@ -25,10 +25,13 @@ const (
 )
 
 type Glimmer struct {
-	Created int64
-	Type    string
-	Image   string
-	Url     string
+	Created     int64
+	Title       string
+	Description string
+	Type        string
+	Image       string
+	Url         string
+	Site        string
 }
 
 type Stream struct {
@@ -110,12 +113,22 @@ func getGlimmer(uri string) *Glimmer {
 		}
 
 		p := strings.Split(node.Attr[0].Val, ":")
-		if len(p) < 2 || p[0] != "twitter" {
+		if len(p) < 2 || (p[0] != "twitter" && p[0] != "og") {
 			continue
 		}
 
 		switch p[1] {
-		case "card":
+		case "site_name":
+			g.Site = node.Attr[1].Val
+		case "site":
+			if len(g.Site) == 0 {
+				g.Site = node.Attr[1].Val
+			}
+		case "title":
+			g.Title = node.Attr[1].Val
+		case "description":
+			g.Description = node.Attr[1].Val
+		case "card", "type":
 			g.Type = node.Attr[1].Val
 		case "url":
 			g.Url = node.Attr[1].Val
@@ -128,7 +141,7 @@ func getGlimmer(uri string) *Glimmer {
 		}
 	}
 
-	if len(g.Type) == 0 || len(g.Image) == 0 {
+	if len(g.Type) == 0 || len(g.Image) == 0 || len(g.Title) == 0 || len(g.Url) == 0 {
 		return nil
 	}
 

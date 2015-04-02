@@ -131,27 +131,38 @@ function displayThoughts(array) {
 		array[i].Text = tagText(array[i].Text);
 
                 var item = document.createElement('li');
-                var d1 = document.createElement('div');
-                var d2 = document.createElement('div');
-		var html = escapeHTML(array[i].Text);
+		var d1 = document.createElement('div');
+		var d2 = document.createElement('div');
 		d1.className = 'time';
 		d2.className = 'thought';
 		d1.innerHTML = parseDate(array[i].Created);
 		d1.setAttribute('data-time', array[i].Created);
-		d2.innerHTML = html.parseURL(embed).parseHashTag();
-                item.appendChild(d1);
-                item.appendChild(d2);
+		item.appendChild(d1);
 
 		if (array[i].Glimmer != null && array[i].Glimmer.Type != "player") {
+			var a1 = document.createElement('a');
+			var a2 = document.createElement('a');
 			var d3 = document.createElement('div');
+			var d4 = document.createElement('div');
 			var img = document.createElement('img');
-			var a = document.createElement('a');
+
+			a1.innerHTML = array[i].Glimmer.Site + ": " + array[i].Glimmer.Title;
+			a1.href = array[i].Glimmer.Url;
+			a2.href = array[i].Glimmer.Url;
 			d3.className = 'image';
+			d4.className = 'desc';
+			d4.innerHTML = array[i].Glimmer.Description;
 			img.src = array[i].Glimmer.Image;
-			a.href = array[i].Glimmer.Url;
-			a.appendChild(img);
-			d3.appendChild(a);
+			a2.appendChild(img);
+			d2.appendChild(a1);
+			d3.appendChild(a2);
+			item.appendChild(d2);
 			item.appendChild(d3);
+			item.appendChild(d4);
+		} else {
+			var html = escapeHTML(array[i].Text);
+			d2.innerHTML = html.parseURL(embed).parseHashTag();
+			item.appendChild(d2);
 		};
 
                 list.insertBefore(item, list.firstChild);
