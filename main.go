@@ -158,12 +158,22 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 		last = 0
 	}
 
+	limit, err := strconv.ParseInt(r.Form.Get("limit"), 10, 64)
+	if err != nil {
+		limit = 25
+	}
+
+	direction, err := strconv.ParseInt(r.Form.Get("direction"), 10, 64)
+	if err != nil {
+		direction = 1
+	}
+
 	// default stream
 	if len(stream) == 0 {
 		stream = defaultStream
 	}
 
-	thoughts := C.Retrieve(thought, stream, last)
+	thoughts := C.Retrieve(thought, stream, direction, last, limit)
 	b, _ := json.Marshal(thoughts)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
@@ -244,7 +254,7 @@ func (c *Consciousness) Save(thought *Thought) {
 	stream.Updated = time.Now().UnixNano()
 }
 
-func (c *Consciousness) Retrieve(thought string, streem string, last int64) []*Thought {
+func (c *Consciousness) Retrieve(thought string, streem string, direction, last, limit int64) []*Thought {
 	c.mtx.RLock()
 	defer c.mtx.RUnlock()
 
@@ -258,7 +268,47 @@ func (c *Consciousness) Retrieve(thought string, streem string, last int64) []*T
 
 	if len(thought) == 0 {
 		var thoughts []*Thought
-		for _, thought := range stream.Thoughts {
+
+		if limit <= 0 {
+			return thoughts
+		}
+
+		li := int(limit)
+
+		// go back in time
+		if direction < 0 {
+			for i := len(stream.Thoughts) - 1; i >= 0; i-- {
+				if len(thoughts) >= li {
+					return thoughts
+				}
+
+				thought := stream.Thoughts[i]
+
+				if thought.Created < last {
+					if g, ok := c.glimmers[thought.Id]; ok {
+						tc := *thought
+						tc.Glimmer = g
+						thoughts = append(thoughts, &tc)
+					} else {
+						thoughts = append(thoughts, thought)
+					}
+				}
+			}
+			return thoughts
+		}
+
+		start := 0
+		if len(stream.Thoughts) > li {
+			start = len(stream.Thoughts) - li
+		}
+
+		for i := start; i < len(stream.Thoughts); i++ {
+			if len(thoughts) >= li {
+				return thoughts
+			}
+
+			thought := stream.Thoughts[i]
+
 			if thought.Created > last {
 				if g, ok := c.glimmers[thought.Id]; ok {
 					tc := *thought

@@ -28,23 +28,11 @@
       </div>
     </div>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
-    <script src="malten.js?v=0.26"></script>
+    <script src="malten.js?v=0.27"></script>
     <script type="text/javascript">
 	$(document).ready(function() {
-            if (window.navigator.standalone) {
-		$.ajaxSetup({isLocal:true});
-	    };
-
-	    document.getElementById("text").addEventListener("keyup", function() {
-		start();
-		chars();
-	    }, false);
-
-	    document.getElementById("text").addEventListener("keydown", function() {
-		stop();
-	    }, false);
-
 	    getStreams();
+	    loadListeners();
 	    pollThoughts();
 	    pollTimestamps();
 	});

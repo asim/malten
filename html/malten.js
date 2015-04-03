@@ -1,3 +1,6 @@
+var thoughtUrl = "/thoughts";
+var streamUrl = "/streams";
+var limit = 25;
 var last = timeAgo();
 var typing = false;
 var maxChars = 500;
@@ -113,7 +116,7 @@ function escapeHTML(str) {
 	return div.innerHTML;
 };
 
-function displayThoughts(array) {
+function displayThoughts(array, direction) {
 	var list = document.getElementById('thoughts');
 
         for(i = 0; i < array.length; i++) {
@@ -166,15 +169,21 @@ function displayThoughts(array) {
 			item.appendChild(d5);
 		};
 
-                list.insertBefore(item, list.firstChild);
+		if (direction >= 0) {
+	                list.insertBefore(item, list.firstChild);
+		} else {
+			list.appendChild(item);
+		}
 		seen[array[i].Id] = array[i];
         }
 
-	last = array[array.length -1].Created;
+	if (direction >= 0) {
+		last = array[array.length -1].Created;
+	}
 };
 
 function getStreams() {
-	$.get('/streams', function(data) {
+	$.get(streamUrl, function(data) {
 		streams = data;
 	})
 	.fail(function(err) {
@@ -205,27 +214,71 @@ function loadGif(q) {
 	});
 };
 
+function loadListeners() {
+	if (window.navigator.standalone) {
+		$.ajaxSetup({isLocal:true});
+	};
+
+
+	$(window).scroll(function() {
+		if($(window).scrollTop() == $(document).height() - $(window).height()) {
+			loadMore();
+		}
+	});
+
+	document.getElementById("text").addEventListener("keyup", function() {
+		start();
+		chars();
+	}, false);
+
+	document.getElementById("text").addEventListener("keydown", function() {
+		stop();
+	}, false);
+};
+
+function loadMore() {
+	var divs = document.getElementsByClassName('time');
+	var oldest = new Date().getTime() * 1e6;
+
+	if (divs.length > 0) {
+		oldest = divs[divs.length-1].getAttribute('data-time');
+	}
+
+	var params = "?direction=-1&limit=" + limit + "&last=" + oldest;
+
+	if (window.location.hash.length > 0) {
+		params += "&stream="+ window.location.hash.replace('#', '');
+	};
+
+	$.get(thoughtUrl + params, function(data) {
+		if (data != undefined && data.length > 0) {
+			displayThoughts(data, -1);
+		}
+	})
+	.fail(function(err) {
+		console.log(err);
+	})
+	.done();
+
+        return false;
+};
+
 function loadThoughts() {
-	var params = "?last=" + last;
-	var text = 'malten';
+	var params = "?direction=1&limit=" + limit + "&last=" + last;
 	var form = document.getElementById('form');
 	var stream = window.location.hash.replace('#', '');
-	var list = document.getElementById('thoughts');
 
 	// stream provided?
 	if (window.location.hash.length > 0) {
 		params += "&stream="+ stream;
 		form.elements["stream"].value = stream;
-		text = window.location.hash;
 	} else {
 		form.elements["stream"].value = '';
 	};
 
-	setCurrent(text)
-
-	$.get('/thoughts' + params, function(data) {
+	$.get(thoughtUrl + params, function(data) {
 		if (data != undefined && data.length > 0) {
-			displayThoughts(data);
+			displayThoughts(data, 1);
 			clipThoughts();
 	    		updateTimestamps();
 		}
@@ -258,7 +311,7 @@ function pollTimestamps() {
 
 
 function postThought() {
-        $.post("/thoughts", $("#form").serialize());
+        $.post(thoughtUrl, $("#form").serialize());
         form.elements["text"].value = '';
         loadThoughts();
 	return false;
@@ -266,12 +319,18 @@ function postThought() {
 
 function setCurrent(text) {
 	var current = document.getElementById('current');
-	current.text = text;
 	current.href = window.location.href;
+
+	if (window.location.hash.length > 0) {
+		current.text = window.location.hash;
+	} else {
+		current.text = "malten";
+	}
 };
 
 function showThoughts() {
 	getStreams();
+	setCurrent();
 	clearThoughts();
 	loadThoughts();
 }
