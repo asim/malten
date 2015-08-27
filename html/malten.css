@@ -31,9 +31,6 @@ ul {
 ul li {
   padding: 10px 5px 10px 5px;
 }
-ul li:after {
-  content: "~";
-}
 #chars {
   color: #8899a6;
   font-size: 0.8em;
