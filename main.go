@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"code.google.com/p/go-uuid/uuid"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/golang/groupcache/lru"
+	"github.com/google/uuid"
 )
 
 const (
@@ -85,7 +85,7 @@ func newStream(id string) *Stream {
 
 func newThought(text, stream string) *Thought {
 	return &Thought{
-		Id:      uuid.New(),
+		Id:      uuid.New().String(),
 		Text:    text,
 		Created: time.Now().UnixNano(),
 		Stream:  stream,
