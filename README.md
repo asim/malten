@@ -1,6 +1,6 @@
 # malten
 
-A stream of consciousness
+Streams of consciousness
 
 ## Overview
 
