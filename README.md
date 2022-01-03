@@ -1,6 +1,6 @@
 # Malten
 
-Streams of consciousness
+Streams of consciousness in the bicameral mind
 
 ## Overview
 
