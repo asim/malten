@@ -298,7 +298,7 @@ function pollThoughts() {
 
 	setTimeout(function() {
 	    pollThoughts();
-	}, 5000);
+	}, 1000);
 };
 
 function pollTimestamps() {
