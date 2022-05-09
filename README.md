@@ -15,10 +15,6 @@ you know what you're looking for.
 go get github.com/asim/malten && malten
 ```
 
-## Web
-
-Go to https://malten.com or http://localhost:9090
-
 ## API
 
 To retrieve a list of streams
@@ -66,3 +62,7 @@ An example
 ```
 POST /thoughts?stream=foo&text=helloworld
 ```
+
+## Web
+
+Go to https://malten.com or http://localhost:9090
