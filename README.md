@@ -37,3 +37,22 @@ An example retrieval
 ```
 GET /thoughts?direction=1&limit=25&last=1652035113591000000&stream=foo
 ```
+
+To create thoughts
+
+```
+POST /thoughts
+```
+
+Params for thoughts
+
+```
+stream: string e.g stream=foo
+text: string e.g text=helloworld
+```
+
+An example
+
+```
+POST /thoughts?stream=foo&text=helloworld
+```
