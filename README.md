@@ -11,7 +11,7 @@ you know what you're looking for.
 
 ## Web
 
-Go to https://malten.com
+Go to https://malten.com or http://localhost:9090
 
 ## API
 
