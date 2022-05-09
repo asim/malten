@@ -1,8 +1,11 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -57,6 +60,9 @@ type Consciousness struct {
 	streams  map[string]int64
 	glimmers map[string]*Glimmer
 }
+
+//go:embed html/*
+var html embed.FS
 
 var (
 	C = newConsciousness()
@@ -377,7 +383,13 @@ func (c *Consciousness) Think() {
 func main() {
 	go C.Think()
 
-	http.Handle("/", http.FileServer(http.Dir("html")))
+	htmlContent, err := fs.Sub(html, "html")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// serve the html directory by default
+	http.Handle("/", http.FileServer(http.FS(htmlContent)))
 
 	http.HandleFunc("/streams", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
