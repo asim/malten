@@ -9,6 +9,12 @@ It contains solely streams of text and nothing else. Streams are ephemeral, ever
 of them. Streams can only be discovered through exploration but you may never actually find them unless 
 you know what you're looking for.
 
+## Usage
+
+```
+go get github.com/asim/malten && malten
+```
+
 ## Web
 
 Go to https://malten.com or http://localhost:9090
