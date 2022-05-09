@@ -9,6 +9,10 @@ It contains solely streams of text and nothing else. Streams are ephemeral, ever
 of them. Streams can only be discovered through exploration but you may never actually find them unless 
 you know what you're looking for.
 
+## Web
+
+Go to https://malten.com
+
 ## API
 
 To retrieve a list of streams
