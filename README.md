@@ -65,4 +65,8 @@ POST /thoughts?stream=foo&text=helloworld
 
 ## Web
 
-Go to https://malten.com or http://localhost:9090
+Go to https://malten.com
+
+## Testing 
+
+For development http://localhost:9090
