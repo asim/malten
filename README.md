@@ -1,6 +1,6 @@
 # Malten
 
-Anonymous ephmeral messagin
+Anonymous ephmeral messaging
 
 ## Overview
 
