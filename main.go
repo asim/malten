@@ -21,13 +21,13 @@ import (
 
 const (
 	defaultStream  = "_"
-	maxThoughtSize = 512
-	maxThoughts    = 1000
+	maxMessageSize = 512
+	maxMessages    = 1000
 	maxStreams     = 1000
 	streamTTL      = 8.64e13
 )
 
-type Glimmer struct {
+type Metadata struct {
 	Created     int64
 	Title       string
 	Description string
@@ -39,46 +39,46 @@ type Glimmer struct {
 
 type Stream struct {
 	Id       string
-	Thoughts []*Thought
+	Messages []*Message
 	Updated  int64
 }
 
-type Thought struct {
-	Id      string
-	Text    string
-	Created int64 `json:",string"`
-	Stream  string
-	Glimmer *Glimmer
+type Message struct {
+	Id       string
+	Text     string
+	Created  int64 `json:",string"`
+	Stream   string
+	Metadata *Metadata
 }
 
-type Consciousness struct {
+type Server struct {
 	Created int64
-	Updates chan *Thought
+	Updates chan *Message
 
 	mtx      sync.RWMutex
 	Streams  *lru.Cache
 	streams  map[string]int64
-	glimmers map[string]*Glimmer
+	metadata map[string]*Metadata
 }
 
 //go:embed html/*
 var html embed.FS
 
 var (
-	C = newConsciousness()
+	C = newServer()
 )
 
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
-func newConsciousness() *Consciousness {
-	return &Consciousness{
+func newServer() *Server {
+	return &Server{
 		Created:  time.Now().UnixNano(),
 		Streams:  lru.New(maxStreams),
-		Updates:  make(chan *Thought, 100),
+		Updates:  make(chan *Message, 100),
 		streams:  make(map[string]int64),
-		glimmers: make(map[string]*Glimmer),
+		metadata: make(map[string]*Metadata),
 	}
 }
 
@@ -89,8 +89,8 @@ func newStream(id string) *Stream {
 	}
 }
 
-func newThought(text, stream string) *Thought {
-	return &Thought{
+func newMessage(text, stream string) *Message {
+	return &Message{
 		Id:      uuid.New().String(),
 		Text:    text,
 		Created: time.Now().UnixNano(),
@@ -98,7 +98,7 @@ func newThought(text, stream string) *Thought {
 	}
 }
 
-func getGlimmer(uri string) *Glimmer {
+func getMetadata(uri string) *Metadata {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return nil
@@ -109,7 +109,7 @@ func getGlimmer(uri string) *Glimmer {
 		return nil
 	}
 
-	g := &Glimmer{
+	g := &Metadata{
 		Created: time.Now().UnixNano(),
 	}
 
@@ -156,7 +156,7 @@ func getGlimmer(uri string) *Glimmer {
 
 func getHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	thought := r.Form.Get("id")
+	message := r.Form.Get("id")
 	stream := r.Form.Get("stream")
 
 	last, err := strconv.ParseInt(r.Form.Get("last"), 10, 64)
@@ -179,8 +179,8 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 		stream = defaultStream
 	}
 
-	thoughts := C.Retrieve(thought, stream, direction, last, limit)
-	b, _ := json.Marshal(thoughts)
+	messages := C.Retrieve(message, stream, direction, last, limit)
+	b, _ := json.Marshal(messages)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
 }
@@ -194,11 +194,11 @@ func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	thought := r.Form.Get("text")
+	message := r.Form.Get("text")
 	stream := r.Form.Get("stream")
 
-	if len(thought) == 0 {
-		http.Error(w, "Thought cannot be blank", 400)
+	if len(message) == 0 {
+		http.Error(w, "Message cannot be blank", 400)
 		return
 	}
 
@@ -208,59 +208,59 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// default length
-	if len(thought) > maxThoughtSize {
-		thought = thought[:maxThoughtSize]
+	if len(message) > maxMessageSize {
+		message = message[:maxMessageSize]
 	}
 
 	select {
-	case C.Updates <- newThought(thought, stream):
+	case C.Updates <- newMessage(message, stream):
 	case <-time.After(time.Second):
-		http.Error(w, "Timed out creating thought", 504)
+		http.Error(w, "Timed out creating message", 504)
 	}
 }
 
-func (c *Consciousness) Glimmer(t *Thought) {
+func (c *Server) Metadata(t *Message) {
 	parts := strings.Split(t.Text, " ")
 	for _, part := range parts {
-		g := getGlimmer(part)
+		g := getMetadata(part)
 		if g == nil {
 			continue
 		}
 		c.mtx.Lock()
-		c.glimmers[t.Id] = g
+		c.metadata[t.Id] = g
 		c.mtx.Unlock()
 		return
 	}
 }
 
-func (c *Consciousness) List() map[string]int64 {
+func (c *Server) List() map[string]int64 {
 	c.mtx.RLock()
 	streams := c.streams
 	c.mtx.RUnlock()
 	return streams
 }
 
-func (c *Consciousness) Save(thought *Thought) {
+func (c *Server) Save(message *Message) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
 	var stream *Stream
 
-	if object, ok := c.Streams.Get(thought.Stream); ok {
+	if object, ok := c.Streams.Get(message.Stream); ok {
 		stream = object.(*Stream)
 	} else {
-		stream = newStream(thought.Stream)
-		c.Streams.Add(thought.Stream, stream)
+		stream = newStream(message.Stream)
+		c.Streams.Add(message.Stream, stream)
 	}
 
-	stream.Thoughts = append(stream.Thoughts, thought)
-	if len(stream.Thoughts) > maxThoughts {
-		stream.Thoughts = stream.Thoughts[1:]
+	stream.Messages = append(stream.Messages, message)
+	if len(stream.Messages) > maxMessages {
+		stream.Messages = stream.Messages[1:]
 	}
 	stream.Updated = time.Now().UnixNano()
 }
 
-func (c *Consciousness) Retrieve(thought string, streem string, direction, last, limit int64) []*Thought {
+func (c *Server) Retrieve(message string, streem string, direction, last, limit int64) []*Message {
 	c.mtx.RLock()
 	defer c.mtx.RUnlock()
 
@@ -269,94 +269,94 @@ func (c *Consciousness) Retrieve(thought string, streem string, direction, last,
 	if object, ok := c.Streams.Get(streem); ok {
 		stream = object.(*Stream)
 	} else {
-		return []*Thought{}
+		return []*Message{}
 	}
 
-	if len(thought) == 0 {
-		var thoughts []*Thought
+	if len(message) == 0 {
+		var messages []*Message
 
 		if limit <= 0 {
-			return thoughts
+			return messages
 		}
 
 		li := int(limit)
 
 		// go back in time
 		if direction < 0 {
-			for i := len(stream.Thoughts) - 1; i >= 0; i-- {
-				if len(thoughts) >= li {
-					return thoughts
+			for i := len(stream.Messages) - 1; i >= 0; i-- {
+				if len(messages) >= li {
+					return messages
 				}
 
-				thought := stream.Thoughts[i]
+				message := stream.Messages[i]
 
-				if thought.Created < last {
-					if g, ok := c.glimmers[thought.Id]; ok {
-						tc := *thought
-						tc.Glimmer = g
-						thoughts = append(thoughts, &tc)
+				if message.Created < last {
+					if g, ok := c.metadata[message.Id]; ok {
+						tc := *message
+						tc.Metadata = g
+						messages = append(messages, &tc)
 					} else {
-						thoughts = append(thoughts, thought)
+						messages = append(messages, message)
 					}
 				}
 			}
-			return thoughts
+			return messages
 		}
 
 		start := 0
-		if len(stream.Thoughts) > li {
-			start = len(stream.Thoughts) - li
+		if len(stream.Messages) > li {
+			start = len(stream.Messages) - li
 		}
 
-		for i := start; i < len(stream.Thoughts); i++ {
-			if len(thoughts) >= li {
-				return thoughts
+		for i := start; i < len(stream.Messages); i++ {
+			if len(messages) >= li {
+				return messages
 			}
 
-			thought := stream.Thoughts[i]
+			message := stream.Messages[i]
 
-			if thought.Created > last {
-				if g, ok := c.glimmers[thought.Id]; ok {
-					tc := *thought
-					tc.Glimmer = g
-					thoughts = append(thoughts, &tc)
+			if message.Created > last {
+				if g, ok := c.metadata[message.Id]; ok {
+					tc := *message
+					tc.Metadata = g
+					messages = append(messages, &tc)
 				} else {
-					thoughts = append(thoughts, thought)
+					messages = append(messages, message)
 				}
 			}
 		}
-		return thoughts
+		return messages
 	}
 
 	// retrieve one
-	for _, t := range stream.Thoughts {
-		var thoughts []*Thought
-		if thought == t.Id {
-			if g, ok := c.glimmers[t.Id]; ok {
+	for _, t := range stream.Messages {
+		var messages []*Message
+		if message == t.Id {
+			if g, ok := c.metadata[t.Id]; ok {
 				tc := *t
-				tc.Glimmer = g
-				thoughts = append(thoughts, &tc)
+				tc.Metadata = g
+				messages = append(messages, &tc)
 			} else {
-				thoughts = append(thoughts, t)
+				messages = append(messages, t)
 			}
-			return thoughts
+			return messages
 		}
 	}
 
-	return []*Thought{}
+	return []*Message{}
 }
 
-func (c *Consciousness) Think() {
+func (c *Server) Think() {
 	t1 := time.NewTicker(time.Hour)
 	t2 := time.NewTicker(time.Minute)
 	streams := make(map[string]int64)
 
 	for {
 		select {
-		case thought := <-c.Updates:
-			c.Save(thought)
-			streams[thought.Stream] = time.Now().UnixNano()
-			go c.Glimmer(thought)
+		case message := <-c.Updates:
+			c.Save(message)
+			streams[message.Stream] = time.Now().UnixNano()
+			go c.Metadata(message)
 		case <-t1.C:
 			now := time.Now().UnixNano()
 			for stream, u := range streams {
@@ -366,9 +366,9 @@ func (c *Consciousness) Think() {
 				}
 			}
 			c.mtx.Lock()
-			for glimmer, g := range c.glimmers {
+			for metadata, g := range c.metadata {
 				if d := now - g.Created; d > streamTTL {
-					delete(c.glimmers, glimmer)
+					delete(c.metadata, metadata)
 				}
 			}
 			c.mtx.Unlock()
@@ -400,7 +400,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/thoughts", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/messages", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
 			getHandler(w, r)

@@ -1,10 +1,10 @@
-var thoughtUrl = "/thoughts";
+var messageUrl = "/messages";
 var streamUrl = "/streams";
 var limit = 25;
 var last = timeAgo();
 var typing = false;
 var maxChars = 500;
-var maxThoughts = 1000;
+var maxMessages = 1000;
 var seen = {};
 var streams = {};
 
@@ -84,15 +84,15 @@ function chars() {
 	document.getElementById('chars').innerHTML = c;
 };
 
-function clearThoughts() {
-	document.getElementById('thoughts').innerHTML = "";
+function clearMessages() {
+	document.getElementById('messages').innerHTML = "";
 	last = timeAgo();
 	seen = {};
 };
 
-function clipThoughts() {
-	var list = document.getElementById('thoughts');
-	while (list.length > maxThoughts) {
+function clipMessages() {
+	var list = document.getElementById('messages');
+	while (list.length > maxMessages) {
 		list.removeChild(list.lastChild);
 	}
 };
@@ -103,7 +103,7 @@ function command(q) {
 	if (parts.length > 2 && parts[1] == "animate") {
 		loadGif(parts.slice(2).join(" "));
 	} else {
-		postThought();
+		postMessage();
 	}
 
 	return false;
@@ -116,8 +116,8 @@ function escapeHTML(str) {
 	return div.innerHTML;
 };
 
-function displayThoughts(array, direction) {
-	var list = document.getElementById('thoughts');
+function displayMessages(array, direction) {
+	var list = document.getElementById('messages');
 
         for(i = 0; i < array.length; i++) {
 		if (array[i].Id in seen) {
@@ -126,7 +126,7 @@ function displayThoughts(array, direction) {
 
 		var embed = true;
 
-		if (array[i].Glimmer != null && array[i].Glimmer.Type != "player") {
+		if (array[i].Metadata != null && array[i].Metadata.Type != "player") {
 			embed = false;
 		}
 
@@ -138,14 +138,14 @@ function displayThoughts(array, direction) {
 		var d1 = document.createElement('div');
 		var d2 = document.createElement('div');
 		d1.className = 'time';
-		d2.className = 'thought';
+		d2.className = 'message';
 		d1.innerHTML = parseDate(array[i].Created);
 		d1.setAttribute('data-time', array[i].Created);
 		d2.innerHTML = html.parseURL(embed).parseHashTag();
 		item.appendChild(d1);
 		item.appendChild(d2);
 
-		if (array[i].Glimmer != null && array[i].Glimmer.Type != "player") {
+		if (array[i].Metadata != null && array[i].Metadata.Type != "player") {
 			var a1 = document.createElement('a');
 			var a2 = document.createElement('a');
 			var d3 = document.createElement('div');
@@ -153,17 +153,17 @@ function displayThoughts(array, direction) {
 			var d5 = document.createElement('div');
 			var img = document.createElement('img');
 
-			a1.innerHTML = array[i].Glimmer.Site + ": " + array[i].Glimmer.Title;
-			a1.href = array[i].Glimmer.Url;
-			a2.href = array[i].Glimmer.Url;
+			a1.innerHTML = array[i].Metadata.Site + ": " + array[i].Metadata.Title;
+			a1.href = array[i].Metadata.Url;
+			a2.href = array[i].Metadata.Url;
 			d3.className = 'image';
 			d4.className = 'title';
 			d5.className = 'desc';
-			img.src = array[i].Glimmer.Image;
+			img.src = array[i].Metadata.Image;
 			a2.appendChild(img);
 			d3.appendChild(a2);
 			d4.appendChild(a1);
-			d5.innerHTML = array[i].Glimmer.Description;
+			d5.innerHTML = array[i].Metadata.Description;
 			item.appendChild(d3);
 			item.appendChild(d4);
 			item.appendChild(d5);
@@ -197,7 +197,7 @@ function gotoStream(t) {
 	if (stream.length > 0) {
 		document.getElementById('goto').elements['gstream'].value = '';
 		window.location = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '') + '/#' + stream;
-		clearThoughts();
+		clearMessages();
 	};
 	return false;
 };
@@ -210,7 +210,7 @@ function loadGif(q) {
 		}
 		var i = Math.floor(Math.random() * data.data.length)
 		form.elements["text"].value = data.data[i].images.original.url;
-		submitThought();
+		submitMessage();
 	});
 };
 
@@ -250,9 +250,9 @@ function loadMore() {
 		params += "&stream="+ window.location.hash.replace('#', '');
 	};
 
-	$.get(thoughtUrl + params, function(data) {
+	$.get(messageUrl + params, function(data) {
 		if (data != undefined && data.length > 0) {
-			displayThoughts(data, -1);
+			displayMessages(data, -1);
 		}
 	})
 	.fail(function(err) {
@@ -263,7 +263,7 @@ function loadMore() {
         return false;
 };
 
-function loadThoughts() {
+function loadMessages() {
 	var params = "?direction=1&limit=" + limit + "&last=" + last;
 	var form = document.getElementById('form');
 	var stream = window.location.hash.replace('#', '');
@@ -276,10 +276,10 @@ function loadThoughts() {
 		form.elements["stream"].value = '';
 	};
 
-	$.get(thoughtUrl + params, function(data) {
+	$.get(messageUrl + params, function(data) {
 		if (data != undefined && data.length > 0) {
-			displayThoughts(data, 1);
-			clipThoughts();
+			displayMessages(data, 1);
+			clipMessages();
 	    		updateTimestamps();
 		}
 	})
@@ -291,13 +291,13 @@ function loadThoughts() {
         return false;
 };
 
-function pollThoughts() {
+function pollMessages() {
 	if (typing == false) {
-		loadThoughts();
+		loadMessages();
 	};
 
 	setTimeout(function() {
-	    pollThoughts();
+	    pollMessages();
 	}, 1000);
 };
 
@@ -310,10 +310,10 @@ function pollTimestamps() {
 };
 
 
-function postThought() {
-        $.post(thoughtUrl, $("#form").serialize());
+function postMessage() {
+        $.post(messageUrl, $("#form").serialize());
         form.elements["text"].value = '';
-        loadThoughts();
+        loadMessages();
 	return false;
 };
 
@@ -328,11 +328,11 @@ function setCurrent(text) {
 	}
 };
 
-function showThoughts() {
+function showMessages() {
 	getStreams();
 	setCurrent();
-	clearThoughts();
-	loadThoughts();
+	clearMessages();
+	loadMessages();
 }
 
 function start() {
@@ -343,7 +343,7 @@ function stop() {
 	typing = true;
 };
 
-function submitThought() {
+function submitMessage() {
 	if (form.elements["text"].value.length <= 0) {
 		return false;
 	}
@@ -357,7 +357,7 @@ function submitThought() {
 		return false;
 	}
  
-	return postThought();
+	return postMessage();
 };
 
 function tagText(text) {

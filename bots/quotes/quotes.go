@@ -16,7 +16,7 @@ func init() {
 }
 
 func think(stream, text string) {
-	http.PostForm("http://127.0.0.1:9090/thoughts", url.Values{
+	http.PostForm("http://127.0.0.1:9090/messages", url.Values{
 		"text":   []string{text},
 		"stream": []string{stream},
 	})
