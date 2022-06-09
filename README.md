@@ -24,9 +24,9 @@ malten in memory on most servers.
 
 ## Roadmap
 
-- Websocket support
-- Client side encryption
-- Configurable stream TTL
+- [ ] Websocket support
+- [ ] Client side encryption
+- [ ] Configurable stream TTL
 
 ## Usage
 
