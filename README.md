@@ -32,7 +32,7 @@ go get github.com/asim/malten && malten
 
 Or download the latest release binary
 
-https://github.com/asim/malten/releases/latest
+- https://github.com/asim/malten/releases/latest
 
 ## API
 
