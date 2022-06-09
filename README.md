@@ -34,7 +34,7 @@ Params for messages
 stream: string e.g stream=foo
 limit: integer e.g limit=25
 direction: integer e.g direction=1 or direction=-1
-last: integer e.g last=1652035113591000000
+last: timestamp e.g last=1652035113591000000
 ```
 
 An example retrieval
