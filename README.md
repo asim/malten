@@ -12,12 +12,12 @@ can only ever be 1000 streams at any given time. Streams can be discovered throu
 
 Most messaging services today are storing the messages on a server. Even when they are deleted, it's likely those messages are 
 still stored somewhere or the data was at one point in time backed up. Services like WhatsApp and Signal might be secure or 
-encrypted but still continue to persist data. Many of the services are also run by giant tech corporations. We need a simple 
-and secure self hostable alternative. 
+encrypted but still continue to persist data on the client. Many of the services are also run by giant tech corporations. 
+We need a simple and secure self hostable alternative. 
 
 ## Design
 
-Everything is stored in memory, nothing is ever written to disk. This is to ensure security of the service. We do not want to 
+Malten stores everything in memory, nothing is ever written to disk. This is to ensure privacy and security. We do not want to 
 persist and ideally also want to encrypt messages client side in future. Streams are maintained as an LRU to ensure once the 
 1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can comfortably run 
 malten in memory on most servers.
