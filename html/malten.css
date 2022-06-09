@@ -73,10 +73,10 @@ ul li {
   float: right;
 }
 
-#speak {
+#think {
   margin: 30px 0 30px;
 }
-#speak input {
+#think input {
   width: 100%;
   font-size: 1.2em;
   -webkit-box-sizing: border-box;
