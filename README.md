@@ -1,10 +1,10 @@
 # Malten
 
-Anonymous ephemeral messaging
+Private ephemeral messaging
 
 ## Overview
 
-Malten is a secure ephemeral messaging service. It contains solely streams of text and nothing else. 
+Malten is a private ephemeral messaging service. It contains solely streams of text and nothing else. 
 Messages have a lifetime of 24 hours. Each stream supports 1000 messages and 512 characters per message. There 
 can only ever be 1000 streams at any given time. Streams can be discovered through exploration or by listing them via the API.
 
