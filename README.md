@@ -24,6 +24,8 @@ malten in memory on most servers.
 
 ## Usage
 
+Malten is written in Go. Use the Go toolchain to install it.
+
 ```
 go get github.com/asim/malten && malten
 ```
