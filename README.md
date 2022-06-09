@@ -40,9 +40,7 @@ Or download the latest release binary
 
 - https://github.com/asim/malten/releases/latest
 
-Malten is a self executable, simply do `./malten`
-
-Listens on port 9090
+Malten is a self executable, simply do `./malten` and go to `localhost:9090`
 
 ## API
 
