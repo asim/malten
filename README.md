@@ -20,7 +20,8 @@ We need a simple and secure self hostable alternative.
 Malten keeps everything in memory, nothing is ever written to disk or a database. This is to ensure privacy and security. We 
 do not want to persist data and ideally also want to encrypt messages client side in future. Streams are maintained as an LRU 
 to ensure once the 1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can 
-comfortably run malten in memory on most servers.
+comfortably run malten in memory on most servers. And of course each message has a TTL so they are removed from memory after 24 
+hours.
 
 ## Roadmap
 
