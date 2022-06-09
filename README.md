@@ -1,6 +1,6 @@
 # Malten
 
-Secure ephmeral messaging
+Secure ephemeral messaging
 
 ## Overview
 
