@@ -80,7 +80,7 @@ POST /messages?stream=foo&text=helloworld
 
 ## Web
 
-Go to https://malten.com
+Live server https://malten.com
 
 ## Testing 
 
