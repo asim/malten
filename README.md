@@ -22,6 +22,12 @@ persist and ideally also want to encrypt messages client side in future. Streams
 1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can comfortably run 
 malten in memory on most servers.
 
+## Roadmap
+
+- Websocket support
+- Client side encryption
+- Configurable stream TTL
+
 ## Usage
 
 Use the Go toolchain to install
