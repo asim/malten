@@ -40,7 +40,13 @@ Or download the latest release binary
 
 - https://github.com/asim/malten/releases/latest
 
-Malten is a self executable, simply do `./malten` and go to `localhost:9090`
+Malten is a self executable, to run it simply do 
+
+```
+./malten
+```
+
+Browse to `localhost:9090` or host behind an nginx proxy.
 
 ## API
 
