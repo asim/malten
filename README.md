@@ -8,6 +8,13 @@ Malten is designed as a secure ephemeral messaging service. It contains solely s
 Streams are ephemeral, with a lifetime of 24 hours. Each stream supports 1000 messages and 512 characters per message. There 
 can only ever be 1000 streams at any given time. Streams can be discovered through exploration or by listing them via the API.
 
+## Design
+
+Everything is stored in memory, nothing is ever written to disk. This is to ensure security of the service. We do not want to 
+persist and ideally also want to encrypt messages client side in future. Streams are maintained as an LRU to ensure once the 
+1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can comfortable run 
+malten in memory on most servers.
+
 ## Usage
 
 ```
