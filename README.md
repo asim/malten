@@ -22,13 +22,13 @@ To retrieve a list of streams
 GET /streams
 ```
 
-To retrieve thoughts
+To retrieve messages
 
 ```
-GET /thoughts
+GET /messages
 ```
 
-Params for thoughts
+Params for messages
 
 ```
 stream: string e.g stream=foo
@@ -40,16 +40,16 @@ last: integer e.g last=1652035113591000000
 An example retrieval
 
 ```
-GET /thoughts?direction=1&limit=25&last=1652035113591000000&stream=foo
+GET /messages?direction=1&limit=25&last=1652035113591000000&stream=foo
 ```
 
-To create thoughts
+To create messages
 
 ```
-POST /thoughts
+POST /messages
 ```
 
-Params for thoughts
+Params for messages
 
 ```
 stream: string e.g stream=foo
@@ -59,7 +59,7 @@ text: string e.g text=helloworld
 An example
 
 ```
-POST /thoughts?stream=foo&text=helloworld
+POST /messages?stream=foo&text=helloworld
 ```
 
 ## Web
