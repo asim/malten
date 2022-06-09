@@ -30,7 +30,7 @@ Use the Go toolchain to install
 go get github.com/asim/malten && malten
 ```
 
-Download the latest release binary
+Or download the latest release binary
 
 https://github.com/asim/malten/releases/latest
 
