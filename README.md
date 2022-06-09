@@ -24,6 +24,7 @@ malten in memory on most servers.
 
 ## Roadmap
 
+- [ ] Decentralisation
 - [ ] Websocket support
 - [ ] Client side encryption
 - [ ] Configurable stream TTL
