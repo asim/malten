@@ -12,7 +12,7 @@ can only ever be 1000 streams at any given time. Streams can be discovered throu
 
 Everything is stored in memory, nothing is ever written to disk. This is to ensure security of the service. We do not want to 
 persist and ideally also want to encrypt messages client side in future. Streams are maintained as an LRU to ensure once the 
-1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can comfortable run 
+1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can comfortably run 
 malten in memory on most servers.
 
 ## Usage
