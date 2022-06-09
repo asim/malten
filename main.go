@@ -65,7 +65,7 @@ type Server struct {
 var html embed.FS
 
 var (
-	C = newServer()
+	S = newServer()
 )
 
 func init() {
@@ -179,7 +179,7 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 		stream = defaultStream
 	}
 
-	messages := C.Retrieve(message, stream, direction, last, limit)
+	messages := S.Retrieve(message, stream, direction, last, limit)
 	b, _ := json.Marshal(messages)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
@@ -187,7 +187,7 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 
 func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	b, _ := json.Marshal(C.List())
+	b, _ := json.Marshal(S.List())
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
 }
@@ -213,7 +213,7 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	select {
-	case C.Updates <- newMessage(message, stream):
+	case S.Updates <- newMessage(message, stream):
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating message", 504)
 	}
@@ -346,7 +346,7 @@ func (c *Server) Retrieve(message string, streem string, direction, last, limit 
 	return []*Message{}
 }
 
-func (c *Server) Think() {
+func (c *Server) Start() {
 	t1 := time.NewTicker(time.Hour)
 	t2 := time.NewTicker(time.Minute)
 	streams := make(map[string]int64)
@@ -381,7 +381,7 @@ func (c *Server) Think() {
 }
 
 func main() {
-	go C.Think()
+	go S.Start()
 
 	htmlContent, err := fs.Sub(html, "html")
 	if err != nil {
