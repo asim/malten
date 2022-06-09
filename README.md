@@ -8,6 +8,13 @@ Malten is a secure ephemeral messaging service. It contains solely streams of te
 Streams are ephemeral, with a lifetime of 24 hours. Each stream supports 1000 messages and 512 characters per message. There 
 can only ever be 1000 streams at any given time. Streams can be discovered through exploration or by listing them via the API.
 
+## Rationale
+
+Most messaging services today are storing the messages on a server. Even when they are deleted, it's likely those messages are 
+still stored somewhere or the data was at one point in time backed up. Services like WhatsApp and Signal might be secure or 
+encrypted but still continue to persist data. Many of the services are run by giant corporations. A self-hosted alternatve 
+makes a lot of sense if kept simple.
+
 ## Design
 
 Everything is stored in memory, nothing is ever written to disk. This is to ensure security of the service. We do not want to 
