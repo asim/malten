@@ -46,7 +46,7 @@ Malten is a self executable, to run it simply do
 ./malten
 ```
 
-Browse to `localhost:9090` or host behind an nginx proxy.
+Browse to `localhost:9090` or host behind an nginx proxy
 
 ## API
 
