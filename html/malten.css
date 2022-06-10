@@ -67,7 +67,7 @@ ul li {
 }
 #main {
   margin: 0 auto;
-  max-width: 600px;
+  max-width: 1024px;
 }
 #nav {
   float: right;

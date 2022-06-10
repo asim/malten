@@ -11,12 +11,12 @@
       <div id="head">
         <a href="/"><img src="logo.jpg" style="width:20px;height:20px;vertical-align:middle;"/></a> <a href="/" id="current">malten</a>
 	<span id="nav">
-	  goto <b>#</b><form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
+	  <b>#</b><form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
 	</span>
       </div>
       <div id="think">
         <form action="/messages" method="post" id="form" onsubmit="return submitMessage(this);">
-          <input id="text" name="text" value="" placeholder="What's on your mind?" maxlength="500" autocomplete="off" autofocus>
+          <input id="text" name="text" value="" placeholder="Speak your mind" maxlength="500" autocomplete="off" autofocus>
           <input id="stream" name="stream" type="hidden">
         </form>
         <div id="controls">
