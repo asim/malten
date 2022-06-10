@@ -4,26 +4,27 @@ Anonymous ephemeral messaging
 
 ## Overview
 
-Malten is a secure ephemeral messaging service. It contains solely streams of text and nothing else. 
+Malten is an ephemeral messaging service. It contains solely streams of text and nothing else. 
 Messages have a lifetime of 24 hours. Each stream supports 1000 messages and 512 characters per message. There 
-can only ever be 1000 streams at any given time. Streams can be discovered through exploration or by listing them via the API.
+can only ever be 1000 streams at any given time. Streams can be discovered through exploration or listing via the API.
 
 ## Rationale
 
-Most messaging services today are storing the messages on a server. Even when they are deleted, it's likely those messages are 
+Most messaging services today store the messages on a server. Even when they are deleted, it's likely those messages are 
 still stored somewhere or the data was at one point in time backed up. Services like WhatsApp and Signal might be secure or 
-encrypted but still continue to persist data. Many of the services are also run by giant tech corporations. We need a simple 
-and secure self hostable alternative. 
+encrypted but still continue to persist data on the client. Many of the services are also run by giant tech corporations. 
+We need a simple and secure self hostable alternative. 
 
 ## Design
 
-Everything is stored in memory, nothing is ever written to disk. This is to ensure security of the service. We do not want to 
-persist and ideally also want to encrypt messages client side in future. Streams are maintained as an LRU to ensure once the 
-1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can comfortably run 
-malten in memory on most servers.
+Malten keeps everything in memory, nothing is ever written to disk or a database. This is to ensure privacy and security. We 
+do not want to persist data and ideally also want to encrypt messages on the client side. Streams are maintained as an LRU 
+to ensure once the 1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can 
+comfortably run malten in memory on most servers. 
 
 ## Roadmap
 
+- [ ] Decentralisation
 - [ ] Websocket support
 - [ ] Client side encryption
 - [ ] Configurable stream TTL
@@ -56,7 +57,7 @@ To retrieve a list of streams
 GET /streams
 ```
 
-To retrieve messages
+To retrieve messages for a stream
 
 ```
 GET /messages
