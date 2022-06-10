@@ -57,7 +57,7 @@ To retrieve a list of streams
 GET /streams
 ```
 
-To retrieve messages
+To retrieve messages for a stream
 
 ```
 GET /messages
