@@ -24,10 +24,10 @@ import (
 
 const (
 	defaultStream  = "_"
-	maxMessageSize = 512
-	maxMessages    = 1000
-	maxStreams     = 1000
-	streamTTL      = 8.64e13
+	maxMessageSize = 1024
+	maxMessages    = 1024
+	maxStreams     = 1024
+	streamTTL      = 1024
 )
 
 type Metadata struct {

@@ -5,8 +5,8 @@ Anonymous ephemeral messaging
 ## Overview
 
 Malten is an ephemeral messaging service. It contains solely streams of text and nothing else. 
-Messages have a lifetime of 24 hours. Each stream supports 1000 messages and 512 characters per message. There 
-can only ever be 1000 streams at any given time. Streams can be discovered through exploration or listing via the API.
+Messages have a lifetime of 1024 seconds. Each stream supports 1024 messages and 1024 characters per message. There 
+can only ever be 1024 streams at any given time. Streams can be discovered through exploration or listing via the API.
 
 ## Rationale
 
@@ -19,7 +19,7 @@ We need a simple and secure self hostable alternative.
 
 Malten keeps everything in memory, nothing is ever written to disk or a database. This is to ensure privacy and security. We 
 do not want to persist data and ideally also want to encrypt messages on the client side. Streams are maintained as an LRU 
-to ensure once the 1000 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can 
+to ensure once the 1024 stream cap is hit that we age out the oldest. Limits in streams, messages and char length ensure we can 
 comfortably run malten in memory on most servers. 
 
 ## Roadmap
