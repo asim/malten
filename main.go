@@ -27,7 +27,7 @@ const (
 	maxMessageSize = 1024
 	maxMessages    = 1024
 	maxStreams     = 1024
-	streamTTL      = 1024
+	streamTTL      = time.Duration(1024) * time.Second
 )
 
 type Metadata struct {
@@ -446,14 +446,14 @@ func (c *Server) Start() {
 		case <-t1.C:
 			now := time.Now().UnixNano()
 			for stream, v := range streams {
-				if d := now - v.Updated; d > streamTTL {
+				if d := now - v.Updated; d > streamTTL.Nanoseconds() {
 					c.Streams.Remove(stream)
 					delete(streams, stream)
 				}
 			}
 			c.mtx.Lock()
 			for metadata, g := range c.metadata {
-				if d := now - g.Created; d > streamTTL {
+				if d := now - g.Created; d > streamTTL.Nanoseconds() {
 					delete(c.metadata, metadata)
 				}
 			}
