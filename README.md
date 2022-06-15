@@ -51,6 +51,19 @@ Browse to `localhost:9090` or host behind an nginx proxy
 
 ## API
 
+To create a new stream
+
+```
+POST /streams
+```
+
+Params used
+
+```
+stream: string e.g stream=foo
+private: bool e.g private=true
+```
+
 To retrieve a list of streams
 
 ```
