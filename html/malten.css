@@ -91,6 +91,10 @@ ul li {
   font-weight: normal;
   text-decoration: none;
 }
+#private {
+  vertical-align: middle;
+  margin-bottom: 4px;
+}
 .animation img, .image img {
   width: 100%;
   height: auto;
