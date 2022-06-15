@@ -24,7 +24,7 @@ comfortably run malten in memory on most servers.
 
 ## Roadmap
 
-- [ ] Secure Pipes - Synchronous stream between 2 parties
+- [ ] Secure Pipes - Synchronous stream between 2 users
 - [ ] Decentralisation - Interconnect multiple Malten servers
 - [ ] Websocket support - Real time messaging directly to the browser
 - [ ] Client side encryption - AES-256 on the user side so we never see the data
