@@ -294,7 +294,7 @@ func (c *Server) NewStream(name string, private bool) error {
 	}
 
 	c.streams[name] = &Stream{
-		Id: stream.Id,
+		Id:      stream.Id,
 		Updated: stream.Updated,
 	}
 
@@ -430,8 +430,7 @@ func (c *Server) Retrieve(message string, streem string, direction, last, limit 
 }
 
 func (c *Server) Start() {
-	t1 := time.NewTicker(time.Hour)
-	t2 := time.NewTicker(time.Minute)
+	t1 := time.NewTicker(time.Minute)
 	streams := make(map[string]*Stream)
 
 	for {
@@ -458,9 +457,6 @@ func (c *Server) Start() {
 					delete(c.metadata, metadata)
 				}
 			}
-			c.mtx.Unlock()
-		case <-t2.C:
-			c.mtx.Lock()
 			c.streams = streams
 			c.mtx.Unlock()
 		}
