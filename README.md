@@ -24,10 +24,11 @@ comfortably run malten in memory on most servers.
 
 ## Roadmap
 
-- [ ] Decentralisation
-- [ ] Websocket support
-- [ ] Client side encryption
-- [ ] Configurable stream TTL
+- [ ] Secure Pipes - Synchronous stream between 2 parties
+- [ ] Decentralisation - Interconnect multiple Malten servers
+- [ ] Websocket support - Real time messaging directly to the browser
+- [ ] Client side encryption - AES-256 on the user side so we never see the data
+- [ ] Configurable stream TTL - Per stream configuration to increase or decrease for DMs or Notes
 
 ## Usage
 
