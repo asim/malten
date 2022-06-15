@@ -3,42 +3,25 @@
   <head>
     <meta http-equiv="content-language" content="en">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>Malten</title>
+    <title>New | Malten</title>
     <link rel="stylesheet" type="text/css" href="malten.css?v0.32.0">
   </head>
-  <body onhashchange="showMessages();">
+  <body>
     <div id="main">
       <div id="head">
         <a href="/"><img src="logo.jpg" style="width:20px;height:20px;vertical-align:middle;"/></a> <a href="/" id="current">malten</a>
-	<span id="nav">
-	  <b><a href="/new" id="new">new</a></b> | 
-	  <b>goto #</b><form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
-	</span>
       </div>
-      <div id="think">
-        <form action="/messages" method="post" id="form" onsubmit="return submitMessage(this);">
-          <input id="text" name="text" value="" placeholder="Speak your mind" maxlength="500" autocomplete="off" autofocus>
-          <input id="stream" name="stream" type="hidden">
+      <div id="new">
+        <h4>New stream</h4>
+        <form action="/streams" method="post" id="new-form" onsubmit="return newStream(this);">
+          <p><input id="stream" name="stream" type="text" placeholder="stream"></p>
+          <p>make private <input type="radio" id="private" name="private" value="private"></p>
+          <button>submit</button>
         </form>
-        <div id="controls">
-          <span id="chars">500</span>
-        </div>
-      </div>
-      <div>
-        <ul id="messages"></ul>
       </div>
     </div>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
-    <script src="malten.js?v=0.31.0"></script>
-    <script type="text/javascript">
-	$(document).ready(function() {
-            setCurrent();
-	    getStreams();
-	    loadListeners();
-	    pollMessages();
-	    pollTimestamps();
-	});
-    </script>
+    <script src="/malten.js?v=0.39.0"></script>
   <script>
   (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
   (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),

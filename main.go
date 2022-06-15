@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -40,6 +43,7 @@ type Metadata struct {
 type Stream struct {
 	Id       string
 	Messages []*Message
+	Private  bool
 	Updated  int64
 }
 
@@ -57,7 +61,7 @@ type Server struct {
 
 	mtx      sync.RWMutex
 	Streams  *lru.Cache
-	streams  map[string]int64
+	streams  map[string]*Stream
 	metadata map[string]*Metadata
 }
 
@@ -65,6 +69,8 @@ type Server struct {
 var html embed.FS
 
 var (
+	alphanum = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
 	S = newServer()
 )
 
@@ -72,19 +78,33 @@ func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
+// random generate i length alphanum string
+func random(i int) string {
+	bytes := make([]byte, i)
+	for {
+		rand.Read(bytes)
+		for i, b := range bytes {
+			bytes[i] = alphanum[b%byte(len(alphanum))]
+		}
+		return string(bytes)
+	}
+	return uuid.New().String()
+}
+
 func newServer() *Server {
 	return &Server{
 		Created:  time.Now().UnixNano(),
 		Streams:  lru.New(maxStreams),
 		Updates:  make(chan *Message, 100),
-		streams:  make(map[string]int64),
+		streams:  make(map[string]*Stream),
 		metadata: make(map[string]*Metadata),
 	}
 }
 
-func newStream(id string) *Stream {
+func newStream(id string, private bool) *Stream {
 	return &Stream{
 		Id:      id,
+		Private: private,
 		Updated: time.Now().UnixNano(),
 	}
 }
@@ -187,9 +207,48 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 
 func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	b, _ := json.Marshal(S.List())
+
+	streams := make(map[string]int64)
+	for k, v := range S.List() {
+		if v.Private {
+			continue
+		}
+		streams[k] = v.Updated
+	}
+	b, _ := json.Marshal(streams)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
+}
+
+func newStreamHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	stream := r.Form.Get("stream")
+	private := r.Form.Get("private")
+
+	if len(stream) == 0 {
+		stream = random(8)
+	}
+
+	if len(private) == 0 {
+		private = "false"
+	}
+
+	p, _ := strconv.ParseBool(private)
+
+	if err := S.NewStream(stream, p); err != nil {
+		http.Error(w, "Cannot create stream", 500)
+		return
+	}
+
+	data := map[string]interface{}{
+		"stream":  stream,
+		"private": p,
+	}
+	b, _ := json.Marshal(data)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
 }
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
@@ -219,6 +278,29 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (c *Server) NewStream(name string, private bool) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	if _, ok := c.Streams.Get(name); ok {
+		return errors.New("already exists")
+	}
+
+	stream := newStream(name, private)
+	c.Streams.Add(name, stream)
+
+	if private {
+		return nil
+	}
+
+	c.streams[name] = &Stream{
+		Id: stream.Id,
+		Updated: stream.Updated,
+	}
+
+	return nil
+}
+
 func (c *Server) Metadata(t *Message) {
 	parts := strings.Split(t.Text, " ")
 	for _, part := range parts {
@@ -233,14 +315,14 @@ func (c *Server) Metadata(t *Message) {
 	}
 }
 
-func (c *Server) List() map[string]int64 {
+func (c *Server) List() map[string]*Stream {
 	c.mtx.RLock()
 	streams := c.streams
 	c.mtx.RUnlock()
 	return streams
 }
 
-func (c *Server) Save(message *Message) {
+func (c *Server) Save(message *Message) *Stream {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -249,7 +331,7 @@ func (c *Server) Save(message *Message) {
 	if object, ok := c.Streams.Get(message.Stream); ok {
 		stream = object.(*Stream)
 	} else {
-		stream = newStream(message.Stream)
+		stream = newStream(message.Stream, false)
 		c.Streams.Add(message.Stream, stream)
 	}
 
@@ -258,6 +340,7 @@ func (c *Server) Save(message *Message) {
 		stream.Messages = stream.Messages[1:]
 	}
 	stream.Updated = time.Now().UnixNano()
+	return stream
 }
 
 func (c *Server) Retrieve(message string, streem string, direction, last, limit int64) []*Message {
@@ -349,18 +432,22 @@ func (c *Server) Retrieve(message string, streem string, direction, last, limit 
 func (c *Server) Start() {
 	t1 := time.NewTicker(time.Hour)
 	t2 := time.NewTicker(time.Minute)
-	streams := make(map[string]int64)
+	streams := make(map[string]*Stream)
 
 	for {
 		select {
 		case message := <-c.Updates:
-			c.Save(message)
-			streams[message.Stream] = time.Now().UnixNano()
+			stream := c.Save(message)
+			streams[message.Stream] = &Stream{
+				Id:      stream.Id,
+				Private: stream.Private,
+				Updated: stream.Updated,
+			}
 			go c.Metadata(message)
 		case <-t1.C:
 			now := time.Now().UnixNano()
-			for stream, u := range streams {
-				if d := now - u; d > streamTTL {
+			for stream, v := range streams {
+				if d := now - v.Updated; d > streamTTL {
 					c.Streams.Remove(stream)
 					delete(streams, stream)
 				}
@@ -391,10 +478,27 @@ func main() {
 	// serve the html directory by default
 	http.Handle("/", http.FileServer(http.FS(htmlContent)))
 
+	http.HandleFunc("/new", func(w http.ResponseWriter, r *http.Request) {
+		f, err := htmlContent.Open("new.html")
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		b, err := ioutil.ReadAll(f)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(b)
+	})
+
 	http.HandleFunc("/streams", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
 			getStreamsHandler(w, r)
+		case "POST":
+			newStreamHandler(w, r)
 		default:
 			http.Error(w, "unsupported method "+r.Method, 400)
 		}

@@ -202,6 +202,23 @@ function gotoStream(t) {
 	return false;
 };
 
+function newStream() {
+	var form = document.getElementById('new-form');
+ 	var priv = document.getElementById("private").checked;
+	var stream = form.elements["stream"].value;
+
+        $.post(streamUrl, {stream: stream, private: priv })
+          .done(function(data) {
+             window.location = location.protocol + '//' + location.host + '/#' + data.stream;
+	     return false;
+           })
+          .fail(function() {
+             alert( "error creating stream" );
+	     return false;
+          })
+	return false;
+}
+
 function loadGif(q) {
 	var xhr = $.get("http://api.giphy.com/v1/gifs/search?q="+q+"&api_key=dc6zaTOxFJmzC");
 	xhr.done(function(data) {
