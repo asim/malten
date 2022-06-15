@@ -236,7 +236,7 @@ func newStreamHandler(w http.ResponseWriter, r *http.Request) {
 
 	p, _ := strconv.ParseBool(private)
 
-	if err := S.NewStream(stream, p); err != nil {
+	if err := S.New(stream, p); err != nil {
 		http.Error(w, "Cannot create stream", 500)
 		return
 	}
@@ -278,24 +278,24 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (c *Server) NewStream(name string, private bool) error {
+func (c *Server) New(stream string, private bool) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	if _, ok := c.Streams.Get(name); ok {
+	if _, ok := c.Streams.Get(stream); ok {
 		return errors.New("already exists")
 	}
 
-	stream := newStream(name, private)
-	c.Streams.Add(name, stream)
+	s := newStream(stream, private)
+	c.Streams.Add(stream, s)
 
 	if private {
 		return nil
 	}
 
-	c.streams[name] = &Stream{
-		Id:      stream.Id,
-		Updated: stream.Updated,
+	c.streams[stream] = &Stream{
+		Id:      s.Id,
+		Updated: s.Updated,
 	}
 
 	return nil
