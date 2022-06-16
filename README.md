@@ -27,7 +27,7 @@ and each stream limits the number of messages and char length to ensure we can c
 - [ ] Decentralisation - Interconnect multiple Malten servers
 - [ ] Websocket support - Real time messaging directly to the browser
 - [ ] Client side encryption - AES-256 on the user side so we never see the data
-- [ ] Configurable stream TTL - Per stream configuration to increase or decrease for DMs or Notes
+- [x] Configurable stream TTL - Per stream configuration to increase or decrease for DMs or Notes
 
 ## Usage
 
