@@ -206,8 +206,9 @@ function newStream() {
 	var form = document.getElementById('new-form');
  	var priv = document.getElementById("private").checked;
 	var stream = form.elements["stream"].value;
+	var ttl = form.elements["ttl"].value
 
-        $.post(streamUrl, {stream: stream, private: priv })
+        $.post(streamUrl, {stream: stream, private: priv, ttl: ttl })
           .done(function(data) {
              window.location = location.protocol + '//' + location.host + '/#' + data.stream;
 	     return false;

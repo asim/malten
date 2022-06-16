@@ -14,8 +14,9 @@
       <div id="new">
         <h4>New stream</h4>
         <form action="/streams" method="post" id="new-form" onsubmit="return newStream(this);">
-          <p><input id="stream" name="stream" type="text" placeholder="stream"></p>
-          <p>make private <input type="radio" id="private" name="private" value="private"></p>
+          <p>name: <input id="stream" name="stream" type="text" placeholder="stream (optional)"></p>
+          <p>ttl: <input id="ttl" name="ttl" type="text" placeholder="seconds (optional)"></p>
+          <p>private? yes: <input type="radio" id="private" name="private" value="true"></p>
           <button>submit</button>
         </form>
       </div>

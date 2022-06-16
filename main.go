@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/golang/groupcache/lru"
 	"github.com/google/uuid"
 )
 
@@ -26,7 +25,6 @@ const (
 	defaultStream  = "_"
 	maxMessageSize = 1024
 	maxMessages    = 1024
-	maxStreams     = 1024
 	streamTTL      = time.Duration(1024) * time.Second
 )
 
@@ -44,7 +42,10 @@ type Stream struct {
 	Id       string
 	Messages []*Message
 	Private  bool
-	Updated  int64
+	// In nanoseconds
+	Updated int64
+	// In seconds
+	TTL int64
 }
 
 type Message struct {
@@ -60,7 +61,6 @@ type Server struct {
 	Updates chan *Message
 
 	mtx      sync.RWMutex
-	Streams  *lru.Cache
 	streams  map[string]*Stream
 	metadata map[string]*Metadata
 }
@@ -94,18 +94,18 @@ func random(i int) string {
 func newServer() *Server {
 	return &Server{
 		Created:  time.Now().UnixNano(),
-		Streams:  lru.New(maxStreams),
 		Updates:  make(chan *Message, 100),
 		streams:  make(map[string]*Stream),
 		metadata: make(map[string]*Metadata),
 	}
 }
 
-func newStream(id string, private bool) *Stream {
+func newStream(id string, private bool, ttl int) *Stream {
 	return &Stream{
 		Id:      id,
 		Private: private,
 		Updated: time.Now().UnixNano(),
+		TTL:     (time.Duration(ttl) * time.Second).Nanoseconds(),
 	}
 }
 
@@ -209,12 +209,15 @@ func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
 	streams := make(map[string]int64)
+
 	for k, v := range S.List() {
+		// only return public streams
 		if v.Private {
 			continue
 		}
 		streams[k] = v.Updated
 	}
+
 	b, _ := json.Marshal(streams)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
@@ -224,26 +227,26 @@ func newStreamHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
 	stream := r.Form.Get("stream")
-	private := r.Form.Get("private")
+	private, _ := strconv.ParseBool(r.Form.Get("private"))
+	ttl, _ := strconv.Atoi(r.Form.Get("ttl"))
 
 	if len(stream) == 0 {
 		stream = random(8)
 	}
 
-	if len(private) == 0 {
-		private = "false"
+	if ttl <= 0 {
+		ttl = int(streamTTL.Seconds())
 	}
 
-	p, _ := strconv.ParseBool(private)
-
-	if err := S.New(stream, p); err != nil {
+	if err := S.New(stream, private, ttl); err != nil {
 		http.Error(w, "Cannot create stream", 500)
 		return
 	}
 
 	data := map[string]interface{}{
 		"stream":  stream,
-		"private": p,
+		"private": private,
+		"ttl":     ttl,
 	}
 	b, _ := json.Marshal(data)
 
@@ -278,25 +281,16 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (c *Server) New(stream string, private bool) error {
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
+func (s *Server) New(stream string, private bool, ttl int) error {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 
-	if _, ok := c.Streams.Get(stream); ok {
+	if _, ok := s.streams[stream]; ok {
 		return errors.New("already exists")
 	}
 
-	s := newStream(stream, private)
-	c.Streams.Add(stream, s)
-
-	if private {
-		return nil
-	}
-
-	c.streams[stream] = &Stream{
-		Id:      s.Id,
-		Updated: s.Updated,
-	}
+	str := newStream(stream, private, ttl)
+	s.streams[str.Id] = str
 
 	return nil
 }
@@ -322,17 +316,15 @@ func (c *Server) List() map[string]*Stream {
 	return streams
 }
 
-func (c *Server) Save(message *Message) *Stream {
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
+func (s *Server) Save(message *Message) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 
-	var stream *Stream
-
-	if object, ok := c.Streams.Get(message.Stream); ok {
-		stream = object.(*Stream)
-	} else {
-		stream = newStream(message.Stream, false)
-		c.Streams.Add(message.Stream, stream)
+	// check the listing thing
+	stream, ok := s.streams[message.Stream]
+	if !ok {
+		stream = newStream(message.Stream, false, int(streamTTL.Seconds()))
+		s.streams[stream.Id] = stream
 	}
 
 	stream.Messages = append(stream.Messages, message)
@@ -340,7 +332,6 @@ func (c *Server) Save(message *Message) *Stream {
 		stream.Messages = stream.Messages[1:]
 	}
 	stream.Updated = time.Now().UnixNano()
-	return stream
 }
 
 func (c *Server) Retrieve(message string, streem string, direction, last, limit int64) []*Message {
@@ -349,9 +340,8 @@ func (c *Server) Retrieve(message string, streem string, direction, last, limit 
 
 	var stream *Stream
 
-	if object, ok := c.Streams.Get(streem); ok {
-		stream = object.(*Stream)
-	} else {
+	stream, ok := c.streams[streem]
+	if !ok {
 		return []*Message{}
 	}
 
@@ -429,42 +419,43 @@ func (c *Server) Retrieve(message string, streem string, direction, last, limit 
 	return []*Message{}
 }
 
-func (c *Server) Start() {
-	t1 := time.NewTicker(time.Minute)
-	streams := make(map[string]*Stream)
+func (s *Server) Run() {
+	t1 := time.NewTicker(time.Second)
 
 	for {
 		select {
-		case message := <-c.Updates:
-			stream := c.Save(message)
-			streams[message.Stream] = &Stream{
-				Id:      stream.Id,
-				Private: stream.Private,
-				Updated: stream.Updated,
-			}
-			go c.Metadata(message)
+		case message := <-s.Updates:
+			s.Save(message)
+			go s.Metadata(message)
 		case <-t1.C:
 			now := time.Now().UnixNano()
-			for stream, v := range streams {
-				if d := now - v.Updated; d > streamTTL.Nanoseconds() {
-					c.Streams.Remove(stream)
-					delete(streams, stream)
-				}
-			}
-			c.mtx.Lock()
-			for metadata, g := range c.metadata {
+
+			s.mtx.Lock()
+
+			// delete the metadata
+			for metadata, g := range s.metadata {
 				if d := now - g.Created; d > streamTTL.Nanoseconds() {
-					delete(c.metadata, metadata)
+					delete(s.metadata, metadata)
 				}
 			}
-			c.streams = streams
-			c.mtx.Unlock()
+
+			// TODO: make a copy and replace the map as its not GC'ed
+			for name, stream := range s.streams {
+				// time since last update in nano seconds
+				d := now - stream.Updated
+				// delete older than the TTL
+				if d > stream.TTL {
+					delete(s.streams, name)
+				}
+			}
+
+			s.mtx.Unlock()
 		}
 	}
 }
 
 func main() {
-	go S.Start()
+	go S.Run()
 
 	htmlContent, err := fs.Sub(html, "html")
 	if err != nil {
