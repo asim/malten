@@ -4,9 +4,9 @@ Anonymous ephemeral messaging
 
 ## Overview
 
-Malten is an ephemeral messaging service. It contains solely streams of text and nothing else. 
-Messages have a lifetime of 1024 seconds. Each stream supports 1024 messages and 1024 characters per message. There 
-can only ever be 1024 streams at any given time. Streams can be discovered through exploration or listing via the API.
+Malten is an ephemeral messaging service. It contains solely streams of text and nothing more. 
+Streams have an idle lifetime of 1024 seconds. Each stream supports 1024 messages as a FIFO and 
+1024 characters per message. Streams can be discovered through exploration or via the API. 
 
 ## Rationale
 
