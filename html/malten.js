@@ -316,7 +316,7 @@ function pollMessages() {
 
 	setTimeout(function() {
 	    pollMessages();
-	}, 1000);
+	}, 100);
 };
 
 function pollTimestamps() {
@@ -324,7 +324,7 @@ function pollTimestamps() {
 
 	setTimeout(function() {
 	    pollTimestamps();
-	}, 60000);
+	}, 10000);
 };
 
 
