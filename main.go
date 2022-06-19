@@ -58,7 +58,7 @@ type Message struct {
 
 type Server struct {
 	Created int64
-	Updates chan *Message
+	Events  chan *Message
 
 	mtx      sync.RWMutex
 	streams  map[string]*Stream
@@ -94,7 +94,7 @@ func random(i int) string {
 func newServer() *Server {
 	return &Server{
 		Created:  time.Now().UnixNano(),
-		Updates:  make(chan *Message, 100),
+		Events:   make(chan *Message, 100),
 		streams:  make(map[string]*Stream),
 		metadata: make(map[string]*Metadata),
 	}
@@ -275,7 +275,7 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	select {
-	case S.Updates <- newMessage(message, stream):
+	case S.Events <- newMessage(message, stream):
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating message", 504)
 	}
@@ -424,7 +424,7 @@ func (s *Server) Run() {
 
 	for {
 		select {
-		case message := <-s.Updates:
+		case message := <-s.Events:
 			s.Save(message)
 			go s.Metadata(message)
 		case <-t1.C:
