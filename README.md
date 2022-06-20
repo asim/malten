@@ -24,7 +24,7 @@ and each stream limits the number of messages and char length to ensure we can c
 ## Roadmap
 
 - [ ] Presence - User presence status
-- [ ] Secure Pipes - Synchronous stream between 2 users
+- [ ] Secure Pipes - Stream between two users
 - [ ] Decentralisation - Interconnect multiple Malten servers
 - [ ] Websocket support - Real time messaging directly to the browser
 - [ ] Client side encryption - AES-256 on the user side so we never see the data
