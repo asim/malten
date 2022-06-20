@@ -340,7 +340,7 @@ function setCurrent(text) {
 	current.href = window.location.href;
 
 	if (window.location.hash.length > 0) {
-		current.text = window.location.hash;
+		current.text = window.location.hash.replace('#', '');
 	} else {
 		current.text = "malten";
 	}
