@@ -52,6 +52,10 @@ Browse to `localhost:9090` or host behind an nginx proxy
 
 ## API
 
+Below is a high level overview of the API
+
+### Streams
+
 To create a new stream
 
 ```
@@ -70,6 +74,8 @@ To retrieve a list of streams
 ```
 GET /streams
 ```
+
+### Messages
 
 To retrieve messages for a stream
 
