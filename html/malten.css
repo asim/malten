@@ -86,6 +86,9 @@ ul li {
   border: none;
   border-bottom: 2px solid #EEEFF0;
 }
+#think button {
+  float: right;
+}
 #messages a {
   color: #1763A3;
   font-weight: normal;

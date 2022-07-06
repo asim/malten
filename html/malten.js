@@ -252,6 +252,8 @@ function loadListeners() {
 	document.getElementById("text").addEventListener("keydown", function() {
 		stop();
 	}, false);
+
+	shareListener();
 };
 
 function loadMore() {
@@ -395,3 +397,25 @@ function updateTimestamps() {
 		divs[i].innerHTML = parseDate(time);
 	};
 };
+
+function shareListener() {
+	var shareButton = document.getElementById("share");
+
+	shareButton.addEventListener('click', event => {
+	  event.preventDefault();
+
+	  if (navigator.share) {
+	    navigator.share({
+	      title: 'Malten',
+	      url: window.location.href,
+	    }).then(() => {
+	      console.log('Thanks for sharing!');
+	    })
+	    .catch(console.error);
+	  } else {
+	    // fallback
+	  }
+
+	  return false;
+	});
+}
