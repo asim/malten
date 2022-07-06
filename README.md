@@ -1,6 +1,6 @@
 # Malten
 
-Anonymous ephemeral messaging
+Ephemeral message streaming
 
 ## Overview
 
@@ -119,7 +119,7 @@ POST /messages?stream=foo&text=helloworld
 
 ## Web
 
-Live server https://malten.com
+Live server https://malten.xyz
 
 ## Testing 
 
