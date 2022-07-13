@@ -76,6 +76,9 @@ ul li {
 #think {
   margin: 30px 0 30px;
 }
+#think button:hover {
+  cursor: pointer;
+}
 #think input {
   width: 100%;
   font-size: 1.2em;
@@ -85,9 +88,6 @@ ul li {
   padding: 10px;
   border: none;
   border-bottom: 2px solid #EEEFF0;
-}
-#think button {
-  float: right;
 }
 #messages a {
   color: #1763A3;
