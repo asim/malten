@@ -446,7 +446,21 @@ func (s *Server) Run() {
 				// delete older than the TTL
 				if d > stream.TTL {
 					delete(s.streams, name)
+					stream.Messages = nil
+					continue
 				}
+
+				// expire old messages
+				var messages []*Message
+				for _, message := range stream.Messages {
+					d := now - message.Created
+					if d > stream.TTL {
+						continue
+					}
+					messages = append(messages, message)
+				}
+				// update stream messages
+				stream.Messages = messages
 			}
 
 			s.mtx.Unlock()
