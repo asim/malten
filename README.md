@@ -109,11 +109,3 @@ An example
 ```
 POST /messages?stream=foo&text=helloworld
 ```
-
-## Web
-
-Live server https://malten.xyz
-
-## Testing 
-
-For development http://localhost:9090
