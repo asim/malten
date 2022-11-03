@@ -6,14 +6,7 @@ Ephemeral message streaming
 
 Malten is an ephemeral messaging service. It contains solely streams of text and nothing more. 
 Streams have an idle lifetime of 1024 seconds. Each stream supports 1024 messages as a FIFO and 
-1024 characters per message. Streams can be discovered through exploration or via the API. 
-
-## Rationale
-
-Most messaging services today store the messages on a server. Even when they are deleted, it's likely those messages are 
-still stored somewhere or the data was at one point in time backed up. Services like WhatsApp and Signal might be secure or 
-encrypted but still continue to persist data on the client. Many of the services are also run by giant tech corporations. 
-We need a simple and secure self hostable alternative. 
+1024 characters per message. Streams can be discovered through exploration or via the API.
 
 ## Design
 
@@ -116,11 +109,3 @@ An example
 ```
 POST /messages?stream=foo&text=helloworld
 ```
-
-## Web
-
-Live server https://malten.xyz
-
-## Testing 
-
-For development http://localhost:9090
