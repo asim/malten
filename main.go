@@ -56,13 +56,18 @@ type Message struct {
 	Metadata *Metadata
 }
 
+type Observer struct {
+	Events chan *Message
+}
+
 type Server struct {
 	Created int64
 	Events  chan *Message
 
-	mtx      sync.RWMutex
-	streams  map[string]*Stream
-	metadata map[string]*Metadata
+	mtx       sync.RWMutex
+	streams   map[string]*Stream
+	metadata  map[string]*Metadata
+	observers map[string]*Observer
 }
 
 //go:embed html/*
@@ -93,10 +98,11 @@ func random(i int) string {
 
 func newServer() *Server {
 	return &Server{
-		Created:  time.Now().UnixNano(),
-		Events:   make(chan *Message, 100),
-		streams:  make(map[string]*Stream),
-		metadata: make(map[string]*Metadata),
+		Created:   time.Now().UnixNano(),
+		Events:    make(chan *Message, 100),
+		streams:   make(map[string]*Stream),
+		metadata:  make(map[string]*Metadata),
+		observers: make(map[string]*Observer),
 	}
 }
 
@@ -205,6 +211,46 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, string(b))
 }
 
+func getEvents(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	stream := r.Form.Get("stream")
+	// default stream
+	if len(stream) == 0 {
+		stream = defaultStream
+	}
+
+	o := &Observer{make(chan *Message, 1)}
+	k := make(chan bool)
+
+	defer func() {
+		close(k)
+	}()
+
+	// add self
+	S.Observe(o, k)
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	for message := range o.Events {
+		if len(stream) > 0 && message.Stream != stream {
+			fmt.Println("ignoring", message.Stream, stream)
+			continue
+		}
+
+		b, _ := json.Marshal(message)
+		fmt.Fprintf(w, "data: %v\n\n", string(b))
+
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+}
+
 func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
@@ -281,6 +327,23 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) Broadcast(message *Message) {
+	var observers []*Observer
+
+	s.mtx.RLock()
+	for _, o := range s.observers {
+		observers = append(observers, o)
+	}
+	s.mtx.RUnlock()
+
+	for _, o := range observers {
+		select {
+		case o.Events <- message:
+		default:
+		}
+	}
+}
+
 func (s *Server) New(stream string, private bool, ttl int) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -314,6 +377,20 @@ func (c *Server) List() map[string]*Stream {
 	streams := c.streams
 	c.mtx.RUnlock()
 	return streams
+}
+
+func (c *Server) Observe(o *Observer, kill chan bool) {
+	c.mtx.Lock()
+	id := uuid.New().String()
+	c.observers[id] = o
+	c.mtx.Unlock()
+
+	go func() {
+		<-kill
+		c.mtx.Lock()
+		delete(c.observers, id)
+		c.mtx.Unlock()
+	}()
 }
 
 func (s *Server) Save(message *Message) {
@@ -427,6 +504,7 @@ func (s *Server) Run() {
 		case message := <-s.Events:
 			s.Save(message)
 			go s.Metadata(message)
+			go s.Broadcast(message)
 		case <-t1.C:
 			now := time.Now().UnixNano()
 
@@ -478,6 +556,10 @@ func main() {
 
 	// serve the html directory by default
 	http.Handle("/", http.FileServer(http.FS(htmlContent)))
+
+	http.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		getEvents(w, r)
+	})
 
 	http.HandleFunc("/new", func(w http.ResponseWriter, r *http.Request) {
 		f, err := htmlContent.Open("new.html")

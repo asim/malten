@@ -1,5 +1,6 @@
 var messageUrl = "/messages";
 var streamUrl = "/streams";
+var eventUrl = "/events";
 var limit = 25;
 var last = timeAgo();
 var typing = false;
@@ -7,6 +8,7 @@ var maxChars = 1024;
 var maxMessages = 1000;
 var seen = {};
 var streams = {};
+var source;
 
 String.prototype.parseURL = function(embed) {
 	return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
@@ -237,7 +239,6 @@ function loadListeners() {
 		$.ajaxSetup({isLocal:true});
 	};
 
-
 	$(window).scroll(function() {
 		if($(window).scrollTop() == $(document).height() - $(window).height()) {
 			loadMore();
@@ -309,7 +310,29 @@ function loadMessages() {
 	.done();
 
         return false;
-};
+}
+
+function observeEvents() {
+	var stream = window.location.hash.replace('#', '');
+
+	if (source != undefined) {
+		source.close();
+	}
+
+	source = new EventSource(eventUrl + "?stream=" + stream);
+
+	source.onmessage = (event) => {
+          console.log(event)
+	  if (event.data != undefined && event.data.length > 0) {
+		var events = [];
+		events.push(JSON.parse(event.data));
+          	displayMessages(events, 1);
+		clipMessages();
+	    	updateTimestamps();
+	  }
+	}
+}
+
 
 function pollMessages() {
 	if (typing == false) {
@@ -318,8 +341,8 @@ function pollMessages() {
 
 	setTimeout(function() {
 	    pollMessages();
-	}, 100);
-};
+	}, 5000);
+}
 
 function pollTimestamps() {
 	updateTimestamps();
@@ -353,6 +376,7 @@ function showMessages() {
 	setCurrent();
 	clearMessages();
 	loadMessages();
+	observeEvents();
 }
 
 function start() {
