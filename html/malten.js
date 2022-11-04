@@ -394,10 +394,13 @@ function setCurrent() {
 	}
 
 	var s = streams[stream];
+	var observers = 1;
 
 	if (s != undefined) {
-		present.innerText = "👤 " + s["Observers"];
+		observers = s["Observers"];
 	}
+
+	present.innerText = "👤 " + observers;
 };
 
 function loadStream() {
