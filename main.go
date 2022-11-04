@@ -417,12 +417,6 @@ func (c *Server) Observe(o *Observer) {
 
 	c.mtx.Unlock()
 
-	// announce observer
-	select {
-	case S.Events <- newMessage("user joined", o.Stream):
-	default:
-	}
-
 	go func() {
 		<-o.Kill
 		c.mtx.Lock()
@@ -433,12 +427,6 @@ func (c *Server) Observe(o *Observer) {
 		if ok {
 			s.Observers--
 			c.streams[o.Stream] = s
-		}
-
-		// announce leaving
-		select {
-		case S.Events <- newMessage("user left", o.Stream):
-		default:
 		}
 
 		c.mtx.Unlock()
