@@ -255,6 +255,12 @@ function loadListeners() {
 	}, false);
 
 	shareListener();
+
+	window.addEventListener("beforeunload", function (e) {
+		if (source != undefined) {
+			source.close;
+		}
+	});
 };
 
 function loadMore() {
@@ -333,7 +339,6 @@ function observeEvents() {
 	}
 }
 
-
 function pollMessages() {
 	if (typing == false) {
 		loadMessages();
@@ -342,6 +347,15 @@ function pollMessages() {
 	setTimeout(function() {
 	    pollMessages();
 	}, 5000);
+}
+
+function pollStreams() {
+	getStreams();
+	setCurrent();
+
+	setTimeout(function() {
+	    pollStreams();
+	}, 1000)
 }
 
 function pollTimestamps() {
@@ -364,18 +378,29 @@ function postMessage() {
 	return false;
 };
 
-function setCurrent(text) {
+function setCurrent() {
 	var current = document.getElementById('current');
 	current.href = window.location.href;
+	var present = document.getElementById("present");
+
+	var stream = "";
 
 	if (window.location.hash.length > 0) {
 		current.text = window.location.hash.replace('#', '');
+		stream = current.text;
 	} else {
 		current.text = "malten";
+		stream = "_";
+	}
+
+	var s = streams[stream];
+
+	if (s != undefined) {
+		present.innerText = "👤 " + s["Observers"];
 	}
 };
 
-function showMessages() {
+function loadStream() {
 	getStreams();
 	setCurrent();
 	clearMessages();

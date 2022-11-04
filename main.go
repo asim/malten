@@ -46,6 +46,7 @@ type Stream struct {
 	Updated int64
 	// In seconds
 	TTL int64
+	Observers int64
 }
 
 type Message struct {
@@ -57,7 +58,10 @@ type Message struct {
 }
 
 type Observer struct {
+	Id string
 	Events chan *Message
+	Kill chan bool
+	Stream string
 }
 
 type Server struct {
@@ -220,15 +224,19 @@ func getEvents(w http.ResponseWriter, r *http.Request) {
 		stream = defaultStream
 	}
 
-	o := &Observer{make(chan *Message, 1)}
-	k := make(chan bool)
+	o := &Observer{
+		Id: uuid.New().String(),
+		Events: make(chan *Message, 1),
+		Kill: make(chan bool),
+		Stream: stream,
+	}
 
 	defer func() {
-		close(k)
+		close(o.Kill)
 	}()
 
 	// add self
-	S.Observe(o, k)
+	S.Observe(o)
 
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -236,17 +244,22 @@ func getEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	for message := range o.Events {
-		if len(stream) > 0 && message.Stream != stream {
-			fmt.Println("ignoring", message.Stream, stream)
-			continue
-		}
+	for {
+		select {
+		case message := <-o.Events:
+			if message.Stream != o.Stream {
+				fmt.Println("ignoring", message.Stream, o.Stream)
+				continue
+			}
 
-		b, _ := json.Marshal(message)
-		fmt.Fprintf(w, "data: %v\n\n", string(b))
+			b, _ := json.Marshal(message)
+			fmt.Fprintf(w, "data: %v\n\n", string(b))
 
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		case <-r.Context().Done():
+			return
 		}
 	}
 }
@@ -254,14 +267,19 @@ func getEvents(w http.ResponseWriter, r *http.Request) {
 func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
-	streams := make(map[string]int64)
+	streams := make(map[string]*Stream)
 
 	for k, v := range S.List() {
 		// only return public streams
 		if v.Private {
 			continue
 		}
-		streams[k] = v.Updated
+		streams[k] = &Stream{
+			Id: v.Id,
+			Updated: v.Updated,
+			TTL: v.TTL,
+			Observers: v.Observers,
+		}
 	}
 
 	b, _ := json.Marshal(streams)
@@ -337,6 +355,11 @@ func (s *Server) Broadcast(message *Message) {
 	s.mtx.RUnlock()
 
 	for _, o := range observers {
+		// only broadcast what they care about
+		if message.Stream != o.Stream {
+			continue
+		}
+		// send message
 		select {
 		case o.Events <- message:
 		default:
@@ -379,16 +402,45 @@ func (c *Server) List() map[string]*Stream {
 	return streams
 }
 
-func (c *Server) Observe(o *Observer, kill chan bool) {
+func (c *Server) Observe(o *Observer) {
 	c.mtx.Lock()
-	id := uuid.New().String()
-	c.observers[id] = o
+	c.observers[o.Id] = o
+
+	s, ok := c.streams[o.Stream]
+	if !ok {
+		s = newStream(o.Stream, false, int(streamTTL.Seconds()))
+	}
+
+	// update observer count
+	s.Observers++
+	c.streams[o.Stream] = s
+
 	c.mtx.Unlock()
 
+	// announce observer
+	select {
+	case S.Events <- newMessage("user joined", o.Stream):
+	default:
+	}
+
 	go func() {
-		<-kill
+		<-o.Kill
 		c.mtx.Lock()
-		delete(c.observers, id)
+		delete(c.observers, o.Id)
+
+		// update observer count
+		s, ok := c.streams[o.Stream]
+		if ok {
+			s.Observers--
+			c.streams[o.Stream] = s
+		}
+
+		// announce leaving
+		select {
+		case S.Events <- newMessage("user left", o.Stream):
+		default:
+		}
+
 		c.mtx.Unlock()
 	}()
 }

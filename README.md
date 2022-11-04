@@ -16,7 +16,7 @@ and each stream limits the number of messages and char length to ensure we can c
 
 ## Roadmap
 
-- [ ] Presence - User presence status
+- [x] Presence - User presence status
 - [ ] Secure Pipes - Stream between two users
 - [ ] Decentralisation - Interconnect multiple Malten servers
 - [x] EventSource support - Real time messaging directly to the browser
