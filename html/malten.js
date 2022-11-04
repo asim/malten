@@ -223,7 +223,7 @@ function newStream() {
 }
 
 function loadGif(q) {
-	var xhr = $.get("http://api.giphy.com/v1/gifs/search?q="+q+"&api_key=dc6zaTOxFJmzC");
+	var xhr = $.get("https://api.giphy.com/v1/gifs/search?q="+q+"&api_key=dc6zaTOxFJmzC");
 	xhr.done(function(data) {
 		if (data.data.length == 0) {
 			return false;
@@ -354,6 +354,10 @@ function pollTimestamps() {
 
 
 function postMessage() {
+	var form = document.getElementById('form');
+	if (form.elements["text"].value == '') {
+		return
+	}
         $.post(messageUrl, $("#form").serialize());
         form.elements["text"].value = '';
         loadMessages();
