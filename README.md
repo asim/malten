@@ -68,6 +68,14 @@ To retrieve a list of streams
 GET /streams
 ```
 
+### Events
+
+Get server sent events for real time messages
+
+```
+var events = EventSource("/events")
+```
+
 ### Messages
 
 To retrieve messages for a stream
