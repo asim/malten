@@ -73,7 +73,13 @@ GET /streams
 Get server sent events for real time messages
 
 ```
-var events = EventSource("/events")
+var events = new EventSource("/events")
+```
+
+Params for events
+
+```
+stream: string e.g stream=foo
 ```
 
 ### Messages
