@@ -52,6 +52,7 @@ type Stream struct {
 type Message struct {
 	Id       string
 	Text     string
+	Type     string
 	Created  int64 `json:",string"`
 	Stream   string
 	Metadata *Metadata
@@ -123,6 +124,17 @@ func newMessage(text, stream string) *Message {
 	return &Message{
 		Id:      uuid.New().String(),
 		Text:    text,
+		Type: "message",
+		Created: time.Now().UnixNano(),
+		Stream:  stream,
+	}
+}
+
+func newEvent(text, stream string) *Message {
+	return &Message{
+		Id:      uuid.New().String(),
+		Text:    text,
+		Type: "event",
 		Created: time.Now().UnixNano(),
 		Stream:  stream,
 	}
@@ -417,6 +429,9 @@ func (c *Server) Observe(o *Observer) {
 
 	c.mtx.Unlock()
 
+	// send connect event
+	S.Events <- newEvent("connect", o.Stream)
+
 	go func() {
 		<-o.Kill
 		c.mtx.Lock()
@@ -430,6 +445,9 @@ func (c *Server) Observe(o *Observer) {
 		}
 
 		c.mtx.Unlock()
+
+		// send disconnect event
+		S.Events <- newEvent("close", o.Stream)
 	}()
 }
 
@@ -542,8 +560,10 @@ func (s *Server) Run() {
 	for {
 		select {
 		case message := <-s.Events:
-			s.Save(message)
-			go s.Metadata(message)
+			if message.Type == "message" {
+				s.Save(message)
+				go s.Metadata(message)
+			}
 			go s.Broadcast(message)
 		case <-t1.C:
 			now := time.Now().UnixNano()
