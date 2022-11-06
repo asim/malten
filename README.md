@@ -82,6 +82,16 @@ Params for events
 stream: string e.g stream=foo
 ```
 
+Event structure
+
+```
+Id string
+Type string e.g message or event
+Created int64 e.g Unix nano timestamp
+Payload object
+```
+
+
 ### Messages
 
 To retrieve messages for a stream
