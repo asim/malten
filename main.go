@@ -45,7 +45,7 @@ type Stream struct {
 	// In nanoseconds
 	Updated int64
 	// In seconds
-	TTL int64
+	TTL       int64
 	Observers int64
 }
 
@@ -59,9 +59,9 @@ type Message struct {
 }
 
 type Observer struct {
-	Id string
+	Id     string
 	Events chan *Message
-	Kill chan bool
+	Kill   chan bool
 	Stream string
 }
 
@@ -124,7 +124,7 @@ func newMessage(text, stream string) *Message {
 	return &Message{
 		Id:      uuid.New().String(),
 		Text:    text,
-		Type: "message",
+		Type:    "message",
 		Created: time.Now().UnixNano(),
 		Stream:  stream,
 	}
@@ -134,7 +134,7 @@ func newEvent(text, stream string) *Message {
 	return &Message{
 		Id:      uuid.New().String(),
 		Text:    text,
-		Type: "event",
+		Type:    "event",
 		Created: time.Now().UnixNano(),
 		Stream:  stream,
 	}
@@ -237,9 +237,9 @@ func getEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	o := &Observer{
-		Id: uuid.New().String(),
+		Id:     uuid.New().String(),
 		Events: make(chan *Message, 1),
-		Kill: make(chan bool),
+		Kill:   make(chan bool),
 		Stream: stream,
 	}
 
@@ -287,9 +287,9 @@ func getStreamsHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		streams[k] = &Stream{
-			Id: v.Id,
-			Updated: v.Updated,
-			TTL: v.TTL,
+			Id:        v.Id,
+			Updated:   v.Updated,
+			TTL:       v.TTL,
 			Observers: v.Observers,
 		}
 	}
@@ -460,11 +460,6 @@ func (s *Server) Save(message *Message) {
 	if !ok {
 		stream = newStream(message.Stream, false, int(streamTTL.Seconds()))
 		s.streams[stream.Id] = stream
-	}
-
-	// if the stream is private we don't store the message
-	if stream.Private {
-		return
 	}
 
 	stream.Messages = append(stream.Messages, message)
