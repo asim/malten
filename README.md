@@ -18,7 +18,7 @@ and each stream limits the number of messages and char length to ensure we can c
 
 - [x] Presence - User presence status
 - [ ] Secure Pipes - Stream between two users
-- [ ] Speech to text - Talk to malten and write speech
+- [x] Speech to text - Talk to malten and write speech
 - [ ] Decentralisation - Interconnect multiple Malten servers
 - [x] EventSource support - Real time messaging directly to the browser
 - [ ] Client side encryption - AES-256 on the user side so we never see the data
