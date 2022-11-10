@@ -462,10 +462,16 @@ func (s *Server) Save(message *Message) {
 		s.streams[stream.Id] = stream
 	}
 
+	// if the stream is private we don't store the message
+	if stream.Private {
+		return
+	}
+
 	stream.Messages = append(stream.Messages, message)
 	if len(stream.Messages) > maxMessages {
 		stream.Messages = stream.Messages[1:]
 	}
+
 	stream.Updated = time.Now().UnixNano()
 }
 

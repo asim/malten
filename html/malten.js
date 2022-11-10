@@ -211,6 +211,35 @@ function displayMessages(array, direction) {
     }
 };
 
+function getSpeech() {
+    var speak = document.getElementById("speak");
+    var words = document.getElementById("words");
+    var text = document.getElementById("text");
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    let recognition = new SpeechRecognition();
+    recognition.onstart = () => {
+        console.log("mic on");
+	words.innerText = "Start speaking";
+	speak.disabled = true;
+    }
+    recognition.onspeechend = () => {
+        console.log("mic off");
+        recognition.stop();
+	words.innerText = "";
+	speak.disabled = false;
+    }
+    recognition.onresult = (result) => {
+        console.log(result.results[0][0].transcript);
+	text.value = result.results[0][0].transcript;
+	// post it;
+	setTimeout(submitMessage, 500)
+    }
+
+    recognition.start();
+}
+
 function getStream() {
     var stream = window.location.hash.replace('#', '');
 
@@ -307,6 +336,11 @@ function loadListeners() {
         if (source != undefined) {
             source.close;
         }
+    });
+
+    document.getElementById("speak").addEventListener("click", function(ev) {
+	ev.preventDefault();
+	getSpeech();
     });
 };
 
@@ -460,7 +494,7 @@ function setCurrent() {
     } else {
         current.text = "malten";
     }
-};
+}
 
 function loadStream() {
     getStreams()
@@ -479,6 +513,8 @@ function stop() {
 };
 
 function submitMessage() {
+    var form = document.getElementById('form');
+
     if (form.elements["text"].value.length <= 0) {
         return false;
     }
