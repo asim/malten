@@ -491,8 +491,10 @@ function setCurrent() {
 
     if (window.location.hash.length > 0) {
         current.text = window.location.hash.replace('#', '');
+	document.title = window.location.hash;
     } else {
-        current.text = "malten";
+        current.text = "";
+	document.title = "Home";
     }
 }
 
