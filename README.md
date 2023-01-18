@@ -1,6 +1,6 @@
 # Malten
 
-Ephemeral message streaming
+Anonymous ephemeral messaging
 
 ## Overview
 
