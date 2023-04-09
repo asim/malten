@@ -92,7 +92,7 @@ func New() *Server {
 	}
 }
 
-func newStream(id string, private bool, ttl int) *Stream {
+func NewStream(id string, private bool, ttl int) *Stream {
 	return &Stream{
 		Id:      id,
 		Private: private,
@@ -111,7 +111,7 @@ func NewMessage(text, stream string) *Message {
 	}
 }
 
-func newEvent(text, stream string) *Message {
+func NewEvent(text, stream string) *Message {
 	return &Message{
 		Id:      uuid.New().String(),
 		Text:    text,
@@ -121,7 +121,7 @@ func newEvent(text, stream string) *Message {
 	}
 }
 
-func getMetadata(uri string) *Metadata {
+func GetMetadata(uri string) *Metadata {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return nil
@@ -207,78 +207,78 @@ func (s *Server) New(stream string, private bool, ttl int) error {
 		return errors.New("already exists")
 	}
 
-	str := newStream(stream, private, ttl)
+	str := NewStream(stream, private, ttl)
 	s.streams[str.Id] = str
 
 	return nil
 }
 
-func (c *Server) Metadata(t *Message) {
+func (s *Server) Metadata(t *Message) {
 	parts := strings.Split(t.Text, " ")
 	for _, part := range parts {
-		g := getMetadata(part)
+		g := GetMetadata(part)
 		if g == nil {
 			continue
 		}
-		c.mtx.Lock()
-		c.metadata[t.Id] = g
-		c.mtx.Unlock()
+		s.mtx.Lock()
+		s.metadata[t.Id] = g
+		s.mtx.Unlock()
 		return
 	}
 }
 
-func (c *Server) List() map[string]*Stream {
-	c.mtx.RLock()
-	streams := c.streams
-	c.mtx.RUnlock()
+func (s *Server) List() map[string]*Stream {
+	s.mtx.RLock()
+	streams := s.streams
+	s.mtx.RUnlock()
 	return streams
 }
 
-func (c *Server) Observe(o *Observer) {
-	c.mtx.Lock()
-	c.observers[o.Id] = o
+func (s *Server) Observe(o *Observer) {
+	s.mtx.Lock()
+	s.observers[o.Id] = o
 
-	s, ok := c.streams[o.Stream]
+	st, ok := s.streams[o.Stream]
 	if !ok {
-		s = newStream(o.Stream, false, int(StreamTTL.Seconds()))
+		st = NewStream(o.Stream, false, int(StreamTTL.Seconds()))
 	}
 
 	// update observer count
-	s.Observers++
-	c.streams[o.Stream] = s
+	st.Observers++
+	s.streams[o.Stream] = st
 
-	c.mtx.Unlock()
+	s.mtx.Unlock()
 
 	// send connect event
-	c.Events <- newEvent("connect", o.Stream)
+	s.Events <- NewEvent("connect", o.Stream)
 
 	go func() {
 		<-o.Kill
-		c.mtx.Lock()
-		delete(c.observers, o.Id)
+		s.mtx.Lock()
+		delete(s.observers, o.Id)
 
 		// update observer count
-		s, ok := c.streams[o.Stream]
+		st, ok := s.streams[o.Stream]
 		if ok {
-			s.Observers--
-			c.streams[o.Stream] = s
+			st.Observers--
+			s.streams[o.Stream] = st
 		}
 
-		c.mtx.Unlock()
+		s.mtx.Unlock()
 
 		// send disconnect event
-		c.Events <- newEvent("close", o.Stream)
+		s.Events <- NewEvent("close", o.Stream)
 	}()
 }
 
-func (s *Server) Save(message *Message) {
+func (s *Server) Store(message *Message) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	// check the listing thing
 	stream, ok := s.streams[message.Stream]
 	if !ok {
-		stream = newStream(message.Stream, false, int(StreamTTL.Seconds()))
+		stream = NewStream(message.Stream, false, int(StreamTTL.Seconds()))
 		s.streams[stream.Id] = stream
 	}
 
@@ -290,13 +290,13 @@ func (s *Server) Save(message *Message) {
 	stream.Updated = time.Now().UnixNano()
 }
 
-func (c *Server) Retrieve(message string, streem string, direction, last, limit int64) []*Message {
-	c.mtx.RLock()
-	defer c.mtx.RUnlock()
+func (s *Server) Retrieve(message string, streem string, direction, last, limit int64) []*Message {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
 
 	var stream *Stream
 
-	stream, ok := c.streams[streem]
+	stream, ok := s.streams[streem]
 	if !ok {
 		return []*Message{}
 	}
@@ -320,7 +320,7 @@ func (c *Server) Retrieve(message string, streem string, direction, last, limit 
 				message := stream.Messages[i]
 
 				if message.Created < last {
-					if g, ok := c.metadata[message.Id]; ok {
+					if g, ok := s.metadata[message.Id]; ok {
 						tc := *message
 						tc.Metadata = g
 						messages = append(messages, &tc)
@@ -345,7 +345,7 @@ func (c *Server) Retrieve(message string, streem string, direction, last, limit 
 			message := stream.Messages[i]
 
 			if message.Created > last {
-				if g, ok := c.metadata[message.Id]; ok {
+				if g, ok := s.metadata[message.Id]; ok {
 					tc := *message
 					tc.Metadata = g
 					messages = append(messages, &tc)
@@ -361,7 +361,7 @@ func (c *Server) Retrieve(message string, streem string, direction, last, limit 
 	for _, t := range stream.Messages {
 		var messages []*Message
 		if message == t.Id {
-			if g, ok := c.metadata[t.Id]; ok {
+			if g, ok := s.metadata[t.Id]; ok {
 				tc := *t
 				tc.Metadata = g
 				messages = append(messages, &tc)
@@ -382,7 +382,7 @@ func (s *Server) Run() {
 		select {
 		case message := <-s.Events:
 			if message.Type == "message" {
-				s.Save(message)
+				s.Store(message)
 				go s.Metadata(message)
 			}
 			go s.Broadcast(message)
