@@ -96,6 +96,13 @@ ul li {
   font-weight: normal;
   text-decoration: none;
 }
+
+#messages li {
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  margin-bottom: 10px;
+  padding-left: 10px;
+}
 #private {
   vertical-align: middle;
   margin-bottom: 4px;
