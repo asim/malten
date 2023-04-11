@@ -91,6 +91,10 @@ ul li {
   border: none;
   border-bottom: 2px solid #EEEFF0;
 }
+#messages {
+  height: calc(100vh - 200px);
+  overflow: scroll;
+}
 #messages a {
   color: #1763A3;
   font-weight: normal;
