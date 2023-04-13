@@ -380,8 +380,14 @@ function observeEvents() {
     source = new WebSocket(url);
     //source = new EventSource(eventUrl + "?stream=" + stream);
 
+    source.onopen = (event) => {
+	console.log(event)
+    }
     source.onmessage = (event) => {
         processEvent(stream, event)
+    }
+    source.onclose = (event) => {
+        console.log(event)
     }
 }
 

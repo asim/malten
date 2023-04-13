@@ -108,9 +108,6 @@ func (s *stream) run() {
 		s.conn.Close()
 	}()
 
-	// for our messages from sub
-	msgs := make(chan *Message)
-
 	// to cancel everything
 	stopCtx, cancel := context.WithCancel(context.Background())
 
@@ -119,7 +116,7 @@ func (s *stream) run() {
 	wg.Add(2)
 
 	// establish the loops
-	go s.bufToClientLoop(cancel, &wg, stopCtx, msgs)
+	go s.bufToClientLoop(cancel, &wg, stopCtx)
 	go s.clientToServerLoop(cancel, &wg, stopCtx)
 	wg.Wait()
 }
@@ -155,7 +152,7 @@ func (s *stream) clientToServerLoop(cancel context.CancelFunc, wg *sync.WaitGrou
 
 }
 
-func (s *stream) bufToClientLoop(cancel context.CancelFunc, wg *sync.WaitGroup, stopCtx context.Context, events chan *Message) {
+func (s *stream) bufToClientLoop(cancel context.CancelFunc, wg *sync.WaitGroup, stopCtx context.Context) {
 	defer func() {
 		s.conn.Close()
 		cancel()
@@ -178,7 +175,7 @@ func (s *stream) bufToClientLoop(cancel context.CancelFunc, wg *sync.WaitGroup, 
 			if err := s.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
-		case msg := <-events:
+		case msg := <-s.observer.Events:
 			if msg.Stream != s.observer.Stream {
 				fmt.Println("ignoring", msg.Stream, s.observer.Stream)
 				continue
