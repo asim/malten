@@ -389,6 +389,9 @@ function observeEvents() {
     source.onclose = (event) => {
         console.log(event)
     }
+    source.onerror = (event) => {
+        console.log(event)
+    }
 }
 
 function pollMessages() {
