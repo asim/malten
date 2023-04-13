@@ -83,17 +83,17 @@ func getEvents(w http.ResponseWriter, r *http.Request) {
 	// add self
 	S.Observe(o)
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
 
 	// serve a socket
 	if server.IsWebSocket(r) {
 		server.ServeWebSocket(w, r, o)
 		return
 	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
 
 	for {
 		select {
@@ -196,6 +196,20 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func withCors(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// set cors origin allow all
+		server.SetHeaders(w, r)
+
+		// if options return immediately
+		if r.Method == "OPTIONS" {
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	go S.Run()
 
@@ -248,5 +262,7 @@ func main() {
 		}
 	})
 
-	http.ListenAndServe(":9090", nil)
+	h := withCors(http.DefaultServeMux)
+
+	http.ListenAndServe(":9090", h)
 }
