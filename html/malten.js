@@ -376,7 +376,8 @@ function observeEvents() {
 
     var stream = getStream();
 
-    source = new EventSource(eventUrl + "?stream=" + stream);
+    source = new WebSocket(eventUrl + "?stream=" + stream);
+    //source = new EventSource(eventUrl + "?stream=" + stream);
 
     source.onmessage = (event) => {
         processEvent(stream, event)

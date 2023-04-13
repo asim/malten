@@ -89,6 +89,12 @@ func getEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	// serve a socket
+	if server.IsWebSocket(r) {
+		server.ServeWebSocket(w, r, o)
+		return
+	}
+
 	for {
 		select {
 		case message := <-o.Events:
