@@ -227,12 +227,33 @@ function getStreams(fn) {
             var s = streams[getStream()];
             if (s != undefined) {
                 setObservers(s.Observers);
+		setStreamsList();
             }
         })
         .fail(function(err) {
             console.log(err);
         })
         .done();
+}
+
+function setStreamsList() {
+    var side = document.getElementById('side');
+    side.innerText = '';
+
+    for (const key in streams) {
+	    var name = key;
+	    var href = '/#' + name;
+
+	    if (name == "_") {
+		    href = "/";
+            }	
+	    var span = document.createElement('span');
+	    var a = document.createElement('a');
+	    a.innerText = name;
+	    a.href = href
+	    span.appendChild(a);
+	    side.appendChild(span);
+    }	
 }
 
 function gotoStream(t) {

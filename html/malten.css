@@ -107,6 +107,9 @@ ul li {
   vertical-align: middle;
   margin-bottom: 4px;
 }
+#side span {
+ margin: 10px; 
+}
 .animation img, .image img {
   width: 100%;
   height: auto;
