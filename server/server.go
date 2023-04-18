@@ -31,6 +31,7 @@ type Metadata struct {
 type Stream struct {
 	Id       string
 	Messages []*Message
+	Secret   string
 	Private  bool
 	// In nanoseconds
 	Updated int64
@@ -92,9 +93,10 @@ func New() *Server {
 	}
 }
 
-func NewStream(id string, private bool, ttl int) *Stream {
+func NewStream(id, secret string, private bool, ttl int) *Stream {
 	return &Stream{
 		Id:      id,
+		Secret:  secret,
 		Private: private,
 		Updated: time.Now().UnixNano(),
 		TTL:     (time.Duration(ttl) * time.Second).Nanoseconds(),
@@ -199,7 +201,7 @@ func (s *Server) Broadcast(message *Message) {
 	}
 }
 
-func (s *Server) New(stream string, private bool, ttl int) error {
+func (s *Server) New(stream, secret string, private bool, ttl int) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -207,7 +209,7 @@ func (s *Server) New(stream string, private bool, ttl int) error {
 		return errors.New("already exists")
 	}
 
-	str := NewStream(stream, private, ttl)
+	str := NewStream(stream, secret, private, ttl)
 	s.streams[str.Id] = str
 
 	return nil
@@ -240,7 +242,7 @@ func (s *Server) Observe(o *Observer) {
 
 	st, ok := s.streams[o.Stream]
 	if !ok {
-		st = NewStream(o.Stream, false, int(StreamTTL.Seconds()))
+		st = NewStream(o.Stream, "", false, int(StreamTTL.Seconds()))
 	}
 
 	// update observer count
@@ -278,7 +280,7 @@ func (s *Server) Store(message *Message) {
 	// check the listing thing
 	stream, ok := s.streams[message.Stream]
 	if !ok {
-		stream = NewStream(message.Stream, false, int(StreamTTL.Seconds()))
+		stream = NewStream(message.Stream, "", false, int(StreamTTL.Seconds()))
 		s.streams[stream.Id] = stream
 	}
 

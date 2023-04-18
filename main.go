@@ -153,7 +153,7 @@ func newStreamHandler(w http.ResponseWriter, r *http.Request) {
 		ttl = int(server.StreamTTL.Seconds())
 	}
 
-	if err := S.New(stream, private, ttl); err != nil {
+	if err := S.New(stream, "", private, ttl); err != nil {
 		http.Error(w, "Cannot create stream", 500)
 		return
 	}
