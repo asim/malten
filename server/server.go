@@ -29,14 +29,19 @@ type Metadata struct {
 }
 
 type Stream struct {
+        // A unique id
 	Id       string
+        // A secret for access
+        Secret   string
+        // Messages in the stream
 	Messages []*Message
-	Secret   string
+        // not listed
 	Private  bool
 	// In nanoseconds
 	Updated int64
 	// In seconds
 	TTL       int64
+        // stream observers
 	Observers int64
 }
 
@@ -51,9 +56,9 @@ type Message struct {
 
 type Observer struct {
 	Id     string
+        Stream string
 	Events chan *Message
 	Kill   chan bool
-	Stream string
 }
 
 type Server struct {
