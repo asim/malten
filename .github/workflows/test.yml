@@ -38,4 +38,4 @@ jobs:
       id: tests-sh
       env:
         IN_TRAVIS_CI: yes
-      run: ./tests.sh
+      run: bash ./tests.sh
