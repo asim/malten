@@ -70,6 +70,8 @@ var (
 	alphanum = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 )
 
+var Default = New()
+
 // random generate i length alphanum string
 func Random(i int) string {
 	bytes := make([]byte, i)
@@ -120,6 +122,15 @@ func NewEvent(text, stream string) *Message {
 		Type:    "event",
 		Created: time.Now().UnixNano(),
 		Stream:  stream,
+	}
+}
+
+func NewObserver(stream string) *Observer {
+	return &Observer{
+		Id:     uuid.New().String(),
+		Events: make(chan *Message, 1),
+		Kill:   make(chan bool),
+		Stream: stream,
 	}
 }
 
@@ -427,4 +438,8 @@ func (s *Server) Run() {
 			s.mtx.Unlock()
 		}
 	}
+}
+
+func Run() {
+	Default.Run()
 }
