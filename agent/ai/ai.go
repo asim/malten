@@ -1,8 +1,9 @@
-package main
+package ai
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,7 +18,7 @@ import (
 var (
 	Key = os.Getenv("OPENAI_API_KEY")
 
-	AI *openai.Client
+	Client *openai.Client
 )
 
 const (
@@ -32,6 +33,15 @@ const (
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
+)
+
+type AI struct {
+	context map[string][]Context
+	persona string
+}
+
+var (
+	DefaultPersona = `listen`
 )
 
 var (
@@ -49,11 +59,51 @@ var ignore = map[string]bool{
 	"close":   true,
 }
 
-func listen() {
+type Context struct {
+	Prompt string
+	Reply  string
+}
+
+func complete(prompt, user, persona string, ctx ...Context) openai.ChatCompletionRequest {
+	message := []openai.ChatCompletionMessage{{
+		Role:    openai.ChatMessageRoleSystem,
+		Content: persona,
+	}}
+
+	for _, c := range ctx {
+		// set the user message
+		message = append(message, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: c.Prompt,
+		})
+		// set the assistant response
+		message = append(message, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleAssistant,
+			Content: c.Reply,
+		})
+	}
+
+	// append the actual next prompt
+	message = append(message, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: prompt,
+	})
+
+	return openai.ChatCompletionRequest{
+		Model:    openai.GPT3Dot5Turbo,
+		Messages: message,
+		User:     user,
+	}
+}
+
+func (ai *AI) Listen() error {
+	if ai.context == nil {
+		ai.context = make(map[string][]Context)
+	}
+
 	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:9090/events", http.Header{})
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	defer func() {
@@ -90,25 +140,25 @@ func listen() {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				fmt.Printf("error: %v\n", err)
+				return err
 			}
-			break
 		}
 
 		// decode message
 		var msg *server.Message
 		if err := json.Unmarshal(message, &msg); err != nil {
 			fmt.Println(err)
-			continue
+			return err
 		}
 
 		// think and respond
-		think(msg.Stream, msg.Text)
+		ai.think(msg.Stream, msg.Text)
 	}
+
+	return nil
 }
 
-func think(stream, text string) {
-
+func (ai *AI) think(stream, text string) {
 	// if seen before ignore it
 	if ignore[text] {
 		fmt.Println("ignoring:", text)
@@ -116,27 +166,20 @@ func think(stream, text string) {
 	}
 
 	// ask openai
-	resp, err := AI.CreateChatCompletion(
+	resp, err := Client.CreateChatCompletion(
 		context.Background(),
-		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo,
-			Messages: []openai.ChatCompletionMessage{
-				{
-					Role:    openai.ChatMessageRoleUser,
-					Content: text,
-				},
-			},
-		},
+		complete(text, stream, ai.persona, ai.context[stream]...),
 	)
 
 	var reply string
 	if err != nil {
-		reply = "ai: " + err.Error()
+		reply = err.Error()
 	} else {
-		reply = "ai: " + resp.Choices[0].Message.Content
+		reply = resp.Choices[0].Message.Content
 	}
-	fmt.Println(text)
-	fmt.Println(reply)
+
+	fmt.Println("you:", text)
+	fmt.Println("ai:", reply)
 
 	// ignore self
 	ignore[reply] = true
@@ -145,16 +188,47 @@ func think(stream, text string) {
 		"text":   []string{reply},
 		"stream": []string{stream},
 	})
+
+	// append context
+	ctx := append(ai.context[stream], Context{
+		Prompt: text,
+		Reply:  reply,
+	})
+
+	// cap number of messages we send
+	for len(ctx) > 1024 {
+		ctx = ctx[1:]
+	}
+
+	// save context
+	ai.context[stream] = ctx
 }
 
-func main() {
+func New(persona string) (*AI, error) {
 	if len(Key) == 0 {
-		fmt.Println("missing OPENAI_API_KEY")
+		return nil, errors.New("missing OPENAI_API_KEY")
 	}
 
 	// set the client
-	AI = openai.NewClient(Key)
+	Client = openai.NewClient(Key)
 
-	// start listening
-	listen()
+	ai := new(AI)
+	ai.persona = persona
+
+	return ai, nil
+}
+
+func Run() {
+	ai, err := New(DefaultPersona)
+	if err != nil {
+		fmt.Println("AI not running:", err)
+		return
+	}
+
+	for {
+		if err := ai.Listen(); err != nil {
+			fmt.Println(err)
+			time.Sleep(time.Second)
+		}
+	}
 }
