@@ -46,7 +46,7 @@ Browse to `localhost:9090` or host behind an nginx proxy
 
 ### OpenAI
 
-To enable conversations with [ChatGPT](https://openai.com/blog/chatgpt) specify the `OPENAI_API_KEY` environment variable
+To enable conversations using [ChatGPT](https://openai.com/blog/chatgpt) specify the `OPENAI_API_KEY` environment variable
 
 ```
 OPENAI_API_KEY=xxxx ./malten
