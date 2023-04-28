@@ -143,6 +143,7 @@ function displayMessages(array, direction) {
         d2.className = 'message';
         d1.innerHTML = parseDate(array[i].Created);
         d1.setAttribute('data-time', array[i].Created);
+	d1.style.display = 'none';
         d2.innerHTML = html.parseURL(embed).parseHashTag();
         item.appendChild(d1);
         item.appendChild(d2);
@@ -229,7 +230,7 @@ function getStreams(fn) {
             var s = streams[getStream()];
             if (s != undefined) {
                 setObservers(s.Observers);
-		setStreamsList();
+		//setStreamsList();
             }
         })
         .fail(function(err) {

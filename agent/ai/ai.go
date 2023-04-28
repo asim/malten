@@ -33,7 +33,7 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 512
+	maxMessageSize = 4096
 )
 
 type AI struct {
@@ -43,6 +43,8 @@ type AI struct {
 
 var (
 	DefaultPersona = `Listen. Be patient. Respond kindly. Limit responses to 1024 characters or less.`
+
+	MaxTokens = 1024
 )
 
 var (
@@ -51,8 +53,8 @@ var (
 )
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  4096,
+	WriteBufferSize: 4096,
 }
 
 var ignore = map[string]bool{
@@ -94,6 +96,7 @@ func complete(prompt, user, persona string, ctx ...Context) openai.ChatCompletio
 		Model:    openai.GPT3Dot5Turbo,
 		Messages: message,
 		User:     user,
+		MaxTokens: MaxTokens,
 	}
 }
 
@@ -189,6 +192,12 @@ func (ai *AI) listen(stream string) error {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				return err
 			}
+			fmt.Println("websocket error", err)
+			return err
+		}
+
+		if len(message) == 0 {
+			continue
 		}
 
 		// decode message
@@ -212,6 +221,8 @@ func (ai *AI) think(stream, text string) {
 		return
 	}
 
+	fmt.Printf("you#%s: %v\n", stream, text)
+
 	// ask openai
 	resp, err := Client.CreateChatCompletion(
 		context.Background(),
@@ -225,8 +236,7 @@ func (ai *AI) think(stream, text string) {
 		reply = resp.Choices[0].Message.Content
 	}
 
-	fmt.Println("you:", text)
-	fmt.Println("ai:", reply)
+	fmt.Printf("ai#%s: %v\n", stream, reply)
 
 	// ignore self
 	ignore[reply] = true
