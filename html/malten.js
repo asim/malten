@@ -112,7 +112,9 @@ function command(q) {
 function escapeHTML(str) {
     var div = document.createElement('div');
     div.style.display = 'none';
-    div.appendChild(document.createTextNode(str));
+    str = str.replace(/(?:\r\n|\r|\n)/g, '<br>');
+    div.innerHTML = str;
+    //div.appendChild(document.createTextNode(str));
     return div.innerHTML;
 };
 
