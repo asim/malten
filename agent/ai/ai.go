@@ -42,7 +42,7 @@ type AI struct {
 }
 
 var (
-	DefaultPersona = `listen`
+	DefaultPersona = `Listen. Be patient. Respond kindly. Limit responses to 1024 characters or less.`
 )
 
 var (
