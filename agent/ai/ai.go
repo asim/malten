@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/asim/malten/server"
@@ -97,11 +98,57 @@ func complete(prompt, user, persona string, ctx ...Context) openai.ChatCompletio
 }
 
 func (ai *AI) Listen() error {
+	t := time.NewTicker(time.Second * 5)
+	defer t.Stop()
+
+	var mtx sync.RWMutex
+	agents := map[string]bool{}
+
+	// get streams
+	for _ = range t.C {
+		streams := server.Default.List()
+
+		mtx.Lock()
+		listeners := agents
+		mtx.Unlock()
+
+		for name, _ := range streams {
+			// we are listening
+			if _, ok := listeners[name]; ok {
+				continue
+			}
+
+			mtx.Lock()
+			agents[name] = true
+			mtx.Unlock()
+
+			// create a new listener
+			go func(stream string) {
+				defer func() {
+					// stopped listening
+					mtx.Lock()
+					delete(agents, stream)
+					mtx.Unlock()
+				}()
+
+				// start listening
+				if err := ai.listen(stream); err != nil {
+					fmt.Println("stopped listening to", stream, err)
+				}
+			}(name)
+
+		}
+	}
+
+	return nil
+}
+
+func (ai *AI) listen(stream string) error {
 	if ai.context == nil {
 		ai.context = make(map[string][]Context)
 	}
 
-	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:9090/events", http.Header{})
+	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:9090/events?stream="+stream, http.Header{})
 	if err != nil {
 		return err
 	}
