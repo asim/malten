@@ -158,5 +158,5 @@ message: string e.g message=helloworld
 An example
 
 ```
-POST /messages?stream=foo&text=helloworld
+POST /messages?stream=foo&message=helloworld
 ```
