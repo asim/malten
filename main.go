@@ -42,6 +42,17 @@ func main() {
 		w.Write(b)
 	})
 
+	http.HandleFunc("/commands", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			server.GetCommandsHandler(w, r)
+		case "POST":
+			server.PostCommandHandler(w, r)
+		default:
+			http.Error(w, "unsupported method "+r.Method, 400)
+		}
+	})
+
 	http.HandleFunc("/streams", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":

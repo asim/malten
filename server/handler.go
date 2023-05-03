@@ -12,6 +12,40 @@ var (
 	defaultStream = "_"
 )
 
+func GetCommandsHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	// return list of commands
+}
+
+func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	stream := r.Form.Get("stream")
+	command := r.Form.Get("prompt")
+	if len(command) == 0 {
+		return
+	}
+
+	fmt.Println("Got command", command)
+
+	// default stream
+	if len(stream) == 0 {
+		stream = defaultStream
+	}
+
+	// default length
+	if len(command) > MaxMessageSize {
+		command = command[:MaxMessageSize]
+	}
+
+	select {
+	case Default.Events <- NewCommand(command, stream):
+	case <-time.After(time.Second):
+		http.Error(w, "Timed out creating message", 504)
+	}
+}
+
 func GetHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	message := r.Form.Get("id")
@@ -149,7 +183,7 @@ func NewStreamHandler(w http.ResponseWriter, r *http.Request) {
 
 func PostHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	message := r.Form.Get("text")
+	message := r.Form.Get("message")
 	stream := r.Form.Get("stream")
 
 	if len(message) == 0 {

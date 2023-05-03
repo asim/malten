@@ -208,25 +208,52 @@ func (ai *AI) listen(stream string) error {
 		}
 
 		// think and respond
-		ai.think(msg.Stream, msg.Text)
+		if msg.Type == "command" {
+			ai.execute(msg.Stream, msg.Text)
+		} else {
+			// just a message
+			ai.observe(msg.Stream, msg.Text)
+		}
 	}
 
 	return nil
 }
 
-func (ai *AI) think(stream, text string) {
+func (ai *AI) observe(stream, prompt string) {
 	// if seen before ignore it
-	if ignore[text] {
-		fmt.Println("ignoring:", text)
+	if ignore[prompt] {
+		fmt.Println("ignoring:", prompt)
 		return
 	}
 
-	fmt.Printf("you#%s: %v\n", stream, text)
+	// append context
+	ctx := append(ai.context[stream], Context{
+		Prompt: prompt,
+	})
+
+	// cap number of messages
+	for len(ctx) > 1024 {
+		ctx = ctx[1:]
+	}
+
+	// save context
+	ai.context[stream] = ctx
+}
+
+
+func (ai *AI) execute(stream, prompt string) {
+	// if seen before ignore it
+	if ignore[prompt] {
+		fmt.Println("ignoring:", prompt)
+		return
+	}
+
+	fmt.Printf("you#%s: %v\n", stream, prompt)
 
 	// ask openai
 	resp, err := Client.CreateChatCompletion(
 		context.Background(),
-		complete(text, stream, ai.persona, ai.context[stream]...),
+		complete(prompt, stream, ai.persona, ai.context[stream]...),
 	)
 
 	var reply string
@@ -242,13 +269,13 @@ func (ai *AI) think(stream, text string) {
 	ignore[reply] = true
 
 	http.PostForm("http://127.0.0.1:9090/messages", url.Values{
-		"text":   []string{reply},
+		"message":   []string{reply},
 		"stream": []string{stream},
 	})
 
 	// append context
 	ctx := append(ai.context[stream], Context{
-		Prompt: text,
+		Prompt: prompt,
 		Reply:  reply,
 	})
 

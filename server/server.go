@@ -100,6 +100,16 @@ func New() *Server {
 	}
 }
 
+func NewCommand(prompt, stream string) *Message {
+	return &Message{
+		Id:      uuid.New().String(),
+		Text:    prompt,
+		Type:    "command",
+		Created: time.Now().UnixNano(),
+		Stream:  stream,
+	}
+}
+
 func NewStream(id, secret string, private bool, ttl int) *Stream {
 	return &Stream{
 		Id:      id,

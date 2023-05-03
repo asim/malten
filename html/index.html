@@ -21,8 +21,9 @@
 	</span>
       </div>
       <div id="think">
-        <form action="/messages" method="post" id="form" onsubmit="return submitMessage(this);">
-          <input id="text" name="text" value="" placeholder="Speak your mind" maxlength="1024" autocomplete="off" autofocus>
+        <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
+          <input id="prompt" name="prompt" value="" placeholder="Speak your mind" maxlength="1024" autocomplete="off" autofocus>
+	  <input id="message" name="message" type="hidden">
           <input id="stream" name="stream" type="hidden">
 	  <div id="controls">
             <button id="send">Send</button>
@@ -37,7 +38,7 @@
       </div>
     </div>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
-    <script src="malten.js?v=0.57.0"></script>
+    <script src="malten.js?v=0.58.0"></script>
     <script type="text/javascript">
 	$(document).ready(function() {
             setCurrent();

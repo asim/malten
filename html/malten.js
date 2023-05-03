@@ -1,3 +1,4 @@
+var commandUrl = "/commands";
 var messageUrl = "/messages";
 var streamUrl = "/streams";
 var eventUrl = "/events";
@@ -72,7 +73,7 @@ var K = function() {
 }();
 
 function chars() {
-    var i = document.getElementById('text').value.length;
+    var i = document.getElementById('prompt').value.length;
     var c = maxChars;
 
     if (i > maxChars) {
@@ -96,18 +97,6 @@ function clipMessages() {
         list.removeChild(list.lastChild);
     }
 };
-
-function command(q) {
-    var parts = q.split(" ");
-
-    if (parts.length > 2 && parts[1] == "animate") {
-        loadGif(parts.slice(2).join(" "));
-    } else {
-        postMessage();
-    }
-
-    return false;
-}
 
 function escapeHTML(str) {
     var div = document.createElement('div');
@@ -188,7 +177,7 @@ function displayMessages(array, direction) {
 function getSpeech() {
     var speak = document.getElementById("speak");
     var words = document.getElementById("words");
-    var text = document.getElementById("text");
+    var text = document.getElementById("prompt");
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -208,7 +197,7 @@ function getSpeech() {
         console.log(result.results[0][0].transcript);
 	text.value = result.results[0][0].transcript;
 	// post it;
-	setTimeout(submitMessage, 500)
+	setTimeout(submitCommand, 500)
     }
 
     recognition.start();
@@ -291,18 +280,6 @@ function newStream() {
     return false;
 }
 
-function loadGif(q) {
-    var xhr = $.get("https://api.giphy.com/v1/gifs/search?q=" + q + "&api_key=dc6zaTOxFJmzC");
-    xhr.done(function(data) {
-        if (data.data.length == 0) {
-            return false;
-        }
-        var i = Math.floor(Math.random() * data.data.length)
-        form.elements["text"].value = data.data[i].images.original.url;
-        submitMessage();
-    });
-};
-
 function loadListeners() {
     if (window.navigator.standalone) {
         $.ajaxSetup({
@@ -316,12 +293,12 @@ function loadListeners() {
         }
     });
 
-    document.getElementById("text").addEventListener("keyup", function() {
+    document.getElementById("prompt").addEventListener("keyup", function() {
         start();
         chars();
     }, false);
 
-    document.getElementById("text").addEventListener("keydown", function() {
+    document.getElementById("prompt").addEventListener("keydown", function() {
         stop();
     }, false);
 
@@ -428,14 +405,35 @@ function pollMessages() {
     }, 5000);
 }
 
+function postCommand() {
+    var form = document.getElementById('form');
+    if (form.elements["prompt"].value == '') {
+        return false
+    }
+    $.post(commandUrl, $("#form").serialize());
+    form.elements["prompt"].value = '';
+    return false;
+}
 
 function postMessage() {
     var form = document.getElementById('form');
-    if (form.elements["text"].value == '') {
-        return
+    var el = form.elements;
+    if (el["prompt"].value == '') {
+        return false
     }
+
+    // set message field
+    el["message"].value = el["prompt"].value;
+    // clear prompt
+    el["prompt"].value = '';
+
+    var stream = form.elements["stream"];
     $.post(messageUrl, $("#form").serialize());
-    form.elements["text"].value = '';
+
+    // clear message
+    form.elements["message"].value = '';
+
+    // reload messages
     loadMessages();
     return false;
 };
@@ -509,19 +507,23 @@ function stop() {
     typing = true;
 };
 
-function submitMessage() {
+function submitCommand() {
     var form = document.getElementById('form');
+    var el = form.elements;
 
-    if (form.elements["text"].value.length <= 0) {
+    if (el["prompt"].value.length <= 0) {
         return false;
     }
 
-    if (form.elements["text"].value.match(/^\s+$/)) {
+    if (el["prompt"].value.match(/^\s+$/)) {
         return false;
     }
 
-    if (form.elements["text"].value.match(/^\/malten\s/)) {
-        command(form.elements["text"].value);
+    if (el["prompt"].value.match(/^\/malten\s/)) {
+	// strip /malten
+	el["prompt"].value = el["prompt"].value.replace(/^\/malten\s/, "");	
+
+        postCommand();
         return false;
     }
 
