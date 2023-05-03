@@ -52,6 +52,8 @@ To enable conversations using [ChatGPT](https://openai.com/blog/chatgpt) specify
 OPENAI_API_KEY=xxxx ./malten
 ```
 
+To invoke ChatGPT use `/malten` as the prefix to your command
+
 ## API
 
 Below is a high level overview of the API
@@ -100,6 +102,22 @@ Created int64 e.g Unix nano timestamp
 Payload object
 ```
 
+### Commands
+
+Commands are sent to ChatGPT or other related systems that are listening
+
+```
+POST /commands
+```
+
+Send the params
+
+```
+stream: string e.g stream=foo
+prompt: string e.g prompt=hello
+```
+
+The response to commands are seen within messages and events
 
 ### Messages
 
