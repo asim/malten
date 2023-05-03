@@ -152,7 +152,7 @@ Params for messages
 
 ```
 stream: string e.g stream=foo
-text: string e.g text=helloworld
+message: string e.g message=helloworld
 ```
 
 An example
