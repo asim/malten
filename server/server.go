@@ -306,7 +306,8 @@ func (s *Server) Store(message *Message) {
 	// check the listing thing
 	stream, ok := s.streams[message.Stream]
 	if !ok {
-		stream = NewStream(message.Stream, "", false, int(StreamTTL.Seconds()))
+		// default to a private stream
+		stream = NewStream(message.Stream, "", true, int(StreamTTL.Seconds()))
 		s.streams[stream.Id] = stream
 	}
 
