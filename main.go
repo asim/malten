@@ -3,19 +3,19 @@ package main
 import (
 	"embed"
 	"io/fs"
-	"io/ioutil"
+	//"io/ioutil"
 	"log"
 	"net/http"
 
-	"github.com/asim/malten/agent/ai"
+	"github.com/asim/malten/agent"
 	"github.com/asim/malten/server"
 )
 
-//go:embed html/*
+//go:embed client/*
 var html embed.FS
 
 func main() {
-	htmlContent, err := fs.Sub(html, "html")
+	htmlContent, err := fs.Sub(html, "client")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -28,18 +28,34 @@ func main() {
 	})
 
 	http.HandleFunc("/new", func(w http.ResponseWriter, r *http.Request) {
-		f, err := htmlContent.Open("new.html")
-		if err != nil {
-			http.Error(w, err.Error(), 500)
+		// generate a new stream
+		stream := server.Random(8)
+		private := true
+		ttl := 60
+		// secret := TODO
+
+		if err := server.Default.New(stream, "", private, ttl); err != nil {
+			http.Error(w, "Cannot create stream", 500)
 			return
 		}
-		b, err := ioutil.ReadAll(f)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html")
-		w.Write(b)
+
+		// redirect to the stream
+		http.Redirect(w, r, "/#"+stream, 302)
+
+		/*
+			f, err := htmlContent.Open("new.html")
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			b, err := ioutil.ReadAll(f)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html")
+			w.Write(b)
+		*/
 	})
 
 	http.HandleFunc("/commands", func(w http.ResponseWriter, r *http.Request) {
@@ -80,8 +96,8 @@ func main() {
 	// run the server
 	go server.Run()
 
-	// run the ai
-	go ai.Run()
+	// run the agent
+	go agent.Run()
 
 	log.Print("Listening on :9090")
 
