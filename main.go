@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	//"io/ioutil"
@@ -9,13 +10,14 @@ import (
 
 	"github.com/asim/malten/agent"
 	"github.com/asim/malten/server"
+	"github.com/asim/malten/client/whatsapp"
 )
 
-//go:embed client/*
+//go:embed client/web/*
 var html embed.FS
 
 func main() {
-	htmlContent, err := fs.Sub(html, "client")
+	htmlContent, err := fs.Sub(html, "client/web")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -93,11 +95,17 @@ func main() {
 
 	h := server.WithCors(http.DefaultServeMux)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// run the server
 	go server.Run()
 
 	// run the agent
 	go agent.Run()
+
+	// whatsapp client
+	go whatsapp.Run(ctx)
 
 	log.Print("Listening on :9090")
 
