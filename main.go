@@ -9,8 +9,8 @@ import (
 	"net/http"
 
 	"github.com/asim/malten/agent"
-	"github.com/asim/malten/server"
 	"github.com/asim/malten/client/whatsapp"
+	"github.com/asim/malten/server"
 )
 
 //go:embed client/web/*

@@ -2,27 +2,27 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
-	"encoding/json"
-	"strings"
 
-	"google.golang.org/protobuf/proto"
-	waproto "go.mau.fi/whatsmeow/binary/proto"
 	"github.com/asim/malten/server"
 	"github.com/gorilla/websocket"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
+	waproto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -33,17 +33,17 @@ var (
 )
 
 const (
-        // Time allowed to write a message to the peer.
-        writeWait = 10 * time.Second
+	// Time allowed to write a message to the peer.
+	writeWait = 10 * time.Second
 
-        // Time allowed to read the next pong message from the peer.
-        pongWait = 60 * time.Second
+	// Time allowed to read the next pong message from the peer.
+	pongWait = 60 * time.Second
 
-        // Send pings to peer with this period. Must be less than pongWait.
-        pingPeriod = (pongWait * 9) / 10
+	// Send pings to peer with this period. Must be less than pongWait.
+	pingPeriod = (pongWait * 9) / 10
 
-        // Maximum message size allowed from peer.
-        maxMessageSize = 4096
+	// Maximum message size allowed from peer.
+	maxMessageSize = 4096
 )
 
 func Key(id string) string {
@@ -163,9 +163,9 @@ func eventHandler(evt interface{}) {
 
 		// try get extended message
 		if len(message) == 0 {
-			text := v.Message.GetExtendedTextMessage().Text
+			text := v.Message.GetExtendedTextMessage()
 			if text != nil {
-				message = *text
+				message = *text.Text
 			}
 		}
 
@@ -206,7 +206,11 @@ func eventHandler(evt interface{}) {
 }
 
 func Run(ctx context.Context) {
-	dbLog := waLog.Stdout("Database", "DEBUG", true)
+	if os.Getenv("WHATSAPP_CLIENT") != "true" {
+		return
+	}
+
+	dbLog := waLog.Stdout("Database", "ERROR", true)
 	// Make sure you add appropriate DB connector imports, e.g. github.com/mattn/go-sqlite3 for SQLite
 	container, err := sqlstore.New("sqlite3", "file:malten.db?_foreign_keys=on", dbLog)
 	if err != nil {
@@ -217,7 +221,7 @@ func Run(ctx context.Context) {
 	if err != nil {
 		panic(err)
 	}
-	clientLog := waLog.Stdout("Client", "DEBUG", true)
+	clientLog := waLog.Stdout("Client", "ERROR", true)
 	client := whatsmeow.NewClient(deviceStore, clientLog)
 	client.AddEventHandler(eventHandler)
 
