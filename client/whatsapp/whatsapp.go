@@ -191,11 +191,10 @@ func eventHandler(evt interface{}) {
 		}
 
 		// send the command
-		if strings.HasPrefix(message, "@malten") {
-			prompt := strings.TrimPrefix(message, "@malten")
+		if strings.Contains(strings.ToLower(message), "malten") {
 			// send to the server
 			http.PostForm("http://127.0.0.1:9090/commands", url.Values{
-				"prompt": []string{prompt},
+				"prompt": []string{message},
 				"stream": []string{stream},
 			})
 			return
