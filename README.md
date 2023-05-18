@@ -54,6 +54,14 @@ OPENAI_API_KEY=xxxx ./malten
 
 To invoke ChatGPT use `/malten` as the prefix to your command
 
+## WhatsApp
+
+To enable usage through WhatsApp scan the QR code output on the command line. Malten will login as you.
+
+Malten has access to all your chats/groups. The next message sent in a chat/group will create a new stream 
+observer. When you then prompt with @malten, it will send as a command to the server and it will be answered 
+by the OpenAI agent if enabled.
+
 ## API
 
 Below is a high level overview of the API
