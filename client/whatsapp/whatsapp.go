@@ -150,7 +150,7 @@ func observe(jid types.JID) {
 			continue
 		}
 
-		fmt.Println("Message response: %+v", rsp)
+		fmt.Printf("Message response: %+v\n", rsp)
 	}
 }
 
