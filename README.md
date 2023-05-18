@@ -8,12 +8,6 @@ Malten is an ephemeral messaging app. It contains solely streams of text and not
 Streams have an idle lifetime of 1024 seconds. Each stream supports 1024 messages as a FIFO and 
 1024 characters per message. Streams can be discovered through exploration or via the API.
 
-## Design
-
-Malten keeps everything in memory, nothing is ever written to disk or a database. This is to ensure privacy and security. We 
-do not want to persist data and ideally also want to encrypt messages on the client side. Streams are aged out based on TTL 
-and each stream limits the number of messages and char length to ensure we can comfortably run malten in memory on most devices. 
-
 ## Roadmap
 
 - [x] Presence - User presence status
