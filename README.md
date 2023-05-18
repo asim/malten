@@ -56,7 +56,7 @@ To invoke ChatGPT use `/malten` as the prefix to your command
 
 ## WhatsApp
 
-To enable usage through WhatsApp set the env var below and scan the QR code output on the command line. Malten will login as you.
+To enable usage through WhatsApp set the env var below and scan the QR code output on the command line. 
 
 ```
 WHATSAPP_CLIENT=true
