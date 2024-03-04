@@ -1,0 +1,17 @@
+{
+  "name": "Malten",
+  "short_name": "Malten",
+  "description": "Reflect with AI",
+  "scope": "/",
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "display": "standalone", 
+  "icons": [
+      {
+        "src": "/logo.jpg",
+        "type": "image/jpeg",
+        "sizes": "300x300"
+      }
+  ]
+}
