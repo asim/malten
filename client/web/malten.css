@@ -101,10 +101,7 @@ ul li {
   text-decoration: none;
 }
 #messages li {
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  margin-bottom: 10px;
+  padding: 10px 0;
 }
 #private {
   vertical-align: middle;
