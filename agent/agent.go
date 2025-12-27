@@ -208,12 +208,12 @@ func (ai *AI) listen(stream string) error {
 		}
 
 		// think and respond
-		if msg.Type == "command" {
-			ai.execute(msg.Stream, msg.Text)
-		} else {
-			// just a message
-			ai.observe(msg.Stream, msg.Text)
-		}
+		//if msg.Type == "command" {
+		ai.execute(msg.Stream, msg.Text)
+		//} else {
+		// just a message
+		//	ai.observe(msg.Stream, msg.Text)
+		//}
 	}
 
 	return nil
