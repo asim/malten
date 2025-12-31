@@ -11,6 +11,7 @@ var streams = {};
 var ws = null;
 var currentStream = null;
 var reconnectTimer = null;
+var pendingMessages = {};
 
 String.prototype.parseURL = function() {
     return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
@@ -155,8 +156,14 @@ function connectWebSocket() {
         if (ev.Stream !== currentStream) return;
         
         if (ev.Type === "message") {
-            // Dedupe
+            // Dedupe by ID
             if (ev.Id in seen) return;
+            // Skip if we already displayed this as a pending message
+            if (ev.Text in pendingMessages) {
+                seen[ev.Id] = ev;
+                delete pendingMessages[ev.Text];
+                return;
+            }
             displayMessages([ev], 1);
             clipMessages();
         }
@@ -210,7 +217,19 @@ function submitCommand() {
         return false;
     }
 
-    // Post to /commands - message will appear via websocket
+    // Display message immediately for responsiveness
+    var tempId = 'local-' + Date.now();
+    pendingMessages[prompt] = tempId;
+    var msg = {
+        Id: tempId,
+        Text: prompt,
+        Created: Date.now() * 1e6,
+        Type: 'message',
+        Stream: getStream()
+    };
+    displayMessages([msg], 1);
+
+    // Post to /commands
     $.post(commandUrl, {
         prompt: prompt,
         stream: getStream()
