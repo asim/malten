@@ -185,8 +185,7 @@ function connectWebSocket() {
 function setCurrent() {
     var current = document.getElementById('current');
     var stream = getStream();
-    current.href = window.location.href;
-    current.text = stream === "~" ? "~" : stream;
+    current.innerText = "#" + stream;
     document.title = stream === "~" ? "Malten" : stream;
 }
 

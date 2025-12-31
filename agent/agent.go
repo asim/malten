@@ -18,8 +18,7 @@ var (
 )
 
 var (
-	DefaultPrompt = `You are Malten, an anonymous ephemeral messaging assistant. 
-You respond when users mention @malten or malten in their message.
+	DefaultPrompt = `You are Malten, an anonymous ephemeral messaging assistant.
 Be helpful, concise, and kind. Limit responses to 1024 characters or less.`
 
 	MaxTokens = 1024

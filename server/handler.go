@@ -63,11 +63,8 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if message mentions malten
-	lower := strings.ToLower(command)
-	if strings.Contains(lower, "malten") || strings.Contains(lower, "@malten") {
-		go handleAI(command, stream)
-	}
+	// Send to AI
+	go handleAI(command, stream)
 }
 
 func handleCommand(command, stream string) {
