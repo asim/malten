@@ -64,6 +64,12 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if it's a price query
+	if coin := detectPriceQuery(command); coin != "" {
+		go handlePriceQuery(coin, stream)
+		return
+	}
+
 	// Send to AI
 	go handleAI(command, stream)
 }
@@ -128,6 +134,48 @@ func handleCommand(cmd, stream string) {
 			Default.Events <- NewMessage("Usage: /goto <stream>", stream)
 		}
 	}
+}
+
+// detectPriceQuery checks if the input is asking for a crypto price
+func detectPriceQuery(input string) string {
+	input = strings.ToLower(strings.TrimSpace(input))
+	
+	// Patterns: "btc price", "price of btc", "btc", "bitcoin price", etc.
+	coins := []string{
+		"btc", "bitcoin", "eth", "ethereum", "uni", "uniswap",
+		"sol", "solana", "ada", "cardano", "dot", "polkadot",
+		"matic", "polygon", "link", "chainlink", "avax", "avalanche",
+		"atom", "cosmos", "xrp", "ripple", "doge", "dogecoin",
+		"shib", "ltc", "litecoin", "xlm", "stellar",
+		"arb", "arbitrum", "op", "optimism", "pepe",
+	}
+	
+	for _, coin := range coins {
+		// "btc price", "btc?", "btc"
+		if input == coin || input == coin+"?" || input == coin+" price" || input == coin+" price?" {
+			return coin
+		}
+		// "price of btc", "price btc"
+		if input == "price of "+coin || input == "price "+coin {
+			return coin
+		}
+		// "what is btc", "what's btc" - only for ticker symbols
+		if len(coin) <= 5 {
+			if input == "what is "+coin || input == "whats "+coin || input == "what's "+coin {
+				return coin
+			}
+		}
+	}
+	return ""
+}
+
+func handlePriceQuery(coin, stream string) {
+	result, err := command.Execute("price", []string{coin})
+	if err != nil {
+		Default.Events <- NewMessage("Error: "+err.Error(), stream)
+		return
+	}
+	Default.Events <- NewMessage(result, stream)
 }
 
 func handleAI(prompt, stream string) {
