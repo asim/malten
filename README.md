@@ -1,6 +1,6 @@
 # Malten
 
-Anonymous ephemeral messaging
+Anonymous ephemeral messaging with AI
 
 ## Overview
 
@@ -10,10 +10,10 @@ Each stream supports 1024 messages (FIFO) with 1024 characters per message.
 ## Features
 
 - Real-time messaging via WebSocket
-- AI assistant (mention @malten in your message)
+- AI assistant responds to all messages
 - Slash commands: `/help`, `/streams`, `/new`, `/goto <stream>`
+- Clickable #hashtag stream links
 - PWA support for mobile
-- Configurable stream TTL
 
 ## Usage
 
@@ -26,24 +26,22 @@ Browse to `localhost:9090`
 
 ### AI Integration
 
-To enable the AI assistant, set one of:
+Set one of:
 
 ```bash
-# Fanar (preferred)
+# Fanar
 FANAR_API_KEY=xxx FANAR_API_URL=https://api.fanar.qa/v1 ./malten
 
-# Or OpenAI
+# OpenAI
 OPENAI_API_KEY=xxx ./malten
 ```
-
-Mention `@malten` or `malten` in your message to get a response.
 
 ## Commands
 
 - `/help` - Show available commands
-- `/streams` - List public streams  
-- `/new [name]` - Create a new stream
-- `/goto <stream>` - Switch to a stream (or use #stream in URL)
+- `/streams` - List public streams (clickable)
+- `/new` - Create a new random stream
+- `/goto <stream>` - Switch to a stream
 
 ## API
 

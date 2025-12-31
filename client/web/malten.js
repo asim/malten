@@ -20,7 +20,7 @@ String.prototype.parseURL = function() {
 };
 
 String.prototype.parseHashTag = function() {
-    return this.replace(/[#]+[A-Za-z0-9-_]+/g, function(t) {
+    return this.replace(/[#]+[A-Za-z0-9-_~]+/g, function(t) {
         var url = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
         return t.link(url + '/' + t);
     });
@@ -43,15 +43,11 @@ function getStream() {
 
 function escapeHTML(str) {
     var div = document.createElement('div');
-    str = str.replace(/(?:\r\n|\r|\n)/g, '<br>');
-    div.innerHTML = str;
-    return div.innerHTML;
+    div.textContent = str;
+    return div.innerHTML.replace(/(?:\r\n|\r|\n)/g, '<br>');
 }
 
-function chars() {
-    var i = document.getElementById('prompt').value.length;
-    document.getElementById('chars').innerHTML = maxChars - i;
-}
+
 
 function clearMessages() {
     document.getElementById('messages').innerHTML = "";
@@ -197,6 +193,7 @@ function loadStream() {
     
     var form = document.getElementById('form');
     form.elements["stream"].value = getStream();
+    form.elements["prompt"].focus();
 }
 
 function submitCommand() {
@@ -205,14 +202,30 @@ function submitCommand() {
     
     if (prompt.length === 0) return false;
 
-    // Post to /commands
+    // Handle /goto command locally
+    var gotoMatch = prompt.match(/^\/goto\s+#?(.+)$/);
+    if (gotoMatch) {
+        form.elements["prompt"].value = '';
+        window.location.hash = gotoMatch[1];
+        return false;
+    }
+
+    // Post to /commands - message will appear via websocket
     $.post(commandUrl, {
         prompt: prompt,
         stream: getStream()
     });
 
     form.elements["prompt"].value = '';
-    chars();
+    return false;
+}
+
+function createNewStream() {
+    $.post('/streams', {}, function(data) {
+        if (data && data.stream) {
+            window.location.hash = data.stream;
+        }
+    });
     return false;
 }
 
@@ -239,7 +252,7 @@ function shareListener() {
 }
 
 function loadListeners() {
-    document.getElementById("prompt").addEventListener("keyup", chars);
+
     
     $(window).scroll(function() {
         if ($(window).scrollTop() == $(document).height() - $(window).height()) {

@@ -52,7 +52,6 @@ ul li {
   width: 50px;
   text-align: left;
   border: none;
-  border-bottom: 1px solid #5f6368;
 }
 #head {
   text-align: left;
@@ -75,7 +74,7 @@ ul li {
   font-size: 0.8em;
 }
 #think {
-  margin: 30px 0 30px;
+  margin: 10px 0 10px;
 }
 #think button:hover {
   cursor: pointer;
@@ -83,7 +82,6 @@ ul li {
 #think form {
   display: flex;
   align-items: center;
-  border-bottom: 2px solid #EEEFF0;
 }
 #think #current {
   font-size: 1.2em;
@@ -101,13 +99,16 @@ ul li {
   padding: 5px;
   border: none;
 }
+#think button {
+  display: none;
+}
 #messages {
   height: calc(100vh - 200px);
   overflow: scroll;
 }
 #messages a {
-  color: #1763A3;
-  font-weight: normal;
+  color: #000;
+  font-weight: bold;
   text-decoration: none;
 }
 #messages li {

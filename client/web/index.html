@@ -21,7 +21,7 @@
         <a href="/"><img src="logo.jpg" style="width:20px;height:20px;vertical-align:middle;"/> malten</a>
         <span id="nav">
           <a href="#" id="share">share</a> |
-          <a href="/new">new</a> |
+          <a href="#" onclick="return createNewStream();">new</a> |
           <b>goto</b> <form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
         </span>
       </div>
@@ -31,7 +31,7 @@
           <input id="stream" name="stream" type="hidden" value="~">
           <div id="controls">
             <button type="submit" id="send">Send</button>
-            <span id="chars">1024</span>
+
           </div>
         </form>
       </div>

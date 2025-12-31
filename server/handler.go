@@ -77,20 +77,23 @@ func handleCommand(command, stream string) {
 
 	switch cmd {
 	case "/help", "/commands":
-		help := `Commands: /help /streams /new /goto <stream>`
+		help := `/help - Show this help
+/streams - List public streams
+/new - Create a new stream
+/goto <stream> - Switch to a stream`
 		Default.Events <- NewMessage(help, stream)
 
 	case "/streams":
 		var names []string
 		for k, v := range Default.List() {
 			if !v.Private {
-				names = append(names, k)
+				names = append(names, "#"+k)
 			}
 		}
 		if len(names) == 0 {
 			Default.Events <- NewMessage("No public streams", stream)
 		} else {
-			Default.Events <- NewMessage("Streams: "+strings.Join(names, ", "), stream)
+			Default.Events <- NewMessage(strings.Join(names, "\n"), stream)
 		}
 
 	case "/new":
