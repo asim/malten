@@ -80,8 +80,19 @@ ul li {
 #think button:hover {
   cursor: pointer;
 }
+#think form {
+  display: flex;
+  align-items: center;
+  border-bottom: 2px solid #EEEFF0;
+}
+#think #current {
+  font-size: 1.2em;
+  color: rgba(0,0,0,.5);
+  padding: 5px;
+  white-space: nowrap;
+}
 #think input {
-  width: 100%;
+  flex: 1;
   font-size: 1.2em;
   color: rgba(0,0,0,.87);
   -webkit-box-sizing: border-box;
@@ -89,7 +100,6 @@ ul li {
   box-sizing: border-box;
   padding: 5px;
   border: none;
-  border-bottom: 2px solid #EEEFF0;
 }
 #messages {
   height: calc(100vh - 200px);
