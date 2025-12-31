@@ -95,8 +95,7 @@ function displayMessages(array, direction) {
 
     // Auto-scroll to bottom
     if (direction >= 0) {
-        var terminal = document.getElementById('terminal');
-        terminal.scrollTop = terminal.scrollHeight;
+        window.scrollTo(0, document.body.scrollHeight);
     }
 }
 
