@@ -104,7 +104,7 @@ func handleCommand(command, stream string) {
 		if err := Default.New(name, "", false, int(StreamTTL.Seconds())); err != nil {
 			Default.Events <- NewMessage("Failed to create stream", stream)
 		} else {
-			Default.Events <- NewMessage("Created stream: "+name, stream)
+			Default.Events <- NewMessage("/goto #"+name, stream)
 		}
 
 	case "/goto":

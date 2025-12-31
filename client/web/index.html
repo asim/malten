@@ -25,18 +25,14 @@
           <b>goto</b> <form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
         </span>
       </div>
-      <div id="think">
-        <form id="form" onsubmit="return submitCommand();">
-          <span id="current">#~</span> <input id="prompt" name="prompt" value="" placeholder="Reflect with AI" maxlength="1024" autocomplete="off" autofocus>
-          <input id="stream" name="stream" type="hidden" value="~">
-          <div id="controls">
-            <button type="submit" id="send">Send</button>
-
-          </div>
-        </form>
-      </div>
-      <div>
+      <div id="terminal">
         <ul id="messages"></ul>
+      </div>
+      <div id="prompt-line">
+        <form id="form" onsubmit="return submitCommand();">
+          <span id="current">#~</span> <input id="prompt" name="prompt" value="" placeholder="" maxlength="1024" autocomplete="off" autofocus>
+          <input id="stream" name="stream" type="hidden" value="~">
+        </form>
       </div>
     </div>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>

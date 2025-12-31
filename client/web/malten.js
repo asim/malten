@@ -82,15 +82,21 @@ function displayMessages(array, direction) {
         item.appendChild(d2);
 
         if (direction >= 0) {
-            list.insertBefore(item, list.firstChild);
-        } else {
             list.appendChild(item);
+        } else {
+            list.insertBefore(item, list.firstChild);
         }
         seen[array[i].Id] = array[i];
     }
 
     if (direction >= 0 && array.length > 0) {
         last = array[array.length - 1].Created;
+    }
+
+    // Auto-scroll to bottom
+    if (direction >= 0) {
+        var terminal = document.getElementById('terminal');
+        terminal.scrollTop = terminal.scrollHeight;
     }
 }
 
@@ -214,6 +220,13 @@ function submitCommand() {
     if (gotoMatch) {
         form.elements["prompt"].value = '';
         window.location.hash = gotoMatch[1];
+        return false;
+    }
+
+    // Handle /new command locally
+    if (prompt.match(/^\/new(\s|$)/)) {
+        form.elements["prompt"].value = '';
+        createNewStream();
         return false;
     }
 
