@@ -17,7 +17,10 @@ import (
 )
 
 var (
-	Key = os.Getenv("OPENAI_API_KEY")
+	Key       = os.Getenv("OPENAI_API_KEY")
+	FanarKey  = os.Getenv("FANAR_API_KEY")
+	FanarURL  = os.Getenv("FANAR_API_URL")
+	ModelName = openai.GPT3Dot5Turbo
 
 	Client *openai.Client
 )
@@ -93,7 +96,7 @@ func complete(prompt, user, persona string, ctx ...Context) openai.ChatCompletio
 	})
 
 	return openai.ChatCompletionRequest{
-		Model:     openai.GPT3Dot5Turbo,
+		Model:     ModelName,
 		Messages:  message,
 		User:      user,
 		MaxTokens: MaxTokens,
@@ -288,12 +291,18 @@ func (ai *AI) execute(stream, prompt string) {
 }
 
 func New(persona string) (*AI, error) {
-	if len(Key) == 0 {
-		return nil, errors.New("missing OPENAI_API_KEY")
+	// Prefer Fanar if configured
+	if len(FanarKey) > 0 && len(FanarURL) > 0 {
+		config := openai.DefaultConfig(FanarKey)
+		config.BaseURL = FanarURL
+		Client = openai.NewClientWithConfig(config)
+		ModelName = "Fanar"
+	} else if len(Key) > 0 {
+		Client = openai.NewClient(Key)
+		ModelName = openai.GPT3Dot5Turbo
+	} else {
+		return nil, errors.New("missing OPENAI_API_KEY or FANAR_API_KEY")
 	}
-
-	// set the client
-	Client = openai.NewClient(Key)
 
 	ai := new(AI)
 	ai.persona = persona
