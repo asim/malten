@@ -70,6 +70,12 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if it's a reminder query
+	if query := detectReminderQuery(command); query != "" {
+		go handleReminderQuery(query, stream)
+		return
+	}
+
 	// Send to AI
 	go handleAI(command, stream)
 }
@@ -101,8 +107,7 @@ func handleCommand(cmd, stream string) {
 /new - Create a new stream
 /goto <stream> - Switch to a stream
 /price <coin> - Get crypto price
-/reminder - Daily Islamic reminder
-/quran <query> - Search the Quran`
+/reminder [query] - Daily reminder or search Islamic texts`
 		Default.Events <- NewMessage(help, stream)
 
 	case "streams":
@@ -173,6 +178,48 @@ func detectPriceQuery(input string) string {
 
 func handlePriceQuery(coin, stream string) {
 	result, err := command.Execute("price", []string{coin})
+	if err != nil {
+		Default.Events <- NewMessage("Error: "+err.Error(), stream)
+		return
+	}
+	Default.Events <- NewMessage(result, stream)
+}
+
+// detectReminderQuery checks if input is asking for Islamic content
+func detectReminderQuery(input string) string {
+	input = strings.ToLower(strings.TrimSpace(input))
+	
+	// "reminder" alone returns daily
+	if input == "reminder" {
+		return "__daily__"
+	}
+	
+	// "reminder <query>" patterns
+	prefixes := []string{
+		"reminder ",
+		"remind me about ",
+		"what does islam say about ",
+		"what does the quran say about ",
+		"quran on ",
+		"hadith on ",
+		"hadith about ",
+	}
+	
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(input, prefix) {
+			return strings.TrimPrefix(input, prefix)
+		}
+	}
+	
+	return ""
+}
+
+func handleReminderQuery(query, stream string) {
+	var args []string
+	if query != "__daily__" {
+		args = strings.Fields(query)
+	}
+	result, err := command.Execute("reminder", args)
 	if err != nil {
 		Default.Events <- NewMessage("Error: "+err.Error(), stream)
 		return

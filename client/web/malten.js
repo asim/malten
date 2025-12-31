@@ -14,14 +14,15 @@ var reconnectTimer = null;
 var pendingMessages = {};
 
 String.prototype.parseURL = function() {
-    return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
+    return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=#]+/g, function(url) {
         var pretty = url.replace(/^http(s)?:\/\/(www\.)?/, '');
         return pretty.link(url);
     });
 };
 
 String.prototype.parseHashTag = function() {
-    return this.replace(/[#]+[A-Za-z0-9-_~]+/g, function(t) {
+    // Require at least one letter after # to avoid matching URL fragments like #127
+    return this.replace(/#[A-Za-z~][A-Za-z0-9-_~]*/g, function(t) {
         var url = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
         return t.link(url + '/' + t);
     });

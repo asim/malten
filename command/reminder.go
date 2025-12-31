@@ -18,12 +18,7 @@ func init() {
 		Usage:       "/reminder",
 		Handler:     reminderHandler,
 	})
-	Register(&Command{
-		Name:        "quran",
-		Description: "Search the Quran",
-		Usage:       "/quran <query>",
-		Handler:     quranSearchHandler,
-	})
+
 }
 
 type ReminderResponse struct {
@@ -42,12 +37,19 @@ type SearchResponse struct {
 			Verse   string `json:"verse"`
 			Name    string `json:"name"`
 			Source  string `json:"source"`
+			Book    string `json:"book"`
+			Volume  string `json:"volume"`
 		} `json:"metadata"`
 	} `json:"references"`
 }
 
 func reminderHandler(args []string) (string, error) {
-	// Check cache
+	// If args provided, do search
+	if len(args) > 0 {
+		return searchHandler(args)
+	}
+
+	// Otherwise return daily reminder
 	if cached, ok := GlobalCache.Get("reminder:latest"); ok {
 		return cached, nil
 	}
@@ -83,15 +85,11 @@ func reminderHandler(args []string) (string, error) {
 	return result, nil
 }
 
-func quranSearchHandler(args []string) (string, error) {
-	if len(args) == 0 {
-		return "Usage: /quran <query> (e.g. /quran patience)", nil
-	}
-
+func searchHandler(args []string) (string, error) {
 	query := strings.Join(args, " ")
 	
 	// Check cache
-	cacheKey := "quran:" + query
+	cacheKey := "reminder:search:" + query
 	if cached, ok := GlobalCache.Get(cacheKey); ok {
 		return cached, nil
 	}
@@ -115,25 +113,31 @@ func quranSearchHandler(args []string) (string, error) {
 		return "No results found", nil
 	}
 
-	// Format: answer + top 2 references
+	// Format: answer + top 3 references with links
 	var result strings.Builder
 	
 	if data.Answer != "" {
-		// Strip HTML tags from answer
 		answer := stripHTML(data.Answer)
 		result.WriteString(answer)
 	}
 
 	if len(data.References) > 0 {
-		result.WriteString("\n")
-		max := 2
+		max := 3
 		if len(data.References) < max {
 			max = len(data.References)
 		}
 		for i := 0; i < max; i++ {
 			ref := data.References[i]
-			if ref.Metadata.Source == "quran" {
-				result.WriteString(fmt.Sprintf("\n[%s %s:%s]", ref.Metadata.Name, ref.Metadata.Chapter, ref.Metadata.Verse))
+			switch ref.Metadata.Source {
+			case "quran":
+				// Use path format to avoid # fragment parsing issues
+				result.WriteString(fmt.Sprintf("\n%s %s:%s - https://reminder.dev/quran/%s/%s", 
+					ref.Metadata.Name, ref.Metadata.Chapter, ref.Metadata.Verse,
+					ref.Metadata.Chapter, ref.Metadata.Verse))
+			case "bukhari":
+				result.WriteString(fmt.Sprintf("\nBukhari %s - https://reminder.dev/hadith", ref.Metadata.Book))
+			case "names":
+				result.WriteString(fmt.Sprintf("\n%s - https://reminder.dev/names", ref.Metadata.Name))
 			}
 		}
 	}
