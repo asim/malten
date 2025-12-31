@@ -63,16 +63,25 @@ func init() {
 	})
 }
 
+const priceCacheTTL = 60 * time.Second
+
 func priceHandler(args []string) (string, error) {
 	if len(args) == 0 {
 		return "Usage: /price <coin> (e.g. /price btc, /price eth)", nil
 	}
 
 	coin := strings.ToLower(args[0])
+	originalCoin := coin
 	
 	// Check alias
 	if alias, ok := coinAliases[coin]; ok {
 		coin = alias
+	}
+
+	// Check cache first
+	cacheKey := "price:" + coin
+	if cached, ok := GlobalCache.Get(cacheKey); ok {
+		return cached, nil
 	}
 
 	// Call CoinGecko
@@ -85,12 +94,12 @@ func priceHandler(args []string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	var result map[string]map[string]float64
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var apiResult map[string]map[string]float64
+	if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
 		return "Error parsing response", err
 	}
 
-	data, ok := result[coin]
+	data, ok := apiResult[coin]
 	if !ok {
 		return fmt.Sprintf("Coin '%s' not found", args[0]), nil
 	}
@@ -120,5 +129,10 @@ func priceHandler(args []string) (string, error) {
 		}
 	}
 
-	return fmt.Sprintf("%s: %s%s", strings.ToUpper(args[0]), priceStr, changeStr), nil
+	result := fmt.Sprintf("%s: %s%s", strings.ToUpper(originalCoin), priceStr, changeStr)
+	
+	// Cache the result
+	GlobalCache.Set(cacheKey, result, priceCacheTTL)
+	
+	return result, nil
 }

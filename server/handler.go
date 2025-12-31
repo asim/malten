@@ -100,7 +100,9 @@ func handleCommand(cmd, stream string) {
 /streams - List public streams
 /new - Create a new stream
 /goto <stream> - Switch to a stream
-/price <coin> - Get crypto price`
+/price <coin> - Get crypto price
+/reminder - Daily Islamic reminder
+/quran <query> - Search the Quran`
 		Default.Events <- NewMessage(help, stream)
 
 	case "streams":
