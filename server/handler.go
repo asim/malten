@@ -5,17 +5,29 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/asim/malten/agent"
 )
 
 var (
-	defaultStream = "_"
+	defaultStream = "~"
 )
 
 func GetCommandsHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
 	// return list of commands
+	help := `Available commands:
+/help - Show this help
+/commands - Show this help
+/streams - List public streams
+/new - Create a new stream
+/goto <stream> - Switch to a stream`
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(help))
 }
 
 func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
@@ -27,8 +39,6 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Got command", command)
-
 	// default stream
 	if len(stream) == 0 {
 		stream = defaultStream
@@ -39,11 +49,100 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		command = command[:MaxMessageSize]
 	}
 
+	// Save user message first
 	select {
-	case Default.Events <- NewCommand(command, stream):
+	case Default.Events <- NewMessage(command, stream):
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating message", 504)
+		return
 	}
+
+	// Handle slash commands
+	if strings.HasPrefix(command, "/") {
+		handleCommand(command, stream)
+		return
+	}
+
+	// Check if message mentions malten
+	lower := strings.ToLower(command)
+	if strings.Contains(lower, "malten") || strings.Contains(lower, "@malten") {
+		go handleAI(command, stream)
+	}
+}
+
+func handleCommand(command, stream string) {
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return
+	}
+
+	cmd := strings.ToLower(parts[0])
+
+	switch cmd {
+	case "/help", "/commands":
+		help := `Commands: /help /streams /new /goto <stream>`
+		Default.Events <- NewMessage(help, stream)
+
+	case "/streams":
+		var names []string
+		for k, v := range Default.List() {
+			if !v.Private {
+				names = append(names, k)
+			}
+		}
+		if len(names) == 0 {
+			Default.Events <- NewMessage("No public streams", stream)
+		} else {
+			Default.Events <- NewMessage("Streams: "+strings.Join(names, ", "), stream)
+		}
+
+	case "/new":
+		name := Random(8)
+		if len(parts) > 1 {
+			name = parts[1]
+		}
+		if err := Default.New(name, "", false, int(StreamTTL.Seconds())); err != nil {
+			Default.Events <- NewMessage("Failed to create stream", stream)
+		} else {
+			Default.Events <- NewMessage("Created stream: "+name, stream)
+		}
+
+	case "/goto":
+		if len(parts) > 1 {
+			Default.Events <- NewMessage("Use #"+parts[1]+" in the URL to switch streams", stream)
+		} else {
+			Default.Events <- NewMessage("Usage: /goto <stream>", stream)
+		}
+	}
+}
+
+func handleAI(prompt, stream string) {
+	if agent.Client == nil {
+		Default.Events <- NewMessage("AI not available", stream)
+		return
+	}
+
+	// Get recent messages for context
+	messages := Default.Retrieve("", stream, 1, 0, 20)
+	var ctx []agent.Message
+	for _, m := range messages {
+		if m.Type == "message" && m.Text != prompt {
+			// Determine role based on content
+			role := "user"
+			if strings.HasPrefix(m.Text, "[malten]") {
+				role = "assistant"
+			}
+			ctx = append(ctx, agent.Message{Role: role, Content: m.Text})
+		}
+	}
+
+	reply, err := agent.Prompt(agent.DefaultPrompt, ctx, prompt)
+	if err != nil {
+		fmt.Println("AI error:", err)
+		return
+	}
+
+	Default.Events <- NewMessage(reply, stream)
 }
 
 func GetHandler(w http.ResponseWriter, r *http.Request) {
