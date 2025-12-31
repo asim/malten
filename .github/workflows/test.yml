@@ -2,40 +2,20 @@ name: Run tests
 on: [push]
 
 jobs:
-
   test:
     name: Test repo
     runs-on: ubuntu-latest
     steps:
-    - name: Set up Go 1.18
-      uses: actions/setup-go@v1
-      with:
-        go-version: 1.18
-      id: go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
 
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v2
+      - name: Check out code
+        uses: actions/checkout@v4
 
-    - name: Enable caching
-      uses: actions/cache@v2
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-    
-    - name: Get dependencies
-      run: |
-        go get -v -t -d ./...
+      - name: Run Go tests
+        run: go test -v ./...
 
-    - name: Run Go tests
-      id: tests
-      env:
-        IN_TRAVIS_CI: yes
-      run: go test -v ./...
-
-    - name: Run tests.sh
-      id: tests-sh
-      env:
-        IN_TRAVIS_CI: yes
-      run: bash ./tests.sh
+      - name: Run tests.sh
+        run: bash ./tests.sh
