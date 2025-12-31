@@ -1,18 +1,19 @@
 # Malten
 
-Anonymous ephemeral messaging with AI
+A conversational AI assistant with real-time messaging
 
 ## Overview
 
-Malten is an ephemeral messaging app. Streams of text that expire after 1024 seconds of idle time. 
-Each stream supports 1024 messages (FIFO) with 1024 characters per message.
+Malten is an AI-powered assistant that combines ephemeral messaging with useful commands. Ask questions, get crypto prices, receive Islamic reminders, and more. Messages are organized into streams that expire after idle time.
 
 ## Features
 
+- AI assistant powered by Fanar or OpenAI
 - Real-time messaging via WebSocket
-- AI assistant responds to all messages
-- Slash commands: `/help`, `/streams`, `/new`, `/goto <stream>`
-- Clickable #hashtag stream links
+- Crypto price lookups (`price btc`, `eth price`)
+- Islamic reminders with Quran, Hadith, and Names of Allah (`reminder`)
+- Natural language queries (`what does islam say about patience`)
+- Ephemeral streams with 1024 message limit
 - PWA support for mobile
 
 ## Usage
@@ -38,19 +39,24 @@ OPENAI_API_KEY=xxx ./malten
 
 ## Commands
 
-- `/help` - Show available commands
-- `/streams` - List public streams (clickable)
-- `/new` - Create a new random stream
-- `/goto <stream>` - Switch to a stream
+Commands work with or without the `/` prefix:
+
+- `help` - Show available commands
+- `new` - Create a new stream
+- `goto <stream>` - Switch to a stream
+- `price <coin>` - Get crypto price (btc, eth, sol, etc.)
+- `reminder` - Daily Islamic reminder
+- `reminder <query>` - Search Quran and Hadith
+
+### Natural Language
+
+You can also ask naturally:
+
+- `btc price` or `price of eth`
+- `what does the quran say about patience`
+- `hadith about charity`
 
 ## API
-
-### Streams
-
-```
-GET  /streams          - List public streams
-POST /streams          - Create stream (stream=name, private=bool, ttl=seconds)
-```
 
 ### Messages
 

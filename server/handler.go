@@ -64,6 +64,12 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle commands without slash
+	if cmd := detectCommand(command); cmd != "" {
+		handleCommand(cmd, stream)
+		return
+	}
+
 	// Check if it's a price query
 	if coin := detectPriceQuery(command); coin != "" {
 		go handlePriceQuery(coin, stream)
@@ -103,7 +109,6 @@ func handleCommand(cmd, stream string) {
 	switch name {
 	case "help", "commands":
 		help := `/help - Show this help
-/streams - List public streams
 /new - Create a new stream
 /goto <stream> - Switch to a stream
 /price <coin> - Get crypto price
@@ -141,6 +146,25 @@ func handleCommand(cmd, stream string) {
 			Default.Events <- NewMessage("Usage: /goto <stream>", stream)
 		}
 	}
+}
+
+// detectCommand checks if input matches a command without slash
+func detectCommand(input string) string {
+	input = strings.TrimSpace(input)
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return ""
+	}
+	
+	cmd := strings.ToLower(parts[0])
+	commands := []string{"help", "commands", "new", "goto", "streams", "price", "reminder"}
+	
+	for _, c := range commands {
+		if cmd == c {
+			return "/" + input
+		}
+	}
+	return ""
 }
 
 // detectPriceQuery checks if the input is asking for a crypto price

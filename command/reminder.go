@@ -26,6 +26,11 @@ type ReminderResponse struct {
 	Hadith  string `json:"hadith"`
 	Name    string `json:"name"`
 	Message string `json:"message"`
+	Links   struct {
+		Verse  string `json:"verse"`
+		Hadith string `json:"hadith"`
+		Name   string `json:"name"`
+	} `json:"links"`
 }
 
 type SearchResponse struct {
@@ -68,23 +73,47 @@ func reminderHandler(args []string) (string, error) {
 		return "Error parsing response", err
 	}
 
-	// Format output
-	var parts []string
+	// Format output with clear sections and links
+	const baseURL = "https://reminder.dev"
+	var result strings.Builder
+
+	// Verse section
 	if data.Verse != "" {
-		parts = append(parts, data.Verse)
-	}
-	if data.Name != "" {
-		// Just the name title, not the full description
-		lines := strings.Split(data.Name, "\n")
-		if len(lines) > 0 {
-			parts = append(parts, lines[0])
+		result.WriteString("📖 QURAN\n")
+		result.WriteString(data.Verse)
+		if data.Links.Verse != "" {
+			result.WriteString(fmt.Sprintf("\n\n%s%s", baseURL, data.Links.Verse))
 		}
 	}
 
-	result := strings.Join(parts, "\n\n")
-	GlobalCache.Set("reminder:latest", result, reminderCacheTTL)
+	// Hadith section
+	if data.Hadith != "" {
+		if result.Len() > 0 {
+			result.WriteString("\n\n---\n\n")
+		}
+		result.WriteString("📜 HADITH\n")
+		result.WriteString(data.Hadith)
+		if data.Links.Hadith != "" {
+			result.WriteString(fmt.Sprintf("\n\n%s%s", baseURL, data.Links.Hadith))
+		}
+	}
 
-	return result, nil
+	// Name of Allah section
+	if data.Name != "" {
+		if result.Len() > 0 {
+			result.WriteString("\n\n---\n\n")
+		}
+		result.WriteString("✨ NAME OF ALLAH\n")
+		result.WriteString(data.Name)
+		if data.Links.Name != "" {
+			result.WriteString(fmt.Sprintf("\n\n%s%s", baseURL, data.Links.Name))
+		}
+	}
+
+	finalResult := result.String()
+	GlobalCache.Set("reminder:latest", finalResult, reminderCacheTTL)
+
+	return finalResult, nil
 }
 
 func searchHandler(args []string) (string, error) {
