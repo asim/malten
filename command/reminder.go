@@ -39,6 +39,8 @@ type SearchResponse struct {
 			Source  string `json:"source"`
 			Book    string `json:"book"`
 			Volume  string `json:"volume"`
+			Meaning string `json:"meaning"`
+			English string `json:"english"`
 		} `json:"metadata"`
 	} `json:"references"`
 }
@@ -137,7 +139,11 @@ func searchHandler(args []string) (string, error) {
 			case "bukhari":
 				result.WriteString(fmt.Sprintf("\nBukhari %s - https://reminder.dev/hadith", ref.Metadata.Book))
 			case "names":
-				result.WriteString(fmt.Sprintf("\n%s - https://reminder.dev/names", ref.Metadata.Name))
+				name := ref.Metadata.Name
+				if name == "" {
+					name = ref.Metadata.Meaning + " (" + ref.Metadata.English + ")"
+				}
+				result.WriteString(fmt.Sprintf("\n%s - https://reminder.dev/names", name))
 			}
 		}
 	}
