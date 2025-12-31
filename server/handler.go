@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/asim/malten/agent"
+	"github.com/asim/malten/command"
 )
 
 var (
@@ -67,23 +68,36 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	go handleAI(command, stream)
 }
 
-func handleCommand(command, stream string) {
-	parts := strings.Fields(command)
+func handleCommand(cmd, stream string) {
+	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return
 	}
 
-	cmd := strings.ToLower(parts[0])
+	name := strings.ToLower(strings.TrimPrefix(parts[0], "/"))
+	args := parts[1:]
 
-	switch cmd {
-	case "/help", "/commands":
+	// Check pluggable commands first
+	if result, err := command.Execute(name, args); result != "" || err != nil {
+		if err != nil {
+			Default.Events <- NewMessage("Error: "+err.Error(), stream)
+		} else {
+			Default.Events <- NewMessage(result, stream)
+		}
+		return
+	}
+
+	// Built-in commands
+	switch name {
+	case "help", "commands":
 		help := `/help - Show this help
 /streams - List public streams
 /new - Create a new stream
-/goto <stream> - Switch to a stream`
+/goto <stream> - Switch to a stream
+/price <coin> - Get crypto price`
 		Default.Events <- NewMessage(help, stream)
 
-	case "/streams":
+	case "streams":
 		var names []string
 		for k, v := range Default.List() {
 			if !v.Private {
@@ -96,10 +110,10 @@ func handleCommand(command, stream string) {
 			Default.Events <- NewMessage(strings.Join(names, "\n"), stream)
 		}
 
-	case "/new":
+	case "new":
 		name := Random(8)
-		if len(parts) > 1 {
-			name = parts[1]
+		if len(args) > 0 {
+			name = args[0]
 		}
 		if err := Default.New(name, "", false, int(StreamTTL.Seconds())); err != nil {
 			Default.Events <- NewMessage("Failed to create stream", stream)
@@ -107,9 +121,9 @@ func handleCommand(command, stream string) {
 			Default.Events <- NewMessage("/goto #"+name, stream)
 		}
 
-	case "/goto":
-		if len(parts) > 1 {
-			Default.Events <- NewMessage("Use #"+parts[1]+" in the URL to switch streams", stream)
+	case "goto":
+		if len(args) > 0 {
+			Default.Events <- NewMessage("Use #"+args[0]+" in the URL to switch streams", stream)
 		} else {
 			Default.Events <- NewMessage("Usage: /goto <stream>", stream)
 		}
