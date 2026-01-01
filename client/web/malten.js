@@ -587,14 +587,18 @@ function showPlacesCard(data) {
         var parts = placeData.split('|');
         var name = parts[0] || '';
         var placeLine = '📍 ' + name;
+        var mapUrl = '';
         
         for (var i = 1; i < parts.length; i++) {
             var part = parts[i];
             if (part.startsWith('http')) {
-                placeLine += ' <a href="' + part + '" target="_blank">Map</a>';
+                mapUrl = part;
             } else if (part) {
                 placeLine += '\n   ' + part;
             }
+        }
+        if (mapUrl) {
+            placeLine += '\n   <a href="' + mapUrl + '" target="_blank" class="map-link">Open in Maps</a>';
         }
         lines.push(placeLine);
     });

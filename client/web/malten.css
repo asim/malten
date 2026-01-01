@@ -321,3 +321,8 @@ ul li {
 .place-details a {
   color: #4a9eff;
 }
+
+/* Map links */
+.map-link {
+  text-decoration: underline;
+}
