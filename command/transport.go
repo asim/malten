@@ -16,7 +16,11 @@ func GetSpatialDB() *spatial.DB {
 	return spatial.Get()
 }
 
-const tflBaseURL = "https://api.tfl.gov.uk"
+const (
+	tflBaseURL     = "https://api.tfl.gov.uk"
+	weatherURL     = "https://api.open-meteo.com/v1/forecast"
+	prayerTimesURL = "https://api.aladhan.com/v1/timings"
+)
 
 // TfL response types
 type TfLStop struct {
@@ -102,6 +106,18 @@ func GetArrivals(naptanID string) ([]TfLArrival, error) {
 // This is the "look around" view when you open Malten
 func GetLocalContext(lat, lon float64) string {
 	var parts []string
+	var header []string
+
+	// Weather and prayer - top line summary
+	if weather, err := GetWeather(lat, lon); err == nil {
+		header = append(header, weather)
+	}
+	if prayer, err := GetNextPrayer(lat, lon); err == nil {
+		header = append(header, prayer)
+	}
+	if len(header) > 0 {
+		parts = append(parts, strings.Join(header, " · "))
+	}
 
 	// Get nearby bus stops and arrivals
 	stops, err := GetNearbyStops(lat, lon, 300)
@@ -263,4 +279,77 @@ func HandleBusCommand(token string) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// Weather response
+type WeatherResponse struct {
+	Current struct {
+		Temperature float64 `json:"temperature_2m"`
+		WeatherCode int     `json:"weather_code"`
+	} `json:"current"`
+}
+
+// Prayer times response
+type PrayerResponse struct {
+	Data struct {
+		Timings map[string]string `json:"timings"`
+	} `json:"data"`
+}
+
+// GetWeather returns current weather for a location
+func GetWeather(lat, lon float64) (string, error) {
+	url := fmt.Sprintf("%s?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&timezone=auto",
+		weatherURL, lat, lon)
+
+	var resp WeatherResponse
+	if err := tflGet(url, &resp); err != nil {
+		return "", err
+	}
+
+	icon := weatherIcon(resp.Current.WeatherCode)
+	return fmt.Sprintf("%s %.0f°C", icon, resp.Current.Temperature), nil
+}
+
+func weatherIcon(code int) string {
+	switch {
+	case code == 0:
+		return "☀️"
+	case code <= 3:
+		return "⛅"
+	case code <= 49:
+		return "🌫️"
+	case code <= 69:
+		return "🌧️"
+	case code <= 79:
+		return "❄️"
+	case code <= 99:
+		return "⛈️"
+	default:
+		return "🌡️"
+	}
+}
+
+// GetNextPrayer returns the next prayer time
+func GetNextPrayer(lat, lon float64) (string, error) {
+	now := time.Now()
+	url := fmt.Sprintf("%s/%s?latitude=%.2f&longitude=%.2f&method=2",
+		prayerTimesURL, now.Format("02-01-2006"), lat, lon)
+
+	var resp PrayerResponse
+	if err := tflGet(url, &resp); err != nil {
+		return "", err
+	}
+
+	prayers := []string{"Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"}
+	nowStr := now.Format("15:04")
+
+	for _, p := range prayers {
+		pTime := resp.Data.Timings[p]
+		if pTime > nowStr {
+			return fmt.Sprintf("🕌 %s %s", p, pTime), nil
+		}
+	}
+
+	// All prayers passed, show Fajr tomorrow
+	return fmt.Sprintf("🕌 Fajr %s", resp.Data.Timings["Fajr"]), nil
 }

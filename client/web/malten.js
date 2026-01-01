@@ -456,8 +456,9 @@ function getLocationAndContext() {
             startLocationWatch();
         },
         function(err) {
-            // Silent fail - user can enable manually
             console.log("Location not available:", err.message);
+            // Show prompt to enable location
+            displaySystemMessage("📍 Enable location to see what's nearby (buses, cafes, weather)");
         },
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
     );
