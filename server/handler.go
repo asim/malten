@@ -51,9 +51,9 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		input = input[:MaxMessageSize]
 	}
 
-	// Save user message first
+	// Save user message to their session channel (private)
 	select {
-	case Default.Events <- NewMessage(input, stream):
+	case Default.Events <- NewChannelMessage(input, stream, "@"+token):
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating message", 504)
 		return
@@ -89,16 +89,21 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	// Try command dispatch (handles /commands and natural language)
 	if result, handled := command.Dispatch(ctx); handled {
 		if result != "" {
-			// Return response directly (HTTP) and broadcast (WebSocket)
+			// Return response directly (HTTP) and broadcast to session channel (WebSocket)
 			w.Write([]byte(result))
-			Default.Events <- NewMessage(result, stream)
+			Default.Events <- NewChannelMessage(result, stream, "@"+token)
 		}
 		return
 	}
 
 	// Everything else goes to AI with tool selection
-	// For AI, response comes async via WebSocket only
+	// Response goes to session channel
 	go handleAI(input, stream, token)
+}
+
+// sendToSession sends a message to the user's private channel
+func sendToSession(text, stream, token string) {
+	Default.Events <- NewChannelMessage(text, stream, "@"+token)
 }
 
 func handleCommand(cmd, stream, token string) {
@@ -113,9 +118,9 @@ func handleCommand(cmd, stream, token string) {
 	// Check pluggable commands first
 	if result, err := command.Execute(name, args); result != "" || err != nil {
 		if err != nil {
-			Default.Events <- NewMessage("Error: "+err.Error(), stream)
+			sendToSession("Error: "+err.Error(), stream, token)
 		} else {
-			Default.Events <- NewMessage(result, stream)
+			sendToSession(result, stream, token)
 		}
 		return
 	}
@@ -135,7 +140,7 @@ func handleCommand(cmd, stream, token string) {
 /news [query] - Latest news or search
 /video <query> - Search videos
 /blog - Latest blog posts`
-		Default.Events <- NewMessage(help, stream)
+		sendToSession(help, stream, token)
 
 	case "streams":
 		var names []string
@@ -145,9 +150,9 @@ func handleCommand(cmd, stream, token string) {
 			}
 		}
 		if len(names) == 0 {
-			Default.Events <- NewMessage("No public streams", stream)
+			sendToSession("No public streams", stream, token)
 		} else {
-			Default.Events <- NewMessage(strings.Join(names, "\n"), stream)
+			sendToSession(strings.Join(names, "\n"), stream, token)
 		}
 
 	case "new":
@@ -156,30 +161,30 @@ func handleCommand(cmd, stream, token string) {
 			name = args[0]
 		}
 		if err := Default.New(name, "", false, int(StreamTTL.Seconds())); err != nil {
-			Default.Events <- NewMessage("Failed to create stream", stream)
+			sendToSession("Failed to create stream", stream, token)
 		} else {
-			Default.Events <- NewMessage("Created stream #"+name+" - click to join: #"+name, stream)
+			sendToSession("Created stream #"+name+" - click to join: #"+name, stream, token)
 		}
 
 	case "goto":
 		if len(args) > 0 {
 			name := strings.TrimPrefix(args[0], "#")
-			Default.Events <- NewMessage("Click to join: #"+name, stream)
+			sendToSession("Click to join: #"+name, stream, token)
 		} else {
-			Default.Events <- NewMessage("Usage: goto <stream>", stream)
+			sendToSession("Usage: goto <stream>", stream, token)
 		}
 
 	case "ping":
-		Default.Events <- NewMessage(HandlePingCommand(cmd, token), stream)
+		sendToSession(HandlePingCommand(cmd, token), stream, token)
 
 	case "nearby", "near":
-		Default.Events <- NewMessage(HandleNearbyCommand(args, token), stream)
+		sendToSession(HandleNearbyCommand(args, token), stream, token)
 
 	case "bus", "buses":
-		Default.Events <- NewMessage(command.HandleBusCommand(token), stream)
+		sendToSession(command.HandleBusCommand(token), stream, token)
 
 	case "agents":
-		Default.Events <- NewMessage(HandleAgentsCommand(), stream)
+		sendToSession(HandleAgentsCommand(), stream, token)
 	}
 }
 
@@ -284,15 +289,15 @@ func detectNearbyQuery(input string) (bool, []string) {
 
 func handleAI(prompt, stream, token string) {
 	if agent.Client == nil {
-		Default.Events <- NewMessage("AI not available", stream)
+		Default.Events <- NewChannelMessage("AI not available", stream, "@"+token)
 		return
 	}
 
 	// Set token context for location lookups
 	agent.CurrentStream = token
 
-	// Get recent messages for context
-	messages := Default.Retrieve("", stream, 1, 0, 20)
+	// Get recent messages for context (from this session's channel)
+	messages := Default.RetrieveForSession(stream, token, 0, 20)
 	var ctx []agent.Message
 	for _, m := range messages {
 		if m.Type == "message" && m.Text != prompt {
@@ -311,7 +316,8 @@ func handleAI(prompt, stream, token string) {
 		return
 	}
 
-	Default.Events <- NewMessage(reply, stream)
+	// Send to session's channel
+	Default.Events <- NewChannelMessage(reply, stream, "@"+token)
 }
 
 func GetHandler(w http.ResponseWriter, r *http.Request) {
@@ -329,17 +335,21 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 		limit = 25
 	}
 
-	direction, err := strconv.ParseInt(r.Form.Get("direction"), 10, 64)
-	if err != nil {
-		direction = 1
-	}
-
 	// default stream
 	if len(stream) == 0 {
 		stream = defaultStream
 	}
 
-	messages := Default.Retrieve(message, stream, direction, last, limit)
+	// Get session for channel filtering
+	session := getSessionToken(w, r)
+
+	// Get by ID or list filtered by session
+	var messages []*Message
+	if message != "" {
+		messages = Default.Retrieve(message, stream, 1, 0, 1)
+	} else {
+		messages = Default.RetrieveForSession(stream, session, last, limit)
+	}
 	b, _ := json.Marshal(messages)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
@@ -354,7 +364,10 @@ func GetEvents(w http.ResponseWriter, r *http.Request) {
 		stream = defaultStream
 	}
 
-	o := NewObserver(stream)
+	// Get session for channel filtering
+	session := getSessionToken(w, r)
+
+	o := NewObserver(stream, session)
 
 	defer func() {
 		close(o.Kill)
@@ -469,8 +482,9 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 		message = message[:MaxMessageSize]
 	}
 
+	// Public post to stream (no channel = public)
 	select {
-	case Default.Events <- NewMessage(message, stream):
+	case Default.Events <- NewChannelMessage(message, stream, ""):
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating message", 504)
 	}

@@ -51,14 +51,16 @@ type Message struct {
 	Type     string
 	Created  int64 `json:",string"`
 	Stream   string
+	Channel  string // "" = public, "@session" = addressed
 	Metadata *Metadata
 }
 
 type Observer struct {
-	Id     string
-	Stream string
-	Events chan *Message
-	Kill   chan bool
+	Id      string
+	Stream  string
+	Session string // session token for channel filtering
+	Events  chan *Message
+	Kill    chan bool
 }
 
 type Server struct {
@@ -121,12 +123,17 @@ func NewStream(id, secret string, private bool, ttl int) *Stream {
 }
 
 func NewMessage(text, stream string) *Message {
+	return NewChannelMessage(text, stream, "")
+}
+
+func NewChannelMessage(text, stream, channel string) *Message {
 	return &Message{
 		Id:      uuid.New().String(),
 		Text:    text,
 		Type:    "message",
 		Created: time.Now().UnixNano(),
 		Stream:  stream,
+		Channel: channel,
 	}
 }
 
@@ -140,12 +147,13 @@ func NewEvent(text, stream string) *Message {
 	}
 }
 
-func NewObserver(stream string) *Observer {
+func NewObserver(stream, session string) *Observer {
 	return &Observer{
-		Id:     uuid.New().String(),
-		Events: make(chan *Message, 1),
-		Kill:   make(chan bool),
-		Stream: stream,
+		Id:      uuid.New().String(),
+		Events:  make(chan *Message, 1),
+		Kill:    make(chan bool),
+		Stream:  stream,
+		Session: session,
 	}
 }
 
@@ -217,6 +225,10 @@ func (s *Server) Broadcast(message *Message) {
 	for _, o := range observers {
 		// only broadcast what they care about
 		if message.Stream != o.Stream {
+			continue
+		}
+		// Filter by channel: public (empty) or addressed to this observer's session
+		if message.Channel != "" && message.Channel != "@"+o.Session {
 			continue
 		}
 		// send message
@@ -402,6 +414,50 @@ func (s *Server) Retrieve(message string, streem string, direction, last, limit 
 	}
 
 	return []*Message{}
+}
+
+// RetrieveForSession gets messages visible to a session (public + their @channel)
+func (s *Server) RetrieveForSession(streem, session string, last, limit int64) []*Message {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+
+	stream, ok := s.streams[streem]
+	if !ok {
+		return []*Message{}
+	}
+
+	var messages []*Message
+	li := int(limit)
+	if li <= 0 {
+		li = 25
+	}
+
+	channel := "@" + session
+
+	// Go through messages, filter by visibility
+	for i := len(stream.Messages) - 1; i >= 0 && len(messages) < li; i-- {
+		msg := stream.Messages[i]
+		if msg.Created <= last {
+			continue
+		}
+		// Visible if: public (no channel) OR addressed to this session
+		if msg.Channel == "" || msg.Channel == channel {
+			if g, ok := s.metadata[msg.Id]; ok {
+				tc := *msg
+				tc.Metadata = g
+				messages = append(messages, &tc)
+			} else {
+				messages = append(messages, msg)
+			}
+		}
+	}
+
+	// Reverse to chronological order
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+
+	return messages
 }
 
 func (s *Server) Run() {
