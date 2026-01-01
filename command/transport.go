@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/asim/malten/spatial"
@@ -102,9 +103,48 @@ func GetArrivals(naptanID string) ([]TfLArrival, error) {
 	return arrivals, nil
 }
 
+// Context cache - keyed by rounded lat/lon
+var (
+	contextCache   = make(map[string]cachedContext)
+	contextCacheMu sync.RWMutex
+	contextTTL     = 30 * time.Second
+)
+
+type cachedContext struct {
+	data      string
+	fetchedAt time.Time
+}
+
+func contextKey(lat, lon float64) string {
+	// Round to ~100m grid for cache key
+	return fmt.Sprintf("%.3f,%.3f", lat, lon)
+}
+
 // GetLocalContext returns a summary of what's happening nearby
 // This is the "look around" view when you open Malten
 func GetLocalContext(lat, lon float64) string {
+	key := contextKey(lat, lon)
+
+	// Check cache
+	contextCacheMu.RLock()
+	if cached, ok := contextCache[key]; ok && time.Since(cached.fetchedAt) < contextTTL {
+		contextCacheMu.RUnlock()
+		return cached.data
+	}
+	contextCacheMu.RUnlock()
+
+	// Fetch fresh
+	data := fetchLocalContext(lat, lon)
+
+	// Cache it
+	contextCacheMu.Lock()
+	contextCache[key] = cachedContext{data: data, fetchedAt: time.Now()}
+	contextCacheMu.Unlock()
+
+	return data
+}
+
+func fetchLocalContext(lat, lon float64) string {
 	var parts []string
 	var header []string
 
@@ -112,7 +152,7 @@ func GetLocalContext(lat, lon float64) string {
 	if weather, err := GetWeather(lat, lon); err == nil {
 		header = append(header, weather)
 	}
-	if prayer, err := GetNextPrayer(lat, lon); err == nil {
+	if prayer, err := GetPrayerStatus(lat, lon); err == nil {
 		header = append(header, prayer)
 	}
 	if len(header) > 0 {
@@ -329,8 +369,8 @@ func weatherIcon(code int) string {
 	}
 }
 
-// GetNextPrayer returns the next prayer time
-func GetNextPrayer(lat, lon float64) (string, error) {
+// GetPrayerStatus returns current prayer + next prayer time
+func GetPrayerStatus(lat, lon float64) (string, error) {
 	now := time.Now()
 	url := fmt.Sprintf("%s/%s?latitude=%.2f&longitude=%.2f&method=2",
 		prayerTimesURL, now.Format("02-01-2006"), lat, lon)
@@ -340,16 +380,50 @@ func GetNextPrayer(lat, lon float64) (string, error) {
 		return "", err
 	}
 
-	prayers := []string{"Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"}
+	// Prayer windows: each prayer is "now" until the next one starts
+	prayers := []string{"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"}
+	displayNames := map[string]string{
+		"Fajr": "Fajr", "Sunrise": "Sunrise", "Dhuhr": "Dhuhr",
+		"Asr": "Asr", "Maghrib": "Maghrib", "Isha": "Isha",
+	}
 	nowStr := now.Format("15:04")
 
-	for _, p := range prayers {
+	var current, next string
+	var nextTime string
+
+	for i, p := range prayers {
 		pTime := resp.Data.Timings[p]
 		if pTime > nowStr {
-			return fmt.Sprintf("🕌 %s %s", p, pTime), nil
+			// This prayer hasn't started yet, so previous is current
+			if i > 0 {
+				current = prayers[i-1]
+			}
+			// Skip Sunrise as "next" - go to Dhuhr
+			if p == "Sunrise" {
+				next = "Dhuhr"
+				nextTime = resp.Data.Timings["Dhuhr"]
+			} else {
+				next = p
+				nextTime = pTime
+			}
+			break
 		}
 	}
 
-	// All prayers passed, show Fajr tomorrow
-	return fmt.Sprintf("🕌 Fajr %s", resp.Data.Timings["Fajr"]), nil
+	// After Isha, current is Isha, next is Fajr
+	if next == "" {
+		current = "Isha"
+		next = "Fajr"
+		nextTime = resp.Data.Timings["Fajr"]
+	}
+
+	// Don't show Sunrise as current
+	if current == "Sunrise" {
+		current = "Fajr"
+	}
+
+	if current != "" && displayNames[current] != "" {
+		return fmt.Sprintf("🕌 %s now · %s %s", displayNames[current], displayNames[next], nextTime), nil
+	}
+	return fmt.Sprintf("🕌 %s %s", displayNames[next], nextTime), nil
 }

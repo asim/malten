@@ -226,3 +226,16 @@ ul li {
     padding-top: calc(15px + env(safe-area-inset-top));
   }
 }
+
+/* Context message - spatial summary */
+.context-message {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 3px solid #4a9eff;
+  line-height: 1.6;
+}
+
+#context-msg {
+  margin-bottom: 10px;
+}

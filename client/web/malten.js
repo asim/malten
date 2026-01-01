@@ -386,12 +386,52 @@ function startLocationWatch() {
     );
 }
 
+var contextDisplayed = false;
+
 function fetchLocalContext(lat, lon) {
+    // Show cached context immediately if available
+    var cached = localStorage.getItem('lastContext');
+    var cachedLoc = localStorage.getItem('lastContextLoc');
+    var cachedTime = parseInt(localStorage.getItem('lastContextTime') || '0');
+    var now = Date.now();
+    var locKey = lat.toFixed(2) + ',' + lon.toFixed(2);
+    
+    // Show cache if same area and less than 5 min old
+    if (cached && cachedLoc === locKey && (now - cachedTime) < 300000 && !contextDisplayed) {
+        displayContext(cached);
+    }
+    
+    // Fetch fresh in background
     $.get(contextUrl, { lat: lat, lon: lon }).done(function(data) {
         if (data.context && data.context.length > 0) {
-            displaySystemMessage(data.context);
+            // Update cache
+            localStorage.setItem('lastContext', data.context);
+            localStorage.setItem('lastContextLoc', locKey);
+            localStorage.setItem('lastContextTime', now.toString());
+            
+            // Display if not already shown or if different
+            if (!contextDisplayed || cached !== data.context) {
+                displayContext(data.context);
+            }
         }
     });
+}
+
+function displayContext(text) {
+    contextDisplayed = true;
+    // Remove old context message if exists
+    $('#context-msg').remove();
+    
+    var item = document.createElement('li');
+    item.id = 'context-msg';
+    item.className = 'context';
+    var d = document.createElement('div');
+    d.className = 'message context-message';
+    d.innerHTML = text.replace(/\n/g, '<br>');
+    item.appendChild(d);
+    
+    var list = document.getElementById('messages');
+    list.insertBefore(item, list.firstChild);
 }
 
 function displaySystemMessage(text) {
@@ -567,6 +607,21 @@ if ('serviceWorker' in navigator) {
 $(document).ready(function() {
     loadListeners();
     loadStream();
-    // Always try to get location on load - this is a spatial app
+    
+    // Show cached context immediately
+    showCachedContext();
+    
+    // Then try to get fresh location/context
     getLocationAndContext();
 });
+
+function showCachedContext() {
+    var cached = localStorage.getItem('lastContext');
+    var cachedTime = parseInt(localStorage.getItem('lastContextTime') || '0');
+    var now = Date.now();
+    
+    // Show if less than 5 min old
+    if (cached && (now - cachedTime) < 300000) {
+        displayContext(cached);
+    }
+}
