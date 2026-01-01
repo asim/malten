@@ -526,8 +526,10 @@ func getPlacesSummary(db *DB, lat, lon float64) string {
 		if len(places) > 0 {
 			icon := icons[cat]
 			if len(places) == 1 {
-				// Single place: include ID for direct lookup
-				summary = append(summary, fmt.Sprintf("%s [%s:%s]", icon, places[0].ID, places[0].Name))
+				// Single place: embed full data for client-side expansion
+				p := places[0]
+				data := formatPlaceData(p)
+				summary = append(summary, fmt.Sprintf("%s {%s}", icon, data))
 			} else {
 				summary = append(summary, fmt.Sprintf("%s %d %ss", icon, len(places), cat))
 			}
@@ -538,4 +540,42 @@ func getPlacesSummary(db *DB, lat, lon float64) string {
 		return ""
 	}
 	return strings.Join(summary, " · ")
+}
+
+// formatPlaceData creates a compact data string with all place info
+func formatPlaceData(e *Entity) string {
+	parts := []string{e.Name}
+	
+	// Extract from tags
+	if tags, ok := e.Data["tags"].(map[string]interface{}); ok {
+		var addr string
+		if num, ok := tags["addr:housenumber"].(string); ok {
+			addr = num
+		}
+		if street, ok := tags["addr:street"].(string); ok {
+			if addr != "" {
+				addr += " "
+			}
+			addr += street
+		}
+		if addr != "" {
+			parts = append(parts, addr)
+		}
+		if pc, ok := tags["addr:postcode"].(string); ok {
+			parts = append(parts, pc)
+		}
+		if hours, ok := tags["opening_hours"].(string); ok {
+			parts = append(parts, "🕒"+hours)
+		}
+		if phone, ok := tags["phone"].(string); ok {
+			parts = append(parts, "📞"+phone)
+		} else if phone, ok := tags["contact:phone"].(string); ok {
+			parts = append(parts, "📞"+phone)
+		}
+	}
+	
+	// Add map link
+	parts = append(parts, fmt.Sprintf("https://maps.google.com/?q=%f,%f", e.Lat, e.Lon))
+	
+	return strings.Join(parts, "|")
 }

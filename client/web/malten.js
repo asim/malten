@@ -549,9 +549,12 @@ function makeClickable(text) {
         return '<a href="#" class="place-link" data-type="category" data-query="/nearby ' + singular + '">' + match + '</a>';
     });
     
-    // Match [id:name] format for single places with known ID
-    html = html.replace(/([☕🍽️💊🛒🏪])\s+\[([^:]+):([^\]]+)\]/g, function(match, icon, id, name) {
-        return icon + ' <a href="#" class="place-link" data-type="place" data-id="' + id + '" data-name="' + name + '">' + name + '</a>';
+    // Match {data} format for single places with embedded data
+    // Format: icon {name|address|postcode|hours|phone|mapurl}
+    html = html.replace(/\{([^}]+)\}/g, function(match, data) {
+        var parts = data.split('|');
+        var name = parts[0] || '';
+        return '<a href="#" class="place-link" data-type="place" data-details="' + encodeURIComponent(data) + '">' + name + '</a>';
     });
     
     return html;
@@ -565,32 +568,30 @@ $(document).on('click', '.place-link', function(e) {
     if (type === 'category') {
         // Category search like "3 cafes"
         document.getElementById('prompt').value = $(this).data('query');
+        submitCommand();
     } else if (type === 'place') {
-        // Single place with ID - fetch and expand inline
-        var id = $(this).data('id');
-        var link = $(this);
-        fetchPlaceDetails(id, link);
+        // Single place - data already embedded, no fetch needed
+        var data = decodeURIComponent($(this).data('details'));
+        showPlaceCard(data);
     }
 });
 
-// Fetch place details and show as card
-function fetchPlaceDetails(id, linkElement) {
-    $.get('/place/' + id).done(function(data) {
-        // Build details as a card message
-        var details = '📍 ' + data.name;
-        if (data.address) details += '\n' + data.address;
-        if (data.postcode) details += ', ' + data.postcode;
-        if (data.hours) details += '\n🕒 ' + data.hours;
-        if (data.phone) details += '\n📞 ' + data.phone;
-        details += '\n<a href="https://www.google.com/maps/search/' + encodeURIComponent(data.name) + '/@' + data.lat + ',' + data.lon + ',17z" target="_blank">Open in Maps</a>';
-        
-        // Show as card in messages
-        displaySystemMessage(details);
-    }).fail(function() {
-        // Fallback to map link
-        var name = linkElement.data('name') || linkElement.text();
-        window.open('https://www.google.com/maps/search/' + encodeURIComponent(name), '_blank');
-    });
+// Show place card from embedded data (no API call)
+function showPlaceCard(data) {
+    var parts = data.split('|');
+    var name = parts[0] || '';
+    var lines = ['📍 ' + name];
+    
+    for (var i = 1; i < parts.length; i++) {
+        var part = parts[i];
+        if (part.startsWith('http')) {
+            lines.push('<a href="' + part + '" target="_blank">Open in Maps</a>');
+        } else if (part) {
+            lines.push(part);
+        }
+    }
+    
+    displaySystemMessage(lines.join('\n'));
 }
 
 function displaySystemMessage(text, timestamp) {
