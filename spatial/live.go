@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -573,8 +574,8 @@ func formatPlaceData(e *Entity) string {
 		}
 	}
 	
-	// Add map link
-	parts = append(parts, fmt.Sprintf("https://maps.google.com/?q=%f,%f", e.Lat, e.Lon))
+	// Add map link with name for better search
+	parts = append(parts, fmt.Sprintf("https://maps.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(e.Name), e.Lat, e.Lon))
 	
 	return strings.Join(parts, "|")
 }
