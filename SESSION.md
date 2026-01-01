@@ -1,63 +1,61 @@
-## Core Architecture - READ THIS FIRST
+## The Model - READ THIS FIRST
 
-### Three Primitives (NEVER CHANGE)
-1. **Streams** - `/streams` - message channels
-2. **Agents** - `/agents` - spatial indexers  
-3. **Commands** - `/commands` - actions
+### User Experience
+Open app → see real world around you instantly:
+- Weather, prayer times, area name
+- Bus/train times, nearby places
+- Move → updates automatically
+- Timeline of events as messages
+- Same area = same view (shared spatial reality)
 
-### Quadtree = Spatial Index
-- `spatial.json` - source of truth
-- Maps and stores everything
-- Real-time world view
+### Five Primitives
+| Primitive | Purpose |
+|-----------|----------|
+| **Streams** | Textual view of geo space. One per area. |
+| **Agents** | Indexers. One per area. Build world view. |
+| **Commands** | Actions. Everything is a command. |
+| **Database** | Quadtree. Spatial index. World state. |
+| **Events** | Replayable log. `events.jsonl` |
 
-### Messages
-- Everything is a message on the stream
-- Messages have formats (presentation layer):
-  - **Card** - compact event (arrival, alert)
-  - **Map** - spatial view
-  - **List** - nearby places
-  - **Text** - plain response
-- Format is how you display it, message is the primitive
+### Key Insight
+- **Stream = Geo Area** - moving through space = moving through streams
+- **Agent = Per Stream** - each area has an agent maintaining it
+- **Messages = Events in Space** - what happens in that area
 
 ---
 
-## Last Session - 2026-01-01 14:50 UTC
+## Last Session - 2026-01-01 15:00 UTC
 
 ### What We Built
-1. **Expanded agent indexing** - trains, tubes, bus stops, more POIs
-2. **Transport arrivals** - buses, tubes, rail from TfL
-3. **Message deduplication** - no duplicates within time window
-4. **Message persistence** - 24hr in localStorage
+1. Commands as core abstraction
+2. Proactive messages (detect changes, create events)
+3. Message persistence (24hr localStorage)
+4. Expanded agent indexing (trains, tubes, more POIs)
+5. Quadtree-first lookups (no API if cached)
 
-### Agent Categories Now Indexed
-- Transport: railway=station, highway=bus_stop, public_transport=station
-- Food: cafe, restaurant, fast_food, pub, bar
-- Health: pharmacy, hospital, clinic, dentist, doctors
-- Services: bank, atm, post_office, fuel, parking
-- Shopping: supermarket, convenience, bakery, butcher
-- Other: place_of_worship, hotel, park, library
+### Agent Indexes
+- Transport: stations, bus stops
+- Food: cafes, restaurants, pubs
+- Health: pharmacies, clinics
+- Services: banks, ATMs, post offices
+- Shopping: supermarkets, bakeries
 
-### Live Data (every 30s)
+### Live Data (30s)
 - Weather + rain forecast
 - Prayer times
-- Bus arrivals (NaptanPublicBusCoachTram)
-- Tube arrivals (NaptanMetroStation)
-- Rail arrivals (NaptanRailStation)
+- Bus/tube/rail arrivals
 
-### Git Log
-```
-804841b Document core primitives
-ff27847 Deduplicate cards
-396aa26 Expand agent indexing: trains, tubes, more POIs
-0379518 Query quadtree for bus arrivals before TfL API
-c86475a Persist cards in localStorage for 24 hours
-fd61a8e Cards with timestamps, status indicator, postcodes
-975a96a Refactor: commands as core abstraction
-```
+### Open Question
+If streams = geo areas, what about private/custom streams?
+- Option 1: Remove - pure spatial
+- Option 2: Keep with prefix (~private, @user)
+- Option 3: Hybrid - default geo, can create others
+
+### Git: 094dc25
 
 ### To Continue
-1. Agents should predict, learn patterns
-2. Geohash streams - auto-switch by location
-3. Map message format
-4. More proactive suggestions
-5. Events - what's happening nearby
+1. Implement geohash → stream mapping
+2. Auto-switch stream on move
+3. Decide on private streams
+4. Map message format
+5. Agent learning/prediction

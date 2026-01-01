@@ -3,119 +3,137 @@
 ## What is Malten
 Spatial AI for the real world. Foursquare if built in the AI era.
 
-## Core Primitives - NEVER CHANGE THESE
+## The Model
 
-### Three Building Blocks
-1. **Streams** (`/streams`) - message channels, real-time updates
-2. **Agents** (`/agents`) - spatial indexers, maintain the world view
-3. **Commands** (`/commands`) - actions, everything is a command
+### User Experience
+1. Open app → immediately see real world around you
+   - Weather, temperature
+   - Prayer times
+   - Area name (street, postcode)
+   - Bus/train times
+   - Nearby places
+2. Move → updates automatically
+3. Events appear as messages in your timeline
+4. Those in same area see the same spatial reality
 
-### Quadtree - The Spatial Index
-- Source of truth for all spatial data
-- Where we map and store everything
-- Real-time view of the world
-- File: `spatial.json`
+### Core Primitives
 
-### Messages
-- Everything is a message on the stream
-- Messages can have different formats:
-  - **Card** - compact info (bus arrival, weather alert)
-  - **Map** - spatial view
-  - **List** - nearby places
-  - **Text** - plain response
-- Format is presentation, message is the primitive
+| Primitive | Purpose |
+|-----------|----------|
+| **Streams** | Textual representation of geo space. One stream per area. |
+| **Agents** | Spatial indexers. One agent per area/stream. Build world view. |
+| **Commands** | Actions. Everything is a command. |
+| **Database** | Quadtree spatial index. Real-time world state. |
+| **Events** | Replayable log. Reference, replay, use elsewhere. |
 
-## Architecture
+### Streams = Geo Space
+- Stream is the textual view of a geographic area
+- Moving through space = moving through streams
+- Same area = same stream = same spatial reality
+- Messages on stream are events in that space
 
-### Quadtree Entities
-- **EntityPlace** - POIs from OSM (indexed by agents)
-- **EntityAgent** - area indexers (5km radius)
-- **EntityPerson** - users by session token
-- **EntityWeather** - weather + rain forecast (10min TTL)
-- **EntityPrayer** - prayer times (1hr TTL)
-- **EntityArrival** - transport arrivals (2min TTL)
+### Agents = Per Area
+- One agent per area/stream
+- Agent indexes and maintains that area's world view
+- Fetches POIs, transport, weather, prayer times
+- Stores in quadtree with TTL
 
-### Agents
-Agents are spatial indexers (not anthropomorphized):
-- Created when user pings a new area
-- Index POIs from OSM (cafes, stations, bus stops, etc)
-- Update live data every 30s (weather, prayer, transport)
-- Store everything in quadtree with TTL
-- Build the world view in real time
+### Database = Quadtree
+- `spatial.json` - spatial index, source of truth
+- All entities have lat/lon
+- Query by location, radius, type
+- Real-time world state
 
-### Commands
-Everything is a command. Commands self-register:
-```go
-Register(&Command{
-    Name:    "walk",
-    Handler: handleWalk,
-    Match:   matchWalk,  // natural language detection
-})
-```
-Server just routes to `command.Dispatch(ctx)`.
-
-### Data Flow
-```
-User pings location
-  → Agent created if needed
-  → Agent indexes area (POIs, transport)
-  → Agent updates live data every 30s
-  → All stored in quadtree
-
-Context query
-  → Quadtree lookup (fast, no API calls)
-  → Build context string
-  → Client detects changes → creates message
-  → Message on stream (card format for events)
-```
+### Events = Replayable Log
+- `events.jsonl` - append-only log
+- Every action logged
+- Can replay, reference, audit
+- Source for other systems
 
 ## Message Formats
 
-### Card Format
-Compact, timestamped, color-coded by type:
-```
-🚏 Arrived at Whitton Station     14:30
-```
-Used for: transport, weather alerts, prayer times, location events
+Messages are the primitive. Format is presentation:
 
-### Map Format (TODO)
-Spatial view of entities around user.
+| Format | Use |
+|--------|-----|
+| **Card** | Compact event (arrival, alert, prayer) |
+| **Map** | Spatial view of area |
+| **List** | Nearby places with details |
+| **Text** | Plain response |
 
-### List Format
-Nearby places with details:
+## Architecture
+
+### Data Flow
 ```
-📍 NEARBY CAFES
-• Puccino's · Map
-  High Street, TW2 7LG
-• Better Bagels · Map
-  121 High Street
+User opens app at location
+  → Geohash location → Stream ID
+  → Join stream for that area
+  → Agent for area builds world view
+  → Context from quadtree (instant)
+  → Display as messages
+
+User moves
+  → New geohash → New stream
+  → Auto-switch stream
+  → Agent for new area
+  → New context
+  → Timeline continuous (localStorage)
 ```
 
-### Text Format
-Plain responses from commands/AI.
+### Quadtree Entities
+- **EntityPlace** - POIs from OSM
+- **EntityAgent** - area indexers
+- **EntityPerson** - users
+- **EntityWeather** - weather (10min TTL)
+- **EntityPrayer** - prayer times (1hr TTL)
+- **EntityArrival** - transport (2min TTL)
+
+### Agent Loop (per area)
+```
+Every 30s:
+  - Fetch weather
+  - Fetch prayer times
+  - Fetch transport arrivals
+  - Store in quadtree
+
+Once (on creation):
+  - Index POIs from OSM
+  - Stations, stops, cafes, etc.
+```
+
+## Open Questions
+
+### Private/Custom Streams
+If streams = geo areas, what about:
+- Private conversations?
+- Topic streams?
+- Group chats?
+
+Options:
+1. Remove goto/new stream - pure spatial
+2. Keep for private/custom - prefix with `~` or `@`
+3. Hybrid - default is geo, can create others
 
 ## Files
-- `spatial/` - quadtree, entities, agents, live data
-- `command/` - all commands (walk, nearby, price, etc)
-- `server/` - thin HTTP handlers, WebSocket, streams
+- `spatial/` - quadtree, entities, agents
+- `command/` - all commands
+- `server/` - HTTP, WebSocket, streams
 - `client/web/` - PWA frontend
+- `event/` - event log
 
 ## User Context
 - Muslim. Prayer times important. No anthropomorphizing.
-- Engineer. Brevity. Correct terminology.
-- Building Mu (blog, chat, news, video, mail) - Malten is spatial.
+- Engineer. Brevity.
 
-## Key Principles
-1. Streams, Agents, Commands - the three primitives
-2. Quadtree is source of truth
-3. Everything is a message (format varies)
-4. Agents build the world view
-5. Context from quadtree, not API calls
+## Principles
+1. Streams, Agents, Commands, Database, Events
+2. Streams = geo space
+3. Agents = per area
+4. Everything is a message
+5. Quadtree is source of truth
 6. Proactive > reactive
 
 ## Don'ts
-- Don't change the three primitives
+- Don't change the primitives
 - Don't anthropomorphize agents
-- Don't make server thick - commands handle logic
 - Don't call APIs if quadtree has data
-- Don't over-engineer
