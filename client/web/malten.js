@@ -202,6 +202,20 @@ var state = {
         this.save();
         displaySystemMessage(text);
     },
+    createQACard: function(question, answer) {
+        var card = {
+            question: question,
+            answer: answer,
+            time: Date.now(),
+            lat: this.lat,
+            lon: this.lon
+        };
+        this.cards.push(card);
+        // Prune cards older than 24 hours
+        var cutoff = Date.now() - (24 * 60 * 60 * 1000);
+        this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
+        this.save();
+    },
     isMoving: function() {
         if (this.locationHistory.length < 3) return false;
         var recent = this.locationHistory.slice(-3);
@@ -376,15 +390,25 @@ function connectWebSocket() {
         if (ev.Type === "message") {
             // Dedupe by ID
             if (ev.Id in seen) return;
-            // Skip if we already displayed this as a pending message
-            if (ev.Text in pendingMessages) {
-                seen[ev.Id] = ev;
-                delete pendingMessages[ev.Text];
+            seen[ev.Id] = ev;
+            
+            // Check if this is a response to a pending question
+            var pendingKey = Object.keys(pendingMessages)[0];
+            if (pendingKey && pendingMessages[pendingKey]) {
+                // Skip echoed input (server echoes back the question)
+                if (ev.Text === pendingKey) {
+                    return;
+                }
+                // This is the answer - update the pending card
+                updateCardWithAnswer(pendingMessages[pendingKey], pendingKey, ev.Text);
+                state.createQACard(pendingKey, ev.Text);
+                delete pendingMessages[pendingKey];
+                clipMessages();
                 return;
             }
-            // Save and display as card
+            
+            // No pending question - display as system card
             state.createCard(ev.Text);
-            seen[ev.Id] = ev;
             clipMessages();
         }
     };
@@ -461,12 +485,11 @@ function submitCommand() {
         sendFreshLocation();
     }
 
-    // Save user's question as card
-    state.createCard(prompt);
-    var tempId = 'local-' + Date.now();
-    pendingMessages[prompt] = tempId;
+    // Create pending card showing question (will update with answer from WebSocket)
+    var pendingCard = displayPendingCard(prompt);
+    pendingMessages[prompt] = pendingCard;
 
-    // Post to /commands with location, get response directly (no WebSocket needed)
+    // Post to /commands with location - response comes via WebSocket
     var data = {
         prompt: prompt,
         stream: getStream()
@@ -475,13 +498,7 @@ function submitCommand() {
         data.lat = state.lat;
         data.lon = state.lon;
     }
-    $.post(commandUrl, data, function(response) {
-        // If we get a direct response, display it
-        if (response && response.trim()) {
-            delete pendingMessages[prompt];
-            state.createCard(response);
-        }
-    });
+    $.post(commandUrl, data);
 
     form.elements["prompt"].value = '';
     return false;
@@ -676,6 +693,36 @@ function displaySystemMessage(text, timestamp) {
     messages.insertBefore(card, messages.firstChild);
 }
 
+// Display a pending card for a question (awaiting answer)
+function displayPendingCard(question) {
+    var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var card = document.createElement('li');
+    card.innerHTML = '<div class="card card-qa">' +
+        '<span class="card-time">' + time + '</span>' +
+        '<div class="card-question">' + escapeHTML(question) + '</div>' +
+        '<div class="card-answer card-loading">...</div>' +
+        '</div>';
+    
+    var messages = document.getElementById('messages');
+    messages.insertBefore(card, messages.firstChild);
+    return card;
+}
+
+// Update pending card with answer
+function updateCardWithAnswer(card, question, answer) {
+    var answerDiv = card.querySelector('.card-answer');
+    if (answerDiv) {
+        answerDiv.classList.remove('card-loading');
+        answerDiv.innerHTML = makeClickable(answer).replace(/\n/g, '<br>');
+    }
+    // Update card type based on answer content
+    var cardDiv = card.querySelector('.card');
+    if (cardDiv) {
+        var type = getCardType(answer);
+        if (type) cardDiv.classList.add(type);
+    }
+}
+
 function displayCardAtEnd(text, timestamp) {
     // Append card at end (for loading history in order)
     var time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
@@ -691,11 +738,32 @@ function displayCardAtEnd(text, timestamp) {
     messages.appendChild(card);
 }
 
+function displayQACardAtEnd(question, answer, timestamp) {
+    // Append Q+A card at end (for loading history)
+    var time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var cardType = getCardType(answer);
+    var card = document.createElement('li');
+    card.innerHTML = '<div class="card card-qa ' + cardType + '">' +
+        '<span class="card-time">' + time + '</span>' +
+        '<div class="card-question">' + escapeHTML(question) + '</div>' +
+        '<div class="card-answer">' + makeClickable(answer).replace(/\n/g, '<br>') + '</div>' +
+        '</div>';
+    
+    var messages = document.getElementById('messages');
+    messages.appendChild(card);
+}
+
 function loadPersistedCards() {
     // Load cards from localStorage, oldest first
     if (state.cards && state.cards.length > 0) {
         state.cards.forEach(function(c) {
-            displayCardAtEnd(c.text, c.time);
+            if (c.question && c.answer) {
+                // Q+A card
+                displayQACardAtEnd(c.question, c.answer, c.time);
+            } else if (c.text) {
+                // Simple card
+                displayCardAtEnd(c.text, c.time);
+            }
         });
     }
 }

@@ -319,3 +319,25 @@ ul li {
 .enable-location-btn:hover {
   background: #3a8eef;
 }
+
+/* Q+A Cards - question with answer */
+.card.card-qa {
+  border-left-color: #9b59b6;
+}
+
+.card-question {
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.card-answer {
+  color: #4d5156;
+}
+
+.card-answer.card-loading {
+  color: #999;
+  font-style: italic;
+}
