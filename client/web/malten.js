@@ -78,24 +78,42 @@ var state = {
         var oldStop = this.extractBusStop(oldCtx);
         var newStop = this.extractBusStop(newCtx);
         
-        // New bus stop approached
+        // New bus stop approached (and not recently logged)
         if (newStop && newStop !== this.lastBusStop) {
-            this.lastBusStop = newStop;
-            this.createCard('🚏 Arrived at ' + newStop);
+            var cardText = '🚏 Arrived at ' + newStop;
+            if (!this.hasRecentCard(cardText, 5)) {
+                this.lastBusStop = newStop;
+                this.createCard(cardText);
+            }
         }
         
-        // Rain warning
+        // Rain warning (and not recently logged)
         if (newCtx.indexOf('🌧️ Rain') >= 0 && oldCtx.indexOf('🌧️ Rain') < 0) {
             var rainMatch = newCtx.match(/🌧️ Rain[^\n]+/);
-            if (rainMatch) this.createCard(rainMatch[0]);
+            if (rainMatch && !this.hasRecentCard(rainMatch[0], 30)) {
+                this.createCard(rainMatch[0]);
+            }
         }
         
-        // Prayer time change
+        // Prayer time change (and not recently logged)
         var oldPrayer = this.extractPrayer(oldCtx);
         var newPrayer = this.extractPrayer(newCtx);
         if (newPrayer && oldPrayer && newPrayer !== oldPrayer) {
-            this.createCard('🕌 ' + newPrayer);
+            var prayerCard = '🕌 ' + newPrayer;
+            if (!this.hasRecentCard(prayerCard, 30)) {
+                this.createCard(prayerCard);
+            }
         }
+    },
+    hasRecentCard: function(text, minutes) {
+        // Check if a card with similar text exists within last N minutes
+        var cutoff = Date.now() - (minutes * 60 * 1000);
+        for (var i = 0; i < this.cards.length; i++) {
+            if (this.cards[i].time > cutoff && this.cards[i].text === text) {
+                return true;
+            }
+        }
+        return false;
     },
     extractBusStop: function(ctx) {
         var match = ctx.match(/🚏 ([^\n(]+)/);
