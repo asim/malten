@@ -360,10 +360,10 @@ func GetLiveContext(lat, lon float64) string {
 	db := Get()
 	var parts []string
 	
-	// Where am I? Street + area
-	location := reverseGeocode(lat, lon)
-	if location != "" {
-		parts = append(parts, "📍 "+location)
+	// Where am I? Read from index (agent has already geocoded)
+	locs := db.Query(lat, lon, 500, EntityLocation, 1)
+	if len(locs) > 0 {
+		parts = append(parts, "📍 "+locs[0].Name)
 	}
 	
 	// Weather + Prayer on same line
@@ -403,8 +403,16 @@ func GetLiveContext(lat, lon float64) string {
 	return strings.Join(parts, "\n")
 }
 
-// reverseGeocode gets street name and area
-func reverseGeocode(lat, lon float64) string {
+// fetchLocation reverse geocodes and returns an entity for caching
+// Locations are cached for 500m radius - same street basically
+func fetchLocation(lat, lon float64) *Entity {
+	// Check cache first
+	db := Get()
+	cached := db.Query(lat, lon, 500, EntityLocation, 1)
+	if len(cached) > 0 && cached[0].ExpiresAt != nil && time.Now().Before(*cached[0].ExpiresAt) {
+		return nil // Already have fresh data
+	}
+	
 	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?lat=%f&lon=%f&format=json&zoom=18",
 		lat, lon)
 	
@@ -413,7 +421,7 @@ func reverseGeocode(lat, lon float64) string {
 	
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return ""
+		return nil
 	}
 	defer resp.Body.Close()
 	
@@ -426,11 +434,10 @@ func reverseGeocode(lat, lon float64) string {
 		} `json:"address"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return ""
+		return nil
 	}
 	
 	road := data.Address.Road
-	// Prefer postcode over suburb/town - clearer for users
 	area := data.Address.Postcode
 	if area == "" {
 		area = data.Address.Suburb
@@ -439,13 +446,30 @@ func reverseGeocode(lat, lon float64) string {
 		area = data.Address.Town
 	}
 	
+	var name string
 	if road != "" && area != "" {
-		return road + ", " + area
+		name = road + ", " + area
+	} else if road != "" {
+		name = road
+	} else {
+		name = area
 	}
-	if road != "" {
-		return road
+	
+	if name == "" {
+		return nil
 	}
-	return area
+	
+	// Cache for 1 hour - locations don't change
+	expiry := time.Now().Add(1 * time.Hour)
+	return &Entity{
+		ID:        GenerateID(EntityLocation, lat, lon, "location"),
+		Type:      EntityLocation,
+		Name:      name,
+		Lat:       lat,
+		Lon:       lon,
+		Data:      map[string]interface{}{"road": road, "area": area, "postcode": data.Address.Postcode},
+		ExpiresAt: &expiry,
+	}
 }
 
 // getNearestStopWithArrivals returns the nearest stop and its arrivals

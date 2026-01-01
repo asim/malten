@@ -136,6 +136,11 @@ func agentLoop(agent *Entity) {
 func updateLiveData(agent *Entity) {
 	db := Get()
 	
+	// Location name (reverse geocode) - only if not cached
+	if loc := fetchLocation(agent.Lat, agent.Lon); loc != nil {
+		db.Insert(loc)
+	}
+	
 	// Weather
 	if weather := fetchWeather(agent.Lat, agent.Lon); weather != nil {
 		db.Insert(weather)
