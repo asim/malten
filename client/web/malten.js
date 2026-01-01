@@ -29,6 +29,10 @@ var state = {
                 this.contextTime = s.contextTime || 0;
                 this.locationHistory = s.locationHistory || [];
                 this.lastBusStop = s.lastBusStop || null;
+                this.cards = s.cards || [];
+                // Prune old cards on load
+                var cutoff = Date.now() - (24 * 60 * 60 * 1000);
+                this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
             }
         } catch(e) {}
     },
@@ -38,8 +42,9 @@ var state = {
             lon: this.lon,
             context: this.context,
             contextTime: this.contextTime,
-            locationHistory: this.locationHistory.slice(-20), // Keep last 20
-            lastBusStop: this.lastBusStop
+            locationHistory: this.locationHistory.slice(-20),
+            lastBusStop: this.lastBusStop,
+            cards: this.cards
         }));
     },
     setLocation: function(lat, lon) {
@@ -101,7 +106,17 @@ var state = {
         return match ? match[1] : null;
     },
     createCard: function(text) {
-        // Create a card as a system message in the stream
+        var card = {
+            text: text,
+            time: Date.now(),
+            lat: this.lat,
+            lon: this.lon
+        };
+        this.cards.push(card);
+        // Prune cards older than 24 hours
+        var cutoff = Date.now() - (24 * 60 * 60 * 1000);
+        this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
+        this.save();
         displaySystemMessage(text);
     },
     isMoving: function() {
@@ -132,7 +147,8 @@ var state = {
     context: null,
     contextTime: 0,
     locationHistory: [],
-    lastBusStop: null
+    lastBusStop: null,
+    cards: []
 };
 state.load();
 
@@ -499,9 +515,14 @@ function displayContext(text) {
     ctx.style.display = text ? 'block' : 'none';
 }
 
-function displaySystemMessage(text) {
+function displaySystemMessage(text, timestamp) {
     // Create a card in the messages area
-    var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var time;
+    if (timestamp) {
+        time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    } else {
+        time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    }
     var cardType = getCardType(text);
     var card = document.createElement('li');
     card.innerHTML = '<div class="card ' + cardType + '">' +
@@ -511,6 +532,29 @@ function displaySystemMessage(text) {
     
     var messages = document.getElementById('messages');
     messages.insertBefore(card, messages.firstChild);
+}
+
+function displayCardAtEnd(text, timestamp) {
+    // Append card at end (for loading history in order)
+    var time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var cardType = getCardType(text);
+    var card = document.createElement('li');
+    card.innerHTML = '<div class="card ' + cardType + '">' +
+        '<span class="card-time">' + time + '</span>' +
+        text.replace(/\n/g, '<br>') +
+        '</div>';
+    
+    var messages = document.getElementById('messages');
+    messages.appendChild(card);
+}
+
+function loadPersistedCards() {
+    // Load cards from localStorage, oldest first
+    if (state.cards && state.cards.length > 0) {
+        state.cards.forEach(function(c) {
+            displayCardAtEnd(c.text, c.time);
+        });
+    }
 }
 
 function getCardType(text) {
@@ -691,6 +735,9 @@ if ('serviceWorker' in navigator) {
 $(document).ready(function() {
     loadListeners();
     loadStream();
+    
+    // Load persisted cards from localStorage
+    loadPersistedCards();
     
     // Show cached context immediately
     showCachedContext();
