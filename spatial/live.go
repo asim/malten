@@ -525,14 +525,13 @@ func getPlacesSummary(db *DB, lat, lon float64) string {
 		places := db.QueryPlaces(lat, lon, 500, cat, 10)
 		if len(places) > 0 {
 			icon := icons[cat]
-			if len(places) == 1 {
-				// Single place: embed full data for client-side expansion
-				p := places[0]
-				data := formatPlaceData(p)
-				summary = append(summary, fmt.Sprintf("%s {%s}", icon, data))
-			} else {
-				summary = append(summary, fmt.Sprintf("%s %d %ss", icon, len(places), cat))
+			// Embed all places data for client-side expansion
+			var placesData []string
+			for _, p := range places {
+				placesData = append(placesData, formatPlaceData(p))
 			}
+			// Format: icon {place1;;place2;;place3} or icon {singleplace}
+			summary = append(summary, fmt.Sprintf("%s {%s}", icon, strings.Join(placesData, ";;")))
 		}
 	}
 	

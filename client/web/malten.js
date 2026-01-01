@@ -540,58 +540,62 @@ function displayContext(text) {
 }
 
 // Make place names and counts clickable
+// Track expanded place cards to prevent duplicates
+var expandedPlaces = {};
+
 function makeClickable(text) {
     var html = text;
     
-    // Match "3 cafes", "2 restaurants" etc -> /nearby type
-    html = html.replace(/(\d+)\s+(cafes?|restaurants?|pubs?|shops?|supermarkets?|pharmacies?|banks?|stations?)/gi, function(match, count, type) {
-        var singular = type.replace(/s$/, '').replace(/ies$/, 'y');
-        return '<a href="#" class="place-link" data-type="category" data-query="/nearby ' + singular + '">' + match + '</a>';
-    });
-    
-    // Match {data} format for single places with embedded data
-    // Format: icon {name|address|postcode|hours|phone|mapurl}
+    // Match {data} format - contains all places data (single or multiple separated by ;;)
     html = html.replace(/\{([^}]+)\}/g, function(match, data) {
-        var parts = data.split('|');
-        var name = parts[0] || '';
-        return '<a href="#" class="place-link" data-type="place" data-details="' + encodeURIComponent(data) + '">' + name + '</a>';
+        var places = data.split(';;');
+        var firstName = places[0].split('|')[0] || '';
+        var count = places.length;
+        var label = count === 1 ? firstName : count + ' places';
+        return '<a href="#" class="place-link" data-type="places" data-details="' + encodeURIComponent(data) + '">' + label + '</a>';
     });
     
     return html;
 }
 
-// Handle clicks on place links
+// Handle clicks on place links - toggle expansion
 $(document).on('click', '.place-link', function(e) {
     e.preventDefault();
-    var type = $(this).data('type');
+    var data = decodeURIComponent($(this).data('details'));
+    var key = data.substring(0, 50); // Use start of data as key
     
-    if (type === 'category') {
-        // Category search like "3 cafes"
-        document.getElementById('prompt').value = $(this).data('query');
-        submitCommand();
-    } else if (type === 'place') {
-        // Single place - data already embedded, no fetch needed
-        var data = decodeURIComponent($(this).data('details'));
-        showPlaceCard(data);
+    if (expandedPlaces[key]) {
+        // Already expanded - collapse by removing cards
+        delete expandedPlaces[key];
+        return;
     }
+    
+    expandedPlaces[key] = true;
+    showPlacesCard(data);
 });
 
-// Show place card from embedded data (no API call)
-function showPlaceCard(data) {
-    var parts = data.split('|');
-    var name = parts[0] || '';
-    var lines = ['📍 ' + name];
+// Show places card from embedded data (no API call)
+function showPlacesCard(data) {
+    var places = data.split(';;');
+    var lines = [];
     
-    for (var i = 1; i < parts.length; i++) {
-        var part = parts[i];
-        if (part.startsWith('http')) {
-            lines.push('<a href="' + part + '" target="_blank">Open in Maps</a>');
-        } else if (part) {
-            lines.push(part);
+    places.forEach(function(placeData, idx) {
+        var parts = placeData.split('|');
+        var name = parts[0] || '';
+        var placeLine = '📍 ' + name;
+        
+        for (var i = 1; i < parts.length; i++) {
+            var part = parts[i];
+            if (part.startsWith('http')) {
+                placeLine += ' <a href="' + part + '" target="_blank">Map</a>';
+            } else if (part) {
+                placeLine += '\n   ' + part;
+            }
         }
-    }
+        lines.push(placeLine);
+    });
     
-    displaySystemMessage(lines.join('\n'));
+    displaySystemMessage(lines.join('\n\n'));
 }
 
 function displaySystemMessage(text, timestamp) {
