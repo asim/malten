@@ -36,15 +36,15 @@ curl -s "http://localhost:9090/ping" -X POST -d "lat=51.417&lon=-0.362" | jq .
 
 ---
 
-## START HERE - Bugs to Fix First
+## START HERE - Bugs Fixed
 
-### Priority Bugs (reported 2026-01-01 15:30)
+### Bugs Fixed (2026-01-01 16:00)
 
-1. **Location not updating** - Shows Whitton when user is in Hampton
-2. **Cards/messages disappearing** - Bus update and local info gone after refresh
-3. **Local info not clickable** - Shops should have Map links
-4. **Context splitting** - Weather/prayer as separate message, location line missing
-5. **No bus info in Hampton** - Agent might not have indexed, or no stops in radius
+1. ✅ **Location not updating** - Fixed: reduced maximumAge, enabled high accuracy
+2. ✅ **Cards persist** - Cards stored in localStorage, survive refresh
+3. ✅ **Local info clickable** - "3 cafes" etc. now link to /nearby
+4. ✅ **Context unified** - Location, weather, prayer, bus all in context block
+5. ✅ **Bus info showing** - Increased arrival query radius from 100m to 300m
 
 ### To Debug
 ```bash
