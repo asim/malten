@@ -2,7 +2,10 @@ var commandUrl = "/commands";
 var messageUrl = "/messages";
 var streamUrl = "/streams";
 var eventUrl = "/events";
+var pingUrl = "/ping";
 var limit = 25;
+var locationEnabled = false;
+var locationWatchId = null;
 var last = timeAgo();
 var maxChars = 1024;
 var maxMessages = 1000;
@@ -14,9 +17,10 @@ var reconnectTimer = null;
 var pendingMessages = {};
 
 String.prototype.parseURL = function() {
-    return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=#]+/g, function(url) {
-        var pretty = url.replace(/^http(s)?:\/\/(www\.)?/, '');
-        return pretty.link(url);
+    // Match URLs including @, commas, %, etc
+    return this.replace(/https?:\/\/[A-Za-z0-9-_.]+\.[A-Za-z0-9-_:%&~\?\/.=#,@+]+/g, function(url) {
+        var cleanUrl = url.replace(/&amp;/g, '&');
+        return '<a href="' + cleanUrl + '" target="_blank">Map</a>';
     });
 };
 
@@ -215,19 +219,37 @@ function submitCommand() {
     
     if (prompt.length === 0) return false;
 
-    // Handle /goto command locally
-    var gotoMatch = prompt.match(/^\/goto\s+#?(.+)$/);
+    // Handle goto command locally (with or without slash)
+    var gotoMatch = prompt.match(/^\/?goto\s+#?(.+)$/i);
     if (gotoMatch) {
         form.elements["prompt"].value = '';
         window.location.hash = gotoMatch[1];
         return false;
     }
 
-    // Handle /new command locally
-    if (prompt.match(/^\/new(\s|$)/)) {
+    // Handle new command locally (with or without slash)
+    if (prompt.match(/^\/?new(\s|$)/i)) {
         form.elements["prompt"].value = '';
         createNewStream();
         return false;
+    }
+
+    // Handle ping on/off - enable location tracking client-side
+    var pingMatch = prompt.match(/^\/?ping\s+(on|off)$/i);
+    if (pingMatch) {
+        var action = pingMatch[1].toLowerCase();
+        if (action === 'on') {
+            enableLocation();
+        } else {
+            disableLocation();
+        }
+        // Still send to server so it can respond
+    }
+
+    // Handle nearby - send fresh location before query
+    var nearbyMatch = prompt.match(/^\/?nearby\s+/i);
+    if (nearbyMatch && locationEnabled) {
+        sendFreshLocation();
     }
 
     // Display message immediately for responsiveness
@@ -259,6 +281,150 @@ function createNewStream() {
         }
     });
     return false;
+}
+
+// Location functions
+function enableLocation() {
+    if (!navigator.geolocation) {
+        displaySystemMessage("📍 Geolocation not supported in this browser");
+        return;
+    }
+
+    // Check/request permission first
+    if (navigator.permissions) {
+        navigator.permissions.query({ name: 'geolocation' }).then(function(result) {
+            if (result.state === 'denied') {
+                displaySystemMessage("📍 Location permission denied. Please enable in browser settings.");
+                return;
+            }
+            // prompt or granted - proceed to request
+            requestLocation();
+        }).catch(function() {
+            // permissions API not fully supported, try anyway
+            requestLocation();
+        });
+    } else {
+        // No permissions API, just try
+        requestLocation();
+    }
+}
+
+function requestLocation() {
+    // This triggers the permission popup
+    navigator.geolocation.getCurrentPosition(
+        function(pos) {
+            locationEnabled = true;
+            localStorage.setItem('locationEnabled', 'true');
+            
+            var lat = pos.coords.latitude;
+            var lon = pos.coords.longitude;
+            
+            // Send location and wait for confirmation
+            console.log("Sending location:", lat, lon);
+            $.post(pingUrl, {
+                lat: lat,
+                lon: lon
+            }).done(function(data) {
+                console.log("Ping response:", data);
+                displaySystemMessage("📍 Location enabled (" + lat.toFixed(4) + ", " + lon.toFixed(4) + ")");
+            }).fail(function(err) {
+                console.log("Ping error:", err);
+                displaySystemMessage("📍 Location error: Failed to send to server");
+            });
+            
+            // Start watching
+            startLocationWatch();
+        },
+        function(err) {
+            console.log("Location error:", err.code, err.message);
+            var msg = "📍 Location error: ";
+            switch(err.code) {
+                case 1: msg += "Permission denied"; break;
+                case 2: msg += "Position unavailable"; break;
+                case 3: msg += "Timeout"; break;
+                default: msg += err.message;
+            }
+            displaySystemMessage(msg);
+        },
+        { enableHighAccuracy: false, timeout: 30000, maximumAge: 300000 }
+    );
+}
+
+var lastPingSent = 0;
+var pingInterval = 60000; // Send at most once per minute
+
+// Send fresh location immediately (bypasses throttle)
+function sendFreshLocation() {
+    if (!navigator.geolocation) return;
+    
+    navigator.geolocation.getCurrentPosition(
+        function(pos) {
+            lastPingSent = Date.now();
+            sendLocation(pos.coords.latitude, pos.coords.longitude);
+        },
+        function(err) {
+            console.log("Fresh location error:", err.message);
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+}
+
+function startLocationWatch() {
+    if (locationWatchId) {
+        navigator.geolocation.clearWatch(locationWatchId);
+    }
+    locationWatchId = navigator.geolocation.watchPosition(
+        function(pos) {
+            var now = Date.now();
+            if (now - lastPingSent >= pingInterval) {
+                lastPingSent = now;
+                sendLocation(pos.coords.latitude, pos.coords.longitude);
+            }
+        },
+        function(err) {
+            console.log("Location watch error:", err.message);
+        },
+        { enableHighAccuracy: false, timeout: 30000, maximumAge: 60000 }
+    );
+}
+
+function displaySystemMessage(text) {
+    var msg = {
+        Id: 'system-' + Date.now(),
+        Text: text,
+        Created: Date.now() * 1e6,
+        Type: 'message',
+        Stream: getStream()
+    };
+    displayMessages([msg], 1);
+}
+
+function disableLocation() {
+    locationEnabled = false;
+    localStorage.setItem('locationEnabled', 'false');
+    
+    if (locationWatchId) {
+        navigator.geolocation.clearWatch(locationWatchId);
+        locationWatchId = null;
+    }
+}
+
+function sendLocation(lat, lon) {
+    console.log("[watch] Sending location:", lat, lon);
+    $.post(pingUrl, {
+        lat: lat,
+        lon: lon
+    }).done(function(data) {
+        console.log("[watch] Ping response:", data);
+    }).fail(function(err) {
+        console.log("[watch] Ping error:", err);
+    });
+}
+
+function checkLocationEnabled() {
+    if (localStorage.getItem('locationEnabled') === 'true') {
+        enableLocation();
+    }
 }
 
 function gotoStream(t) {
@@ -300,4 +466,5 @@ function loadListeners() {
 $(document).ready(function() {
     loadListeners();
     loadStream();
+    checkLocationEnabled();
 });

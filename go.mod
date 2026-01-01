@@ -2,13 +2,16 @@ module github.com/asim/malten
 
 go 1.18
 
+replace github.com/asim/quadtree => ../quadtree
+
 require (
+	github.com/asim/quadtree v0.0.0
 	github.com/PuerkitoBio/goquery v1.8.0
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/mdp/qrterminal/v3 v3.0.0
-	github.com/sashabaranov/go-openai v1.8.0
+	github.com/sashabaranov/go-openai v1.41.2
 	go.mau.fi/whatsmeow v0.0.0-20230516145702-d5485ef06d61
 	google.golang.org/protobuf v1.30.0
 )

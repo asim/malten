@@ -31,6 +31,8 @@ func main() {
 
 	http.HandleFunc("/events", server.GetEvents)
 
+	http.HandleFunc("/ping", server.PingHandler)
+
 	http.HandleFunc("/commands", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":

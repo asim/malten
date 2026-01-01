@@ -36,6 +36,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 	stream := r.Form.Get("stream")
 	command := r.Form.Get("prompt")
+	token := getSessionToken(w, r)
 	if len(command) == 0 {
 		return
 	}
@@ -58,35 +59,23 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle slash commands
+	// Handle slash commands (explicit command syntax)
 	if strings.HasPrefix(command, "/") {
-		handleCommand(command, stream)
+		handleCommand(command, stream, token)
 		return
 	}
 
-	// Handle commands without slash
-	if cmd := detectCommand(command); cmd != "" {
-		handleCommand(cmd, stream)
+	// Handle navigation commands without slash (goto, new)
+	if cmd := detectNavCommand(command); cmd != "" {
+		handleCommand(cmd, stream, token)
 		return
 	}
 
-	// Check if it's a price query
-	if coin := detectPriceQuery(command); coin != "" {
-		go handlePriceQuery(coin, stream)
-		return
-	}
-
-	// Check if it's a reminder query
-	if query := detectReminderQuery(command); query != "" {
-		go handleReminderQuery(query, stream)
-		return
-	}
-
-	// Send to AI
-	go handleAI(command, stream)
+	// Everything else goes to AI with tool selection
+	go handleAI(command, stream, token)
 }
 
-func handleCommand(cmd, stream string) {
+func handleCommand(cmd, stream, token string) {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return
@@ -111,8 +100,14 @@ func handleCommand(cmd, stream string) {
 		help := `/help - Show this help
 /new - Create a new stream
 /goto <stream> - Switch to a stream
+/ping on|off - Enable/disable location sharing
+/nearby <type> - Find nearby places (cafes, restaurants, etc)
 /price <coin> - Get crypto price
-/reminder [query] - Daily reminder or search Islamic texts`
+/reminder [query] - Daily reminder or search Islamic texts
+/chat <question> - Ask AI with real-time context
+/news [query] - Latest news or search
+/video <query> - Search videos
+/blog - Latest blog posts`
 		Default.Events <- NewMessage(help, stream)
 
 	case "streams":
@@ -136,20 +131,27 @@ func handleCommand(cmd, stream string) {
 		if err := Default.New(name, "", false, int(StreamTTL.Seconds())); err != nil {
 			Default.Events <- NewMessage("Failed to create stream", stream)
 		} else {
-			Default.Events <- NewMessage("/goto #"+name, stream)
+			Default.Events <- NewMessage("Created stream #"+name+" - click to join: #"+name, stream)
 		}
 
 	case "goto":
 		if len(args) > 0 {
-			Default.Events <- NewMessage("Use #"+args[0]+" in the URL to switch streams", stream)
+			name := strings.TrimPrefix(args[0], "#")
+			Default.Events <- NewMessage("Click to join: #"+name, stream)
 		} else {
-			Default.Events <- NewMessage("Usage: /goto <stream>", stream)
+			Default.Events <- NewMessage("Usage: goto <stream>", stream)
 		}
+
+	case "ping":
+		Default.Events <- NewMessage(HandlePingCommand(cmd, token), stream)
+
+	case "nearby":
+		Default.Events <- NewMessage(HandleNearbyCommand(args, token), stream)
 	}
 }
 
-// detectCommand checks if input matches a command without slash
-func detectCommand(input string) string {
+// detectNavCommand checks if input is a navigation command (goto, new)
+func detectNavCommand(input string) string {
 	input = strings.TrimSpace(input)
 	parts := strings.Fields(input)
 	if len(parts) == 0 {
@@ -157,105 +159,21 @@ func detectCommand(input string) string {
 	}
 	
 	cmd := strings.ToLower(parts[0])
-	commands := []string{"help", "commands", "new", "goto", "streams", "price", "reminder"}
-	
-	for _, c := range commands {
-		if cmd == c {
-			return "/" + input
-		}
+	// Only handle navigation commands client-side can't intercept
+	if cmd == "goto" || cmd == "new" {
+		return "/" + input
 	}
 	return ""
 }
 
-// detectPriceQuery checks if the input is asking for a crypto price
-func detectPriceQuery(input string) string {
-	input = strings.ToLower(strings.TrimSpace(input))
-	
-	// Patterns: "btc price", "price of btc", "btc", "bitcoin price", etc.
-	coins := []string{
-		"btc", "bitcoin", "eth", "ethereum", "uni", "uniswap",
-		"sol", "solana", "ada", "cardano", "dot", "polkadot",
-		"matic", "polygon", "link", "chainlink", "avax", "avalanche",
-		"atom", "cosmos", "xrp", "ripple", "doge", "dogecoin",
-		"shib", "ltc", "litecoin", "xlm", "stellar",
-		"arb", "arbitrum", "op", "optimism", "pepe",
-	}
-	
-	for _, coin := range coins {
-		// "btc price", "btc?", "btc"
-		if input == coin || input == coin+"?" || input == coin+" price" || input == coin+" price?" {
-			return coin
-		}
-		// "price of btc", "price btc"
-		if input == "price of "+coin || input == "price "+coin {
-			return coin
-		}
-		// "what is btc", "what's btc" - only for ticker symbols
-		if len(coin) <= 5 {
-			if input == "what is "+coin || input == "whats "+coin || input == "what's "+coin {
-				return coin
-			}
-		}
-	}
-	return ""
-}
-
-func handlePriceQuery(coin, stream string) {
-	result, err := command.Execute("price", []string{coin})
-	if err != nil {
-		Default.Events <- NewMessage("Error: "+err.Error(), stream)
-		return
-	}
-	Default.Events <- NewMessage(result, stream)
-}
-
-// detectReminderQuery checks if input is asking for Islamic content
-func detectReminderQuery(input string) string {
-	input = strings.ToLower(strings.TrimSpace(input))
-	
-	// "reminder" alone returns daily
-	if input == "reminder" {
-		return "__daily__"
-	}
-	
-	// "reminder <query>" patterns
-	prefixes := []string{
-		"reminder ",
-		"remind me about ",
-		"what does islam say about ",
-		"what does the quran say about ",
-		"quran on ",
-		"hadith on ",
-		"hadith about ",
-	}
-	
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(input, prefix) {
-			return strings.TrimPrefix(input, prefix)
-		}
-	}
-	
-	return ""
-}
-
-func handleReminderQuery(query, stream string) {
-	var args []string
-	if query != "__daily__" {
-		args = strings.Fields(query)
-	}
-	result, err := command.Execute("reminder", args)
-	if err != nil {
-		Default.Events <- NewMessage("Error: "+err.Error(), stream)
-		return
-	}
-	Default.Events <- NewMessage(result, stream)
-}
-
-func handleAI(prompt, stream string) {
+func handleAI(prompt, stream, token string) {
 	if agent.Client == nil {
 		Default.Events <- NewMessage("AI not available", stream)
 		return
 	}
+
+	// Set token context for location lookups
+	agent.CurrentStream = token
 
 	// Get recent messages for context
 	messages := Default.Retrieve("", stream, 1, 0, 20)
