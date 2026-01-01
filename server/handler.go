@@ -128,36 +128,6 @@ func handleCommand(cmd, stream, token string) {
 	}
 }
 
-// detectWalkQuery extracts destination from walking queries
-// Handles: "how long to walk to X", "walk to X", "walking time to X", "how far is X"
-func detectWalkQuery(input string) string {
-	input = strings.TrimSpace(input)
-	lower := strings.ToLower(input)
-	
-	// Patterns to match
-	patterns := []string{
-		"how long to walk to ",
-		"how far to walk to ",
-		"walking time to ",
-		"walk time to ",
-		"walk to ",
-		"how far is ",
-		"how long to ",
-	}
-	
-	for _, p := range patterns {
-		if idx := strings.Index(lower, p); idx != -1 {
-			dest := strings.TrimSpace(input[idx+len(p):])
-			// Remove trailing question mark
-			dest = strings.TrimSuffix(dest, "?")
-			if dest != "" {
-				return dest
-			}
-		}
-	}
-	return ""
-}
-
 // detectNearbyQuery checks if input is a nearby/location query
 // Handles: "cafes near me", "nearby cafes", "Twickenham cafes", "petrol station"
 func detectNearbyQuery(input string) (bool, []string) {
