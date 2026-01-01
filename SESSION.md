@@ -1,3 +1,41 @@
+## QUICK START - Read in 1 Minute
+
+### What is Malten
+Spatial AI. Open app → see world around you. Weather, prayer, buses, places. Moves with you.
+
+### Five Primitives (NEVER CHANGE)
+- **Streams** - geo areas as text channels
+- **Agents** - index areas, build world view
+- **Commands** - all actions
+- **Database** - quadtree (`spatial.json`)
+- **Events** - replayable log (`events.jsonl`)
+
+### Key Files
+- `spatial/` - quadtree, agents, live data
+- `command/` - all commands (dispatch here, not server)
+- `server/` - thin HTTP/WebSocket
+- `client/web/` - PWA, localStorage for personal timeline
+
+### Run
+```bash
+cd /home/exedev/malten
+systemctl status malten  # should be running on :9090
+journalctl -u malten -f  # logs
+```
+
+### Test
+```bash
+curl -s "http://localhost:9090/ping" -X POST -d "lat=51.417&lon=-0.362" | jq .
+```
+
+### Current State
+- Agents index POIs from OSM, live data every 30s
+- Context from quadtree (fast), falls back to API
+- Messages persist 24hr in localStorage
+- Cards = message format with timestamp
+
+---
+
 ## START HERE - Bugs to Fix First
 
 ### Priority Bugs (reported 2026-01-01 15:30)
