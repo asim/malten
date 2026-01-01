@@ -63,17 +63,23 @@ func (d *DB) CreateAgent(lat, lon, radius float64, name string) *Entity {
 
 // FindOrCreateAgent finds or creates an agent for a location
 func (d *DB) FindOrCreateAgent(lat, lon float64) *Entity {
-	agent := d.FindAgent(lat, lon, AgentRadius)
-	if agent != nil {
-		return agent
-	}
-
 	areaName := ReverseGeocode(lat, lon)
 	if areaName == "" {
 		areaName = fmt.Sprintf("Area %.2f,%.2f", lat, lon)
 	}
+	return d.FindOrCreateAgentNamed(lat, lon, areaName)
+}
 
-	agent = d.CreateAgent(lat, lon, AgentRadius, areaName)
+// FindOrCreateAgentNamed finds agent by name or creates one
+func (d *DB) FindOrCreateAgentNamed(lat, lon float64, name string) *Entity {
+	// Check if agent with this name exists
+	for _, a := range d.ListAgents() {
+		if a.Name == name {
+			return a
+		}
+	}
+
+	agent := d.CreateAgent(lat, lon, AgentRadius, name)
 	go IndexAgent(agent)
 	return agent
 }
