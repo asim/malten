@@ -59,40 +59,28 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle slash commands (explicit command syntax)
-	if strings.HasPrefix(input, "/") {
-		handleCommand(input, stream, token)
-		return
-	}
-
 	// Handle navigation commands without slash (goto, new)
 	if cmd := detectNavCommand(input); cmd != "" {
-		handleCommand(cmd, stream, token)
-		return
+		input = cmd
 	}
 
-	// Handle walking queries ("how long to walk to X", "walk to X")
-	// Check this BEFORE nearby queries to avoid "walk to Station" matching as "station" nearby
-	if dest := detectWalkQuery(input); dest != "" {
-		if loc := command.GetLocation(token); loc != nil {
-			result, err := command.WalkTo(loc.Lat, loc.Lon, dest)
-			if err != nil {
-				Default.Events <- NewMessage("❌ "+err.Error(), stream)
-			} else {
-				Default.Events <- NewMessage(result, stream)
-			}
-		} else {
-			Default.Events <- NewMessage("📍 Enable location first to get walking time", stream)
+	// Build context for command dispatch
+	ctx := &command.Context{
+		Session: token,
+		Input:   input,
+	}
+	if loc := command.GetLocation(token); loc != nil {
+		ctx.Lat = loc.Lat
+		ctx.Lon = loc.Lon
+	}
+
+	// Try command dispatch (handles /commands and natural language)
+	if result, handled := command.Dispatch(ctx); handled {
+		if result != "" {
+			Default.Events <- NewMessage(result, stream)
 		}
 		return
 	}
-
-	// Handle natural language nearby queries ("cafes near me", "Twickenham cafes")
-	if isNearby, args := detectNearbyQuery(input); isNearby {
-		Default.Events <- NewMessage(HandleNearbyCommand(args, token), stream)
-		return
-	}
-
 
 	// Everything else goes to AI with tool selection
 	go handleAI(input, stream, token)

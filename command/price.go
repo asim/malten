@@ -65,7 +65,7 @@ func init() {
 
 const priceCacheTTL = 60 * time.Second
 
-func priceHandler(args []string) (string, error) {
+func priceHandler(ctx *Context, args []string) (string, error) {
 	if len(args) == 0 {
 		return "Usage: /price <coin> (e.g. /price btc, /price eth)", nil
 	}

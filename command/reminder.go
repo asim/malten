@@ -50,7 +50,7 @@ type SearchResponse struct {
 	} `json:"references"`
 }
 
-func reminderHandler(args []string) (string, error) {
+func reminderHandler(ctx *Context, args []string) (string, error) {
 	// If args provided, do search
 	if len(args) > 0 {
 		return searchHandler(args)

@@ -27,6 +27,8 @@ var state = {
                 this.lon = s.lon || null;
                 this.context = s.context || null;
                 this.contextTime = s.contextTime || 0;
+                this.locationHistory = s.locationHistory || [];
+                this.lastBusStop = s.lastBusStop || null;
             }
         } catch(e) {}
     },
@@ -35,18 +37,92 @@ var state = {
             lat: this.lat,
             lon: this.lon,
             context: this.context,
-            contextTime: this.contextTime
+            contextTime: this.contextTime,
+            locationHistory: this.locationHistory.slice(-20), // Keep last 20
+            lastBusStop: this.lastBusStop
         }));
     },
     setLocation: function(lat, lon) {
+        var prevLat = this.lat;
+        var prevLon = this.lon;
         this.lat = lat;
         this.lon = lon;
+        
+        // Track location history for movement detection
+        this.locationHistory.push({
+            lat: lat, lon: lon, time: Date.now()
+        });
+        if (this.locationHistory.length > 20) {
+            this.locationHistory.shift();
+        }
         this.save();
     },
     setContext: function(ctx) {
+        var oldContext = this.context;
         this.context = ctx;
         this.contextTime = Date.now();
         this.save();
+        
+        // Detect significant changes and create cards
+        this.detectChanges(oldContext, ctx);
+    },
+    detectChanges: function(oldCtx, newCtx) {
+        if (!oldCtx || !newCtx) return;
+        
+        // Extract bus stop from context
+        var oldStop = this.extractBusStop(oldCtx);
+        var newStop = this.extractBusStop(newCtx);
+        
+        // New bus stop approached
+        if (newStop && newStop !== this.lastBusStop) {
+            this.lastBusStop = newStop;
+            this.createCard('🚏 Arrived at ' + newStop);
+        }
+        
+        // Rain warning
+        if (newCtx.indexOf('🌧️ Rain') >= 0 && oldCtx.indexOf('🌧️ Rain') < 0) {
+            var rainMatch = newCtx.match(/🌧️ Rain[^\n]+/);
+            if (rainMatch) this.createCard(rainMatch[0]);
+        }
+        
+        // Prayer time change
+        var oldPrayer = this.extractPrayer(oldCtx);
+        var newPrayer = this.extractPrayer(newCtx);
+        if (newPrayer && oldPrayer && newPrayer !== oldPrayer) {
+            this.createCard('🕌 ' + newPrayer);
+        }
+    },
+    extractBusStop: function(ctx) {
+        var match = ctx.match(/🚏 ([^\n(]+)/);
+        return match ? match[1].trim() : null;
+    },
+    extractPrayer: function(ctx) {
+        var match = ctx.match(/🕌 ([^\n]+)/);
+        return match ? match[1] : null;
+    },
+    createCard: function(text) {
+        // Create a card as a system message in the stream
+        displaySystemMessage(text);
+    },
+    isMoving: function() {
+        if (this.locationHistory.length < 3) return false;
+        var recent = this.locationHistory.slice(-3);
+        var totalDist = 0;
+        for (var i = 1; i < recent.length; i++) {
+            totalDist += this.distance(recent[i-1], recent[i]);
+        }
+        return totalDist > 0.02; // Moving if traveled >20m in recent updates
+    },
+    distance: function(a, b) {
+        // Haversine distance in km
+        var R = 6371;
+        var dLat = (b.lat - a.lat) * Math.PI / 180;
+        var dLon = (b.lon - a.lon) * Math.PI / 180;
+        var lat1 = a.lat * Math.PI / 180;
+        var lat2 = b.lat * Math.PI / 180;
+        var x = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2);
+        return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
     },
     hasLocation: function() {
         return this.lat && this.lon;
@@ -54,7 +130,9 @@ var state = {
     lat: null,
     lon: null,
     context: null,
-    contextTime: 0
+    contextTime: 0,
+    locationHistory: [],
+    lastBusStop: null
 };
 state.load();
 

@@ -52,7 +52,7 @@ type MuChatResponse struct {
 	Topic  string `json:"topic"`
 }
 
-func chatHandler(args []string) (string, error) {
+func chatHandler(ctx *Context, args []string) (string, error) {
 	if muToken == "" {
 		return "Mu API token not configured", nil
 	}
@@ -148,7 +148,7 @@ func muRequestWithTimeout(method, endpoint string, body interface{}, timeout tim
 	return client.Do(req)
 }
 
-func newsHandler(args []string) (string, error) {
+func newsHandler(ctx *Context, args []string) (string, error) {
 	if muToken == "" {
 		return "Mu API token not configured", nil
 	}
@@ -210,7 +210,7 @@ func newsHandler(args []string) (string, error) {
 	return strings.TrimSpace(result.String()), nil
 }
 
-func videoHandler(args []string) (string, error) {
+func videoHandler(ctx *Context, args []string) (string, error) {
 	if muToken == "" {
 		return "Mu API token not configured", nil
 	}
@@ -257,7 +257,7 @@ func videoHandler(args []string) (string, error) {
 	return strings.TrimSpace(result.String()), nil
 }
 
-func blogHandler(args []string) (string, error) {
+func blogHandler(ctx *Context, args []string) (string, error) {
 	if muToken == "" {
 		return "Mu API token not configured", nil
 	}

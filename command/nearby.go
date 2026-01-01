@@ -69,6 +69,15 @@ var (
 )
 
 func init() {
+	// Register nearby command
+	Register(&Command{
+		Name:        "nearby",
+		Description: "Find nearby places",
+		Usage:       "/nearby <type> [location]",
+		Handler:     handleNearby,
+		Match:       matchNearby,
+	})
+	
 	// Cleanup expired locations every minute
 	go func() {
 		for {
@@ -590,4 +599,106 @@ func formatAddress(tags map[string]string) string {
 	}
 
 	return strings.Join(parts, ", ")
+}
+// matchNearby detects nearby queries in natural language
+func matchNearby(input string) (bool, []string) {
+	input = strings.TrimSpace(input)
+	lower := strings.ToLower(input)
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return false, nil
+	}
+
+	// Remove filler words
+	var cleaned []string
+	for _, p := range parts {
+		l := strings.ToLower(p)
+		if l == "near" || l == "nearby" || l == "me" || l == "in" || l == "around" {
+			continue
+		}
+		cleaned = append(cleaned, p)
+	}
+
+	// Check for multi-word types first (e.g., "petrol station")
+	multiType, remaining := CheckMultiWordType(cleaned)
+	if multiType != "" {
+		result := append([]string{multiType}, remaining...)
+		return true, result
+	}
+
+	// Check if any word is a valid place type
+	hasPlaceType := false
+	for _, p := range cleaned {
+		if IsValidPlaceType(strings.ToLower(p)) {
+			hasPlaceType = true
+			break
+		}
+	}
+
+	if !hasPlaceType {
+		return false, nil
+	}
+
+	// Check if it looks like a nearby query
+	if strings.HasPrefix(lower, "near") ||
+		strings.Contains(lower, "near me") ||
+		strings.Contains(lower, "around me") ||
+		len(cleaned) >= 1 {
+		return true, cleaned
+	}
+	
+	return false, nil
+}
+
+// handleNearby processes the nearby command
+func handleNearby(ctx *Context, args []string) (string, error) {
+	if len(args) == 0 {
+		return "Usage: /nearby <type> [location]\nExamples: /nearby cafes, /nearby Twickenham cafes", nil
+	}
+
+	// Find the place type and location from args
+	var placeType string
+	var locationParts []string
+	var lat, lon float64
+
+	for _, arg := range args {
+		lower := strings.ToLower(arg)
+		if IsValidPlaceType(lower) {
+			placeType = lower
+		} else if coords := strings.Split(arg, ","); len(coords) == 2 {
+			if parsedLat, err := strconv.ParseFloat(coords[0], 64); err == nil {
+				if parsedLon, err := strconv.ParseFloat(coords[1], 64); err == nil {
+					lat, lon = parsedLat, parsedLon
+					continue
+				}
+			}
+			locationParts = append(locationParts, arg)
+		} else {
+			locationParts = append(locationParts, arg)
+		}
+	}
+
+	if placeType == "" {
+		placeType = strings.Join(args, " ")
+	}
+
+	// Geocode location if provided
+	if lat == 0 && lon == 0 && len(locationParts) > 0 {
+		placeName := strings.Join(locationParts, " ")
+		geoLat, geoLon, err := Geocode(placeName)
+		if err != nil {
+			return "", fmt.Errorf("could not find location: %s", placeName)
+		}
+		lat, lon = geoLat, geoLon
+	}
+
+	// Fall back to user's location
+	if lat == 0 && lon == 0 {
+		if !ctx.HasLocation() {
+			return "", fmt.Errorf("location not available. Enable location or specify: /nearby Twickenham cafes")
+		}
+		lat, lon = ctx.Lat, ctx.Lon
+	}
+
+	return NearbyWithLocation(placeType, lat, lon)
 }
