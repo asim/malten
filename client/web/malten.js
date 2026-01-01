@@ -466,21 +466,27 @@ function checkLocationEnabled() {
 
 // Get location immediately and show context - this is a spatial app
 function getLocationAndContext() {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+        // No geolocation - try to use last known location
+        useLastKnownLocation();
+        return;
+    }
     
     navigator.geolocation.getCurrentPosition(
         function(pos) {
             var lat = pos.coords.latitude;
             var lon = pos.coords.longitude;
             
-            // Store for future queries
+            // Store location
             locationEnabled = true;
             localStorage.setItem('locationEnabled', 'true');
+            localStorage.setItem('lastLat', lat.toString());
+            localStorage.setItem('lastLon', lon.toString());
             
             // Send to server
             $.post(pingUrl, { lat: lat, lon: lon });
             
-            // Get and show local context immediately
+            // Get and show local context
             fetchLocalContext(lat, lon);
             
             // Start watching for movement
@@ -488,11 +494,23 @@ function getLocationAndContext() {
         },
         function(err) {
             console.log("Location not available:", err.message);
-            // Show prompt to enable location
-            displaySystemMessage("📍 Enable location to see what's nearby (buses, cafes, weather)");
+            // Try last known location
+            useLastKnownLocation();
         },
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
     );
+}
+
+function useLastKnownLocation() {
+    var lat = parseFloat(localStorage.getItem('lastLat'));
+    var lon = parseFloat(localStorage.getItem('lastLon'));
+    
+    if (lat && lon) {
+        // Refresh context from last known location
+        fetchLocalContext(lat, lon);
+    } else {
+        displaySystemMessage("📍 Enable location to see what's nearby");
+    }
 }
 
 function gotoStream(t) {
@@ -608,11 +626,8 @@ $(document).ready(function() {
 
 function showCachedContext() {
     var cached = localStorage.getItem('lastContext');
-    var cachedTime = parseInt(localStorage.getItem('lastContextTime') || '0');
-    var now = Date.now();
-    
-    // Show if less than 5 min old
-    if (cached && (now - cachedTime) < 300000) {
+    // Always show cached context if we have it - better stale than empty
+    if (cached) {
         displayContext(cached);
     }
 }
