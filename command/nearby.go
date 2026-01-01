@@ -3,6 +3,7 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -76,6 +77,15 @@ func init() {
 		Usage:       "/nearby <type> [location]",
 		Handler:     handleNearby,
 		Match:       matchNearby,
+	})
+	
+	// Register place info command (hours, etc)
+	Register(&Command{
+		Name:        "placeinfo",
+		Description: "Get info about a specific place",
+		Usage:       "/placeinfo <name>",
+		Handler:     handlePlaceInfo,
+		Match:       matchPlaceInfo,
 	})
 	
 	// Cleanup expired locations every minute
@@ -608,6 +618,14 @@ func matchNearby(input string) (bool, []string) {
 	if len(parts) == 0 {
 		return false, nil
 	}
+	
+	// Don't match question patterns - those go to placeinfo
+	questionPhrases := []string{"what time", "when does", "is .* open", "opening hours", "hours for"}
+	for _, q := range questionPhrases {
+		if strings.Contains(lower, q) || matchWildcard(lower, q) {
+			return false, nil
+		}
+	}
 
 	// Remove filler words
 	var cleaned []string
@@ -701,4 +719,205 @@ func handleNearby(ctx *Context, args []string) (string, error) {
 	}
 
 	return NearbyWithLocation(placeType, lat, lon)
+}
+
+// matchPlaceInfo matches questions about specific places
+// "What time does Sainsbury's close", "Is Boots open", "Sainsbury's hours"
+func matchPlaceInfo(input string) (bool, []string) {
+	lower := strings.ToLower(input)
+	
+	// Patterns that indicate a place-specific question
+	patterns := []string{
+		"what time does",
+		"when does",
+		"is .* open",
+		"is .* closed",
+		"hours for",
+		"opening hours",
+		"closing time",
+	}
+	
+	for _, p := range patterns {
+		if strings.Contains(lower, p) || matchWildcard(lower, p) {
+			// Extract the place name
+			name := extractPlaceName(input)
+			if name != "" {
+				return true, []string{name}
+			}
+		}
+	}
+	
+	// Also match just "X hours" or "X closing"
+	if strings.HasSuffix(lower, " hours") || strings.HasSuffix(lower, " closing") || strings.HasSuffix(lower, " open") {
+		name := extractPlaceName(input)
+		if name != "" {
+			return true, []string{name}
+		}
+	}
+	
+	return false, nil
+}
+
+func matchWildcard(s, pattern string) bool {
+	if !strings.Contains(pattern, ".*") {
+		return strings.Contains(s, pattern)
+	}
+	parts := strings.Split(pattern, ".*")
+	idx := 0
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		found := strings.Index(s[idx:], part)
+		if found == -1 {
+			return false
+		}
+		idx += found + len(part)
+	}
+	return true
+}
+
+func getKeys(m map[string]interface{}) []string {
+	var keys []string
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func extractPlaceName(input string) string {
+	lower := strings.ToLower(input)
+	
+	// Remove common question phrases first (order matters - longer first)
+	phrases := []string{
+		"what time does", "when does", "opening hours", "hours for",
+		"closing time", "is the", "is a",
+	}
+	for _, p := range phrases {
+		lower = strings.ReplaceAll(lower, p, " ")
+	}
+	
+	// Remove individual words (as whole words only)
+	words := strings.Fields(lower)
+	removeWords := map[string]bool{
+		"open": true, "closed": true, "close": true, "closing": true,
+		"hours": true, "the": true, "a": true, "today": true, "now": true,
+		"is": true, "are": true, "?": true,
+	}
+	
+	var kept []string
+	for _, w := range words {
+		w = strings.Trim(w, "?")
+		if !removeWords[w] && w != "" {
+			kept = append(kept, w)
+		}
+	}
+	
+	return strings.Join(kept, " ")
+}
+
+func handlePlaceInfo(ctx *Context, args []string) (string, error) {
+	if len(args) == 0 {
+		return "Which place?", nil
+	}
+	
+	placeName := strings.Join(args, " ")
+	log.Printf("[placeinfo] Looking for %q at %.4f,%.4f", placeName, ctx.Lat, ctx.Lon)
+	
+	if !ctx.HasLocation() {
+		return "Enable location to find places near you", nil
+	}
+	
+	// Search spatial index for this place
+	db := spatial.Get()
+	places := db.Query(ctx.Lat, ctx.Lon, 5000, spatial.EntityPlace, 100) // 5km radius
+	log.Printf("[placeinfo] Found %d places in 2km radius", len(places))
+	
+	// Find matching place
+	var match *spatial.Entity
+	for _, p := range places {
+		lowerName := strings.ToLower(p.Name)
+		if strings.Contains(lowerName, placeName) {
+			match = p
+			break
+		}
+	}
+	
+	if match == nil {
+		// Log first few names to debug
+		for i, p := range places {
+			if i < 5 {
+				log.Printf("[placeinfo] Place %d: %q", i, p.Name)
+			}
+		}
+		return fmt.Sprintf("No %s found nearby", placeName), nil
+	}
+	log.Printf("[placeinfo] Found match: %s, Data keys: %v", match.Name, getKeys(match.Data))
+	
+	// Build response with hours
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("📍 %s\n", match.Name))
+	
+	// Extract data from nested structure (OSM data is in Data["data"]["tags"])
+	var hours, phone, addr string
+	if match.Data != nil {
+		// Try direct fields first
+		if h, ok := match.Data["opening_hours"].(string); ok {
+			hours = h
+		}
+		if p, ok := match.Data["phone"].(string); ok {
+			phone = p
+		}
+		if a, ok := match.Data["address"].(string); ok {
+			addr = a
+		}
+		
+		// Try tags directly (OSM data structure)
+		if tags, ok := match.Data["tags"].(map[string]interface{}); ok {
+			if hours == "" {
+				if h, ok := tags["opening_hours"].(string); ok {
+					hours = h
+				}
+			}
+			if phone == "" {
+				if p, ok := tags["phone"].(string); ok {
+					phone = p
+				}
+			}
+			if addr == "" {
+				// Build address from components
+				var parts []string
+				if num, ok := tags["addr:housenumber"].(string); ok {
+					parts = append(parts, num)
+				}
+				if street, ok := tags["addr:street"].(string); ok {
+					parts = append(parts, street)
+				}
+				if postcode, ok := tags["addr:postcode"].(string); ok {
+					parts = append(parts, postcode)
+				}
+				if len(parts) > 0 {
+					addr = strings.Join(parts, " ")
+				}
+			}
+		}
+	}
+	
+	if addr != "" {
+		result.WriteString(fmt.Sprintf("%s\n", addr))
+	}
+	if hours != "" {
+		result.WriteString(fmt.Sprintf("🕐 %s\n", hours))
+	} else {
+		result.WriteString("Hours not available\n")
+	}
+	if phone != "" {
+		result.WriteString(fmt.Sprintf("📞 %s\n", phone))
+	}
+	
+	// Add map link
+	result.WriteString(fmt.Sprintf("https://maps.google.com/maps/search/%s/@%.6f,%.6f,17z",
+		strings.ReplaceAll(match.Name, " ", "+"), match.Lat, match.Lon))
+	
+	return result.String(), nil
 }

@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -72,6 +73,7 @@ func Dispatch(ctx *Context) (string, bool) {
 	for _, cmd := range Registry {
 		if cmd.Match != nil {
 			if matched, args := cmd.Match(input); matched {
+				log.Printf("[command] %s matched input %q with args %v", cmd.Name, input, args)
 				result, err := cmd.Handler(ctx, args)
 				if err != nil {
 					return "❌ " + err.Error(), true

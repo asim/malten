@@ -392,7 +392,9 @@ function connectWebSocket() {
                 delete pendingMessages[ev.Text];
                 return;
             }
-            displayMessages([ev], 1);
+            // Display as card
+            displaySystemMessage(ev.Text);
+            seen[ev.Id] = ev;
             clipMessages();
         }
     };
@@ -469,17 +471,10 @@ function submitCommand() {
         sendFreshLocation();
     }
 
-    // Display message immediately for responsiveness
+    // Display user's question as card immediately for responsiveness
     var tempId = 'local-' + Date.now();
     pendingMessages[prompt] = tempId;
-    var msg = {
-        Id: tempId,
-        Text: prompt,
-        Created: Date.now() * 1e6,
-        Type: 'message',
-        Stream: getStream()
-    };
-    displayMessages([msg], 1);
+    displaySystemMessage(prompt);
 
     // Post to /commands with location if available
     var data = {
