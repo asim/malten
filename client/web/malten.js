@@ -293,33 +293,23 @@ function clipMessages() {
 }
 
 function displayMessages(array, direction) {
-    var list = document.getElementById('messages');
-
-    for (var i = 0; i < array.length; i++) {
-        if (array[i].Id in seen) continue;
-
-        var item = document.createElement('li');
-        var html = escapeHTML(array[i].Text);
-        var d1 = document.createElement('div');
-        var d2 = document.createElement('div');
-        d1.className = 'time';
-        d2.className = 'message';
-        d1.innerHTML = parseDate(array[i].Created);
-        d1.style.display = 'none';
-        d2.innerHTML = html.parseURL().parseHashTag();
-        item.appendChild(d1);
-        item.appendChild(d2);
-
-        // Always prepend - newest at top
-        list.insertBefore(item, list.firstChild);
-        seen[array[i].Id] = array[i];
+    // Display oldest first so newest ends up on top
+    var sorted = array.slice().sort(function(a, b) {
+        return a.Created - b.Created;
+    });
+    
+    for (var i = 0; i < sorted.length; i++) {
+        if (sorted[i].Id in seen) continue;
+        seen[sorted[i].Id] = sorted[i];
+        
+        // Use card format with timestamp from message
+        var timestamp = sorted[i].Created / 1e6; // Convert from nanos to millis
+        displaySystemMessage(sorted[i].Text, timestamp);
     }
 
     if (direction >= 0 && array.length > 0) {
         last = array[array.length - 1].Created;
     }
-
-
 }
 
 function loadMessages() {
