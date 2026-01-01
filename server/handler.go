@@ -59,10 +59,6 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle navigation commands without slash (goto, new)
-	if cmd := detectNavCommand(input); cmd != "" {
-		input = cmd
-	}
 
 	// Build context for command dispatch
 	ctx := &command.Context{
@@ -125,83 +121,11 @@ func handleCommand(cmd, stream, token string) {
 		return
 	}
 
-	// Built-in commands
+	// Built-in commands (minimal - most things work via natural language)
 	switch name {
-	case "help", "commands":
-		help := `/help - Show this help
-/new - Create a new stream
-/goto <stream> - Switch to a stream
-/ping on|off - Enable/disable location sharing
-/nearby <type> - Find nearby places (cafes, restaurants, etc)
-/bus - Live bus arrivals nearby
-/price <coin> - Get crypto price
-/reminder [query] - Daily reminder or search Islamic texts
-/chat <question> - Ask AI with real-time context
-/news [query] - Latest news or search
-/video <query> - Search videos
-/blog - Latest blog posts`
-		sendToSession(help, stream, token)
-
-	case "streams":
-		var names []string
-		for k, v := range Default.List() {
-			if !v.Private {
-				names = append(names, "#"+k)
-			}
-		}
-		if len(names) == 0 {
-			sendToSession("No public streams", stream, token)
-		} else {
-			sendToSession(strings.Join(names, "\n"), stream, token)
-		}
-
-	case "new":
-		name := Random(8)
-		if len(args) > 0 {
-			name = args[0]
-		}
-		if err := Default.New(name, "", false, int(StreamTTL.Seconds())); err != nil {
-			sendToSession("Failed to create stream", stream, token)
-		} else {
-			sendToSession("Created stream #"+name+" - click to join: #"+name, stream, token)
-		}
-
-	case "goto":
-		if len(args) > 0 {
-			name := strings.TrimPrefix(args[0], "#")
-			sendToSession("Click to join: #"+name, stream, token)
-		} else {
-			sendToSession("Usage: goto <stream>", stream, token)
-		}
-
-	case "ping":
-		sendToSession(HandlePingCommand(cmd, token), stream, token)
-
-	case "nearby", "near":
-		sendToSession(HandleNearbyCommand(args, token), stream, token)
-
-	case "bus", "buses":
-		sendToSession(command.HandleBusCommand(token), stream, token)
-
 	case "agents":
 		sendToSession(HandleAgentsCommand(), stream, token)
 	}
-}
-
-// detectNavCommand checks if input is a navigation command (goto, new)
-func detectNavCommand(input string) string {
-	input = strings.TrimSpace(input)
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
-		return ""
-	}
-	
-	cmd := strings.ToLower(parts[0])
-	// Only handle navigation commands client-side can't intercept
-	if cmd == "goto" || cmd == "new" {
-		return "/" + input
-	}
-	return ""
 }
 
 // detectWalkQuery extracts destination from walking queries
