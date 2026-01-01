@@ -559,7 +559,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 	db := Get()
 	
 	// Query quadtree for arrivals indexed by agent (300m radius to catch nearby stops)
-	arrivals := db.Query(lat, lon, 300, EntityArrival, 5)
+	arrivals := db.Query(lat, lon, 500, EntityArrival, 5)
 	
 	// Find first stop with actual arrivals
 	for _, arr := range arrivals {
@@ -598,7 +598,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 	}
 	
 	// Fallback: no cached data with arrivals, query TfL directly
-	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=300",
+	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=500",
 		tflBaseURL, lat, lon)
 	
 	req, _ := http.NewRequest("GET", url, nil)
@@ -621,33 +621,37 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		return ""
 	}
 	
-	stop := stops.StopPoints[0]
-	fetchedArrivals := fetchStopArrivals(stop.NaptanID)
-	if len(fetchedArrivals) == 0 {
-		return fmt.Sprintf("🚏 %s (no buses)", stop.CommonName)
-	}
-	
-	// Format: "🚏 Whitton Station" then list next buses
-	var lines []string
-	if stop.Distance < 30 {
-		lines = append(lines, fmt.Sprintf("🚏 At %s", stop.CommonName))
-	} else {
-		lines = append(lines, fmt.Sprintf("🚏 %s (%.0fm)", stop.CommonName, stop.Distance))
-	}
-	
-	// Show next 3 arrivals
-	for i, arr := range fetchedArrivals {
-		if i >= 3 {
-			break
+	// Find first stop with arrivals
+	for _, stop := range stops.StopPoints {
+		fetchedArrivals := fetchStopArrivals(stop.NaptanID)
+		if len(fetchedArrivals) == 0 {
+			continue
 		}
-		if arr.Minutes <= 1 {
-			lines = append(lines, fmt.Sprintf("   %s → %s arriving now", arr.Line, shortDest(arr.Destination)))
+		
+		// Format: "🚏 Whitton Station" then list next buses
+		var lines []string
+		if stop.Distance < 30 {
+			lines = append(lines, fmt.Sprintf("🚏 At %s", stop.CommonName))
 		} else {
-			lines = append(lines, fmt.Sprintf("   %s → %s in %dm", arr.Line, shortDest(arr.Destination), arr.Minutes))
+			lines = append(lines, fmt.Sprintf("🚏 %s (%.0fm)", stop.CommonName, stop.Distance))
 		}
+		
+		// Show next 3 arrivals
+		for i, arr := range fetchedArrivals {
+			if i >= 3 {
+				break
+			}
+			if arr.Minutes <= 1 {
+				lines = append(lines, fmt.Sprintf("   %s → %s arriving now", arr.Line, shortDest(arr.Destination)))
+			} else {
+				lines = append(lines, fmt.Sprintf("   %s → %s in %dm", arr.Line, shortDest(arr.Destination), arr.Minutes))
+			}
+		}
+		return strings.Join(lines, "\n")
 	}
 	
-	return strings.Join(lines, "\n")
+	// No stops with arrivals found
+	return ""
 }
 
 func getPlacesSummary(db *DB, lat, lon float64) string {
