@@ -52,10 +52,10 @@ Not two separate cards. Response belongs with its question.
 
 ## Current Issues
 
-### Card structure
-- Currently question and answer are separate cards
-- Should be combined: question + response = one card
-- Answer appears below question in same card
+### ✅ Card structure (FIXED)
+- Question and answer now combined into single card
+- Question appears at top, answer below
+- Uses pending card pattern - shows "..." while waiting
 
 ### Bus data intermittent
 - Sometimes shows "no buses" even when TfL has data
