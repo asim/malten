@@ -57,9 +57,10 @@ Not two separate cards. Response belongs with its question.
 - Question appears at top, answer below
 - Uses pending card pattern - shows "..." while waiting
 
-### Bus data intermittent
-- Sometimes shows "no buses" even when TfL has data
-- Restart fixes it - stale in-memory state
+### ✅ Bus data intermittent (FIXED)
+- Root cause: when fresh cache existed, skipping fetch but still calling ExtendTTL
+- This kept stale data alive indefinitely
+- Fix: nil = skipped (don't extend TTL), empty slice = API returned nothing (extend TTL)
 
 ## Recent Commits
 ```
