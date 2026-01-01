@@ -16,6 +16,45 @@ var currentStream = null;
 var reconnectTimer = null;
 var pendingMessages = {};
 
+// Geohash for stream ID from location
+function geohash(lat, lon, precision) {
+    var base32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+    var minLat = -90, maxLat = 90;
+    var minLon = -180, maxLon = 180;
+    var hash = '';
+    var bit = 0;
+    var ch = 0;
+    var even = true;
+    
+    while (hash.length < precision) {
+        if (even) {
+            var mid = (minLon + maxLon) / 2;
+            if (lon >= mid) {
+                ch |= 1 << (4 - bit);
+                minLon = mid;
+            } else {
+                maxLon = mid;
+            }
+        } else {
+            var mid = (minLat + maxLat) / 2;
+            if (lat >= mid) {
+                ch |= 1 << (4 - bit);
+                minLat = mid;
+            } else {
+                maxLat = mid;
+            }
+        }
+        even = !even;
+        bit++;
+        if (bit === 5) {
+            hash += base32[ch];
+            bit = 0;
+            ch = 0;
+        }
+    }
+    return hash;
+}
+
 // Consolidated state management
 var state = {
     version: 2, // Increment to clear old state on format change
@@ -207,6 +246,11 @@ function parseDate(tdate) {
 }
 
 function getStream() {
+    // If we have location, use geohash stream
+    if (state.hasLocation()) {
+        return geohash(state.lat, state.lon, 6);
+    }
+    // Fallback to URL hash or default
     var stream = window.location.hash.replace('#', '');
     return stream.length > 0 ? stream : "~";
 }
@@ -362,13 +406,21 @@ function setCurrent() {
 
 function loadStream() {
     setCurrent();
+    connectWebSocket();
+    
+    var form = document.getElementById('form');
+    form.elements["stream"].value = getStream();
+    form.elements["prompt"].focus();
+}
+
+function initialLoad() {
+    setCurrent();
     clearMessages();
     loadMessages();
     connectWebSocket();
     
     var form = document.getElementById('form');
     form.elements["stream"].value = getStream();
-    
     form.elements["prompt"].focus();
 }
 
@@ -677,7 +729,15 @@ function hideStatus() {
 }
 
 function sendLocation(lat, lon) {
+    var oldStream = currentStream;
     state.setLocation(lat, lon);
+    
+    // Silently switch stream if geohash changed
+    var newStream = getStream();
+    if (newStream !== oldStream) {
+        connectWebSocket(); // Reconnect to new stream silently
+    }
+    
     $.post(pingUrl, { lat: lat, lon: lon }).done(function(data) {
         if (data.context) {
             state.setContext(data.context);
@@ -809,7 +869,7 @@ function loadListeners() {
         }
     });
 
-    window.addEventListener("hashchange", loadStream);
+    // hashchange no longer resets UI - streams are determined by location
     shareListener();
     initSpeech();
 }
@@ -823,7 +883,7 @@ if ('serviceWorker' in navigator) {
 // Initialize
 $(document).ready(function() {
     loadListeners();
-    loadStream();
+    initialLoad();
     
     // Load persisted cards from localStorage
     loadPersistedCards();
