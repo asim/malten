@@ -145,6 +145,30 @@ ul li {
   padding: 8px 5px;
 }
 
+#mic {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 8px;
+  opacity: 0.5;
+}
+
+#mic:hover {
+  opacity: 0.8;
+}
+
+#mic.listening {
+  opacity: 1;
+  color: #c00;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 #private {
   vertical-align: middle;
   margin-bottom: 4px;

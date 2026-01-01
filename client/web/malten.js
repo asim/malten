@@ -444,6 +444,64 @@ function shareListener() {
     });
 }
 
+// Speech recognition
+var recognition = null;
+var isListening = false;
+
+function initSpeech() {
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        var mic = document.getElementById('mic');
+        if (mic) mic.style.display = 'none';
+        return;
+    }
+    
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-GB';
+    
+    recognition.onresult = function(e) {
+        var transcript = '';
+        for (var i = e.resultIndex; i < e.results.length; i++) {
+            transcript += e.results[i][0].transcript;
+        }
+        document.getElementById('prompt').value = transcript;
+        
+        // Auto-submit on final result
+        if (e.results[e.results.length - 1].isFinal) {
+            setTimeout(function() {
+                if (transcript.trim()) submitCommand();
+            }, 300);
+        }
+    };
+    
+    recognition.onend = function() {
+        isListening = false;
+        document.getElementById('mic').classList.remove('listening');
+    };
+    
+    recognition.onerror = function(e) {
+        isListening = false;
+        document.getElementById('mic').classList.remove('listening');
+    };
+    
+    document.getElementById('mic').addEventListener('click', toggleSpeech);
+}
+
+function toggleSpeech() {
+    if (!recognition) return;
+    
+    if (isListening) {
+        recognition.stop();
+        isListening = false;
+    } else {
+        recognition.start();
+        isListening = true;
+        document.getElementById('mic').classList.add('listening');
+    }
+}
+
 function loadListeners() {
     // Scroll to load more (scroll down = load older)
     window.addEventListener('scroll', function() {
@@ -454,6 +512,7 @@ function loadListeners() {
 
     window.addEventListener("hashchange", loadStream);
     shareListener();
+    initSpeech();
 }
 
 // Register service worker
