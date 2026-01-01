@@ -19,11 +19,34 @@ curl -s "http://localhost:9090/ping" -X POST -d "lat=51.417&lon=-0.362" | jq .
 ## Architecture
 
 ### Five Primitives (NEVER CHANGE)
-- **Streams** - geohash areas (invisible infrastructure)
+- **Streams** - geohash areas + channels within (invisible infrastructure)
 - **Agents** - index areas, build world view
 - **Commands** - actions (natural language, slash optional)
 - **Database** - quadtree (`spatial.json`)
 - **Events** - replayable log (`events.jsonl`)
+
+### Streams with Channels
+```
+Stream: gcpsxb (Hampton area)
+├── (public) - spatial events everyone sees
+├── @session123 - my questions/responses (private)
+├── @session456 - another user (private)
+└── @groupname - group chat (shared secret)
+```
+
+- Stream = the space (geohash)
+- Channel = who hears it within that space
+- Empty channel = public (weather, buses)
+- @session = addressed to that session (private)
+
+Message struct:
+```go
+type Message struct {
+    Stream  string  // "gcpsxb"
+    Channel string  // "" = public, "@session" = addressed
+    ...
+}
+```
 
 ### Agentic Model
 Agents are the ONLY thing that fetches external APIs. Users only read from the index.
@@ -42,24 +65,16 @@ User Request:
   - Instant response
 ```
 
-### Seamless Spatial Experience
-Stream/geohash is infrastructure, not UX. User never sees it.
-
-- **Continuous view** - no jumps, no refreshes
-- **Persistent timeline** - cards don't disappear when crossing boundaries
-- **Smooth context updates** - weather, buses, places blend as you move
-- **Silent stream switching** - WebSocket reconnects in background
-
-The two views:
-- **Context (top)** = live view of where you are NOW
-- **Timeline (below)** = YOUR history, everywhere you've been
-
 ### Data Flow
 ```
 Location → Geohash → Stream ID (invisible)
                   → Agent for area indexes data
                   → User queries spatial index
                   → Context displayed (no fetch)
+
+Question → Stream:@session channel
+        → Response to same channel
+        → Persists until read/TTL
 ```
 
 ---
@@ -67,11 +82,8 @@ Location → Geohash → Stream ID (invisible)
 ## Key Files
 - `spatial/` - quadtree, agents, geohash, live data
 - `command/` - all commands (natural language + slash)
-- `server/` - thin HTTP/WebSocket
+- `server/` - HTTP/WebSocket, streams, channels
 - `client/web/` - PWA (served from disk via -web flag)
-
-### Dev Mode
-Server runs with `-web=/home/exedev/malten/client/web` - changes to JS/CSS are instant, no rebuild.
 
 ---
 
@@ -89,11 +101,12 @@ Server runs with `-web=/home/exedev/malten/client/web` - changes to JS/CSS are i
 - Prayer time change
 - Rain warning
 
-### Clickable places:
-- All data embedded in context (no API calls on click)
-- Single place shows name (Boots, Waitrose)
-- Multiple shows count (8 places)
-- Click expands to card with address, hours, phone, map link
+### Questions & Responses:
+- Ask "cafes nearby", "what time does X close", etc
+- Response appears as card
+- Both persist in stream (your @session channel)
+- Reload page → messages load from stream
+- Other users don't see your questions
 
 ### Spatial caching:
 - Weather: 5km radius
@@ -105,23 +118,26 @@ Server runs with `-web=/home/exedev/malten/client/web` - changes to JS/CSS are i
 
 ## Recent Commits
 ```
-2488012 Remove stream UI - no more share/new/goto
-18c1644 Add location change cards as you move
-3c99a97 Seamless geohash streams - silent switching
-28868a6 Document seamless spatial experience
-e0b8b82 Agents index everything - zero API calls in GetLiveContext
-ebcc88a Spatial caching for external APIs
-e7c12aa Keep arrivals when TfL API returns empty
-cfa84b1 Include business name in Maps URL
-e40ff52 Map links on new line, underlined
-6523def Embed all places data - zero API calls
+dde1896 Channels within streams: private session messages
+72d94e6 Place info command: ask about specific places, responses as cards
+6e5c195 Persist cards to localStorage, commands work via HTTP
+4e61bb0 Compute prayer display at query time
+6b550ef Change placeholder to 'What's happening?'
+4b212fd Add Enable location button to welcome screen
 ```
 
 ---
 
-## UI State
-- Clean header: just logo
-- Prompt: "Ask anything..." (natural language)
-- No visible stream/hash
-- No share/new/goto links
-- Cards persist in localStorage (version 2)
+## Open Questions
+
+### Persistence across restarts
+- Public spatial events: should persist (weather, buses - fine to store)
+- Private @session messages: in-memory only (privacy)
+- Gap: server restart loses pending responses before client reads
+- Mitigation: client saves to localStorage immediately
+
+### Location privacy
+- Stream name = geohash = location
+- Messages to @session don't expose location directly
+- But: stream history could reveal where you were
+- Consider: per-session stream isolation?
