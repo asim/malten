@@ -470,6 +470,11 @@ func GetLiveContext(lat, lon float64) string {
 		parts = append(parts, rainForecast)
 	}
 	
+	// Traffic disruptions nearby
+	if disruption := fetchTrafficDisruptions(lat, lon); disruption != "" {
+		parts = append(parts, disruption)
+	}
+	
 	// Nearest bus stop with arrivals - am I AT a stop?
 	nearestStop := getNearestStopWithArrivals(lat, lon)
 	if nearestStop != "" {
@@ -715,4 +720,79 @@ func formatPlaceData(e *Entity) string {
 	parts = append(parts, fmt.Sprintf("https://maps.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(e.Name), e.Lat, e.Lon))
 	
 	return strings.Join(parts, "|")
+}
+
+// fetchTrafficDisruptions gets nearby road disruptions from TfL
+func fetchTrafficDisruptions(lat, lon float64) string {
+	url := "https://api.tfl.gov.uk/Road/all/Disruption"
+	
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "Malten/1.0")
+	
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	
+	var disruptions []struct {
+		Severity  string `json:"severity"`
+		Category  string `json:"category"`
+		Comments  string `json:"comments"`
+		Location  string `json:"location"`
+		Geography struct {
+			Type        string    `json:"type"`
+			Coordinates []float64 `json:"coordinates"`
+		} `json:"geography"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&disruptions); err != nil {
+		return ""
+	}
+	
+	// Find disruptions within 5km, prioritize serious ones
+	type nearby struct {
+		dist     float64
+		severity string
+		text     string
+	}
+	var found []nearby
+	
+	for _, d := range disruptions {
+		if d.Geography.Type != "Point" || len(d.Geography.Coordinates) < 2 {
+			continue
+		}
+		dlon, dlat := d.Geography.Coordinates[0], d.Geography.Coordinates[1]
+		dist := haversine(lat, lon, dlat, dlon)
+		
+		if dist < 5 { // within 5km
+			// Only show serious/moderate or collisions
+			if d.Severity == "Serious" || d.Severity == "Moderate" || d.Category == "Collisions" {
+				text := d.Comments
+				if len(text) > 80 {
+					text = text[:80] + "..."
+				}
+				found = append(found, nearby{dist: dist, severity: d.Severity, text: text})
+			}
+		}
+	}
+	
+	if len(found) == 0 {
+		return ""
+	}
+	
+	// Return closest serious one
+	var best nearby
+	for _, f := range found {
+		if best.text == "" || f.dist < best.dist {
+			best = f
+		}
+	}
+	
+	icon := "🚧"
+	if strings.Contains(strings.ToLower(best.text), "collision") || strings.Contains(strings.ToLower(best.text), "accident") {
+		icon = "🚨"
+	}
+	
+	return fmt.Sprintf("%s %.1fkm: %s", icon, best.dist, best.text)
 }
