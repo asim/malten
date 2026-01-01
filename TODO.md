@@ -12,7 +12,7 @@
 ## TODO
 
 - [ ] Fix PWA splash screen icon sizing for Android
-- [ ] Service worker for offline support
+- [x] Service worker for offline support
 - [ ] Client-side encryption (AES-256)
 - [ ] Secure pipes (stream between two users)
 - [ ] Decentralisation (interconnect multiple servers)
