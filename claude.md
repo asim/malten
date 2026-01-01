@@ -30,26 +30,49 @@ Spatial AI for the real world.
 
 ## Current State
 
-### Stats (2026-01-01T10:55:03+00:00)
+### Stats (2026-01-01T11:07:48+00:00)
 ```
-Entities: 534
+Entities: 1171
 Agents: 3
-Event log: 62 events
+Event log: 844 events
 ```
 
 ### Recent Changes
 ```
+e4b103b Update TODO: service worker done
+80efb25 Add service worker for offline support
+52a775a Find agents by name to prevent duplicates
+595b127 Ignore data files
+301108c Refactor: spatial package, event log, clean command package
 6623232 Add spatial AI features: nearby places, location tracking, quadtree cache
 f1887a8 Update assistant features: reminder formatting, links, commands without slash
 7717238 Fix names of Allah display in search results
 3d4d2cf Natural language reminder queries, linked references, fix hashtag parsing
 c7ceaa4 Add caching (60s price, 5m reminder), /reminder and /quran search commands
-703a8e5 Natural language price queries - 'btc', 'eth?', 'uni price' all work
-26195fe Add pluggable command system with /price for crypto prices
-fbe5a09 Simplify crisis redirect to Samaritans
-6fd4ede Add crisis resource redirect for self-harm/suicide expressions
-299b1d1 Direct answers only - no preamble, just results
 ```
+
+## Working State
+
+### Uncommitted Changes
+```
+ claude.md               | 30 +++++++++++-------------------
+ scripts/save_context.sh | 32 ++++++++++++++++++++++++++++++--
+ 2 files changed, 41 insertions(+), 21 deletions(-)
+```
+
+### Session Notes
+## Last Session
+- Added service worker for offline PWA support
+- Fixed agent deduplication (find by name, not just location)
+
+## Next Up
+- Test offline mode in browser
+- Consider speech-to-text (browser API)
+
+## Key Decisions
+- Agents are identified by area name to prevent duplicates
+- Service worker uses cache-first for static, skips API calls
+
 
 ## Implementation Notes
 - Entity types: place, agent, vehicle, person, event, zone, sensor

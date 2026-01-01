@@ -2,7 +2,19 @@
 # Save development context for continuity across sessions
 # Run before restarting conversation or hitting token limits
 
+set -e
 cd /home/exedev/malten
+
+# Trim old messages from current conversation, keep last 100
+CONV_ID=$(sqlite3 "$HOME/.config/shelley/shelley.db" "SELECT conversation_id FROM conversations ORDER BY updated_at DESC LIMIT 1;")
+if [ -n "$CONV_ID" ]; then
+    MSG_COUNT=$(sqlite3 "$HOME/.config/shelley/shelley.db" "SELECT COUNT(*) FROM messages WHERE conversation_id='$CONV_ID';")
+    if [ "$MSG_COUNT" -gt 200 ]; then
+        KEEP=100
+        sqlite3 "$HOME/.config/shelley/shelley.db" "DELETE FROM messages WHERE conversation_id='$CONV_ID' AND sequence_id NOT IN (SELECT sequence_id FROM messages WHERE conversation_id='$CONV_ID' ORDER BY sequence_id DESC LIMIT $KEEP);"
+        echo "Trimmed conversation from $MSG_COUNT to $KEEP messages"
+    fi
+fi
 
 cat > claude.md << 'EOF'
 # Malten Development Context
@@ -54,8 +66,24 @@ echo '```' >> claude.md
 git log --oneline -10 2>/dev/null >> claude.md || echo "No git history" >> claude.md
 echo '```' >> claude.md
 
-# Add TODO if exists
-if grep -q "## TODO" claude.md 2>/dev/null; then
+# Add working state section - the key for continuity
+echo "" >> claude.md
+echo "## Working State" >> claude.md
+echo "" >> claude.md
+
+# Uncommitted changes show current work
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  echo "### Uncommitted Changes" >> claude.md
+  echo '```' >> claude.md
+  git diff --stat HEAD 2>/dev/null | head -20 >> claude.md
+  echo '```' >> claude.md
+  echo "" >> claude.md
+fi
+
+# Session notes file for manual notes
+if [ -f "SESSION.md" ]; then
+  echo "### Session Notes" >> claude.md
+  cat SESSION.md >> claude.md
   echo "" >> claude.md
 fi
 
