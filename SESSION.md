@@ -1,88 +1,92 @@
-## Last Session - 2026-01-01 13:40 UTC
+## Last Session - 2026-01-01 14:35 UTC
 
-### What We Built Today
-1. **Rain forecast** - Open-Meteo hourly precipitation probability, shows warning when rain likely
-2. **Walking directions** - natural language "walk to X", "how long to walk to X" queries using OSRM
-3. **Address geocoding** - walking time works for addresses like "309 Whitton Dene"
+### What We Built
+1. **Commands as core abstraction** - dispatch moved from server to command package
+   - Commands self-register with Name, Handler, optional Match function
+   - Server is thin - just routes to command.Dispatch()
+   - Natural language matching in command package, not server
 
-### Previous Session Accomplishments (preserved)
-- Live spatial context - weather, prayer times, bus arrivals from TfL API
-- Agent continuous loops - each agent indexes its territory, updates live data every 30s
-- Street-level awareness - reverse geocode shows "📍 Montrose Avenue, Whitton"
-- Bus stop detection - "🚏 At Whitton Station" when within 30m
-- Instant context on ping - server returns context with ping response
-- User in quadtree - session token maps to EntityPerson in spatial index
-- Welcome message - never empty screen, shows greeting + guidance
-- State management - consolidated into single `malten_state` localStorage object
+2. **Proactive cards** - client detects context changes, creates cards automatically
+   - New bus stop approached → "🚏 Arrived at Whitton Station"
+   - Rain forecast appears → "🌧️ Rain at 15:00"
+   - Prayer time changes → "🕌 Asr now"
 
-### User's Vision (IMPORTANT - preserve this)
-"I'm walking. I need information. It's always good to know:
-- How cold it is, weather, if it's going to rain
-- What time to pray
-- If I'm passing a bus stop, what street I'm on
-- Sometimes ask: coffee shop nearby? How long to walk to 309 Whitton Dene?
+3. **Cards persist 24hr in localStorage** - personal timeline survives refresh
+   - Stored with timestamp and location
+   - Pruned on load (>24hr removed)
+   - Rendered chronologically on page load
 
-We can be smarter. Google will do this eventually but they haven't.
-I don't have a contextually aware spatial AI.
-Open an app and know what's around you without typing.
+4. **Card styling** - timestamps in top-right, color-coded borders
+   - Transport = blue, Weather = orange, Prayer = green, Location = red
 
-Mu has blog, chat, news, video, mail. Spatial/maps would be next.
-Malten is spatial AI - standalone product/tool."
+5. **Status indicator** - pulsing blue dot with "Updating..." when fetching
 
-### Current Features Working
-- ✅ Location/street name (reverse geocode)
-- ✅ Weather with temperature
-- ✅ Rain forecast (when likely)
-- ✅ Prayer times (current + next)
-- ✅ Bus arrivals (when near a stop)
-- ✅ Nearby places (cafes, pharmacies, supermarkets)
-- ✅ Walking directions ("walk to X", "how long to walk to X")
-- ✅ Nearby queries ("cafes near me", "petrol station")
+6. **Postcodes** - shows "TW2 6JG" instead of obscure names like "Worton"
+
+7. **Quadtree-first lookups** - bus arrivals from cache, not TfL API
+   - Agent indexes arrivals every 30s
+   - GetLiveContext queries quadtree first
+   - Falls back to API only if no cached data
 
 ### Architecture
+
 ```
-User pings location → stored as EntityPerson in quadtree
-                   → agent created for area if new
-                   → context returned immediately
-
-Agent loop (per area):
-  - Indexes POIs from OSM (once, takes minutes)
-  - Updates live data every 30s (weather, prayer, buses)
-  - Writes to spatial index with TTL
-
-Walking query:
-  - Geocode destination via Nominatim
-  - Get route distance via OSRM
-  - Calculate walk time at 5 km/h
+User pings location
+  → Quadtree lookup for agent
+  → If no agent, create one
+  → Agent starts loop:
+      - Live data every 30s (weather, prayer, buses)
+      - POI index once (cafes, pharmacies, etc from OSM)
+  → Context built from quadtree (fast, cached)
+  → Client detects changes → creates cards
+  → Cards persist in localStorage (24hr)
 ```
 
-### Data Sources
-- **TfL API** (free, no key) - buses, tubes, stops, arrivals
-- **Open-Meteo** (free, no key) - weather, hourly forecast
-- **Aladhan** (free, no key) - prayer times
-- **OSM/Nominatim** (free) - reverse geocode, POIs, address geocoding
-- **OSRM** (free) - walking routes/distance
-- **Google Maps links** - fallback for directions
+### Data in Quadtree (spatial.json)
+- **EntityPlace** - POIs from OSM (cafes, pharmacies, etc)
+- **EntityAgent** - area indexers, 5km radius
+- **EntityPerson** - users by session
+- **EntityWeather** - current weather + rain forecast (10min TTL)
+- **EntityPrayer** - prayer times (1hr TTL)
+- **EntityArrival** - bus arrivals per stop (2min TTL)
+
+### What Agents Should Do More Of
+- Index more POI categories
+- Detect events (what's happening nearby today)
+- Learn patterns (user at location X for 8hrs → probably work)
+- Predict destinations (leaving work → probably going home)
+- Proactive suggestions ("Rain in 30min, you're 20min from home")
+
+### User's Vision
+"I'm walking. I need information without typing:
+- Weather, rain forecast
+- Prayer times
+- Bus stop arrivals, what street I'm on
+- Sometimes: coffee shop nearby? How long to walk home?
+
+This is Foursquare if built in the AI era - automatic, contextual, proactive."
 
 ### Files Changed This Session
-- `spatial/live.go` - added rain forecast to weather fetch and context display
-- `server/handler.go` - added detectWalkQuery, reordered handlers
-- `command/walk.go` - new file for walking directions via OSRM
+- `command/command.go` - Dispatch with Context, natural language Match
+- `command/walk.go` - walking directions with Match function
+- `command/nearby.go` - nearby search with Match function
+- `server/handler.go` - thin, just routes to command.Dispatch
+- `spatial/live.go` - quadtree-first for arrivals, haversine, postcodes
+- `client/web/malten.js` - cards, persistence, status indicator
+- `client/web/malten.css` - card styling
+- `client/web/index.html` - status div
 
-### What's Still Missing (from user feedback)
-- Trains - National Rail API (needs registration)
-- Events - what's happening nearby today
-- More responsive feel - still feels like snapshots not live
-- Self-programming capability (Malten fixes itself)
-
-### Git State
+### Git Log
 ```
-Latest: 2a814d7 Add rain forecast and walking directions
-Branch: master
+0379518 Query quadtree for bus arrivals before TfL API
+c86475a Persist cards in localStorage for 24 hours
+fd61a8e Cards with timestamps, status indicator, postcodes
+975a96a Refactor: commands as core abstraction, proactive cards
+2a814d7 Add rain forecast and walking directions
 ```
 
 ### To Continue
-1. Consider trains (requires National Rail API key)
-2. Consider events (Eventbrite API, local council feeds)
-3. Make updates feel more real-time (WebSocket push?)
-4. User is in Whitton, walking, wants truly live spatial awareness
+1. Agents should be smarter - predict, suggest, learn patterns
+2. Geohash streams - auto-switch based on location
+3. More proactive - don't wait for queries
+4. Events - what's happening nearby today
