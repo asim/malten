@@ -33,40 +33,49 @@ Everything else falls through to AI.
 ## UI Layout
 
 ```
-[Context box]     <- ALWAYS at top, current location/weather/prayer/buses/places
-[Messages area]   <- Cards below, reverse chronological (newest top, oldest bottom)
+[Context box]     <- ALWAYS at top, live view of NOW
+[Messages area]   <- Cards below, reverse chronological (newest top)
   - newest card
-  - newer card  
   - older card
 ```
 
-Context is the live view of NOW. Cards are your history/timeline (newest first).
+### Card Structure
+Question and answer should be ONE card:
+```
+[Card]
+  Q: cafes nearby
+  A: NEARBY CAFES (cached)
+     • Sun Deck Cafe...
+     • Chino's Cafe...
+```
+Not two separate cards. Response belongs with its question.
 
 ## Current Issues
+
+### Card structure
+- Currently question and answer are separate cards
+- Should be combined: question + response = one card
+- Answer appears below question in same card
 
 ### Bus data intermittent
 - Sometimes shows "no buses" even when TfL has data
 - Restart fixes it - stale in-memory state
-- Need to investigate quadtree query or entity loading
 
 ## Recent Commits
 ```
-de6b06f Document UI layout
+62c540d Fix: cards reverse chronological (newest top)
 8d8b258 Rename placeinfo to place
 73829c2 Remove unused commands
 f606548 Remove slash commands - spatial-first
-dcb8e3a Display loaded messages as cards with timestamps
 dde1896 Channels within streams: private session messages
-6e5c195 Persist cards to localStorage, HTTP commands
-72d94e6 Place info command
-4e61bb0 Compute prayer display at query time
 ```
 
 ## Key Files
 - `spatial/` - quadtree, agents, live data fetching
-- `command/` - nearby.go, reminder.go (thin query layer)
+- `command/` - nearby.go, reminder.go
 - `server/` - HTTP/WebSocket, streams, channels
 - `client/web/` - PWA
 
 ## Next
-1. Investigate bus data reliability
+1. Combine question + answer into single card
+2. Investigate bus data reliability
