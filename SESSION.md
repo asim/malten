@@ -34,20 +34,15 @@ Everything else falls through to AI.
 
 ```
 [Context box]     <- ALWAYS at top, current location/weather/prayer/buses/places
-[Messages area]   <- Cards below, chronological (oldest top, newest bottom)
-  - older card
-  - newer card  
+[Messages area]   <- Cards below, reverse chronological (newest top, oldest bottom)
   - newest card
+  - newer card  
+  - older card
 ```
 
-Context is the live view of NOW. Cards are your history/timeline.
+Context is the live view of NOW. Cards are your history/timeline (newest first).
 
 ## Current Issues
-
-### Card ordering
-- Currently newest at top (wrong)
-- Should be chronological: oldest top, newest bottom
-- Context box stays fixed at top
 
 ### Bus data intermittent
 - Sometimes shows "no buses" even when TfL has data
@@ -56,7 +51,7 @@ Context is the live view of NOW. Cards are your history/timeline.
 
 ## Recent Commits
 ```
-f470c49 Session state for continuation
+de6b06f Document UI layout
 8d8b258 Rename placeinfo to place
 73829c2 Remove unused commands
 f606548 Remove slash commands - spatial-first
@@ -74,5 +69,4 @@ dde1896 Channels within streams: private session messages
 - `client/web/` - PWA
 
 ## Next
-1. Fix card ordering - chronological (oldest top, newest bottom)
-2. Investigate bus data reliability
+1. Investigate bus data reliability
