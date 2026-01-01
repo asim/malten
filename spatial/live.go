@@ -553,15 +553,15 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 	db := Get()
 	
 	// Query quadtree for arrivals indexed by agent (300m radius to catch nearby stops)
-	arrivals := db.Query(lat, lon, 300, EntityArrival, 3)
-	if len(arrivals) > 0 {
-		// Use cached arrival data from quadtree
-		arr := arrivals[0]
+	arrivals := db.Query(lat, lon, 300, EntityArrival, 5)
+	
+	// Find first stop with actual arrivals
+	for _, arr := range arrivals {
 		stopName, _ := arr.Data["stop_name"].(string)
 		arrData, _ := arr.Data["arrivals"].([]interface{})
 		
 		if len(arrData) == 0 {
-			return fmt.Sprintf("🚏 %s (no buses)", stopName)
+			continue // Skip stops with no arrivals
 		}
 		
 		// Format arrivals from cached data
