@@ -227,15 +227,14 @@ ul li {
   }
 }
 
-/* Context message - spatial summary */
-.context-message {
+/* Context - persistent spatial view */
+#context {
+  display: none;
   background: #f8f9fa;
-  padding: 12px;
+  padding: 12px 15px;
+  margin: 0 10px 10px 10px;
   border-radius: 8px;
   border-left: 3px solid #4a9eff;
-  line-height: 1.6;
-}
-
-#context-msg {
-  margin-bottom: 10px;
+  line-height: 1.8;
+  font-size: 13px;
 }

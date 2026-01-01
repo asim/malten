@@ -419,19 +419,10 @@ function fetchLocalContext(lat, lon) {
 
 function displayContext(text) {
     contextDisplayed = true;
-    // Remove old context message if exists
-    $('#context-msg').remove();
-    
-    var item = document.createElement('li');
-    item.id = 'context-msg';
-    item.className = 'context';
-    var d = document.createElement('div');
-    d.className = 'message context-message';
-    d.innerHTML = text.replace(/\n/g, '<br>');
-    item.appendChild(d);
-    
-    var list = document.getElementById('messages');
-    list.insertBefore(item, list.firstChild);
+    // Render in persistent context div, not messages
+    var ctx = document.getElementById('context');
+    ctx.innerHTML = text.replace(/\n/g, '<br>');
+    ctx.style.display = text ? 'block' : 'none';
 }
 
 function displaySystemMessage(text) {

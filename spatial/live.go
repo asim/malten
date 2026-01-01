@@ -3,7 +3,6 @@ package spatial
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -23,49 +22,7 @@ const (
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
-// StartLiveIndexer starts background indexing of live data for all agents
-func StartLiveIndexer() {
-	go func() {
-		// Initial delay to let DB load
-		time.Sleep(5 * time.Second)
-		
-		for {
-			indexLiveData()
-			time.Sleep(liveUpdateInterval)
-		}
-	}()
-	log.Println("[spatial] Live indexer started")
-}
-
-func indexLiveData() {
-	db := Get()
-	agents := db.ListAgents()
-	
-	for _, agent := range agents {
-		// Index live data for each agent's territory
-		go indexAgentLiveData(agent)
-	}
-}
-
-func indexAgentLiveData(agent *Entity) {
-	db := Get()
-	
-	// Weather
-	if weather := fetchWeather(agent.Lat, agent.Lon); weather != nil {
-		db.Insert(weather)
-	}
-	
-	// Prayer times
-	if prayer := fetchPrayerTimes(agent.Lat, agent.Lon); prayer != nil {
-		db.Insert(prayer)
-	}
-	
-	// Bus arrivals
-	arrivals := fetchBusArrivals(agent.Lat, agent.Lon)
-	for _, arr := range arrivals {
-		db.Insert(arr)
-	}
-}
+// Live data fetch functions - called by agent loops
 
 func fetchWeather(lat, lon float64) *Entity {
 	url := fmt.Sprintf("%s?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&timezone=auto",

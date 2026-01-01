@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -40,7 +41,16 @@ func (d *DB) ListAgents() []*Entity {
 	return agents
 }
 
-// CreateAgent creates a new agent
+// DefaultAgentPrompt defines what an agent indexes
+const DefaultAgentPrompt = `You are a spatial indexer for this area.
+Index and maintain:
+- Static places (cafes, restaurants, pharmacies, shops)
+- Live transport (bus arrivals, train times)
+- Weather conditions
+- Prayer times
+Update live data every 30 seconds. Re-index static POIs daily.`
+
+// CreateAgent creates a new agent with a prompt
 func (d *DB) CreateAgent(lat, lon, radius float64, name string) *Entity {
 	agent := &Entity{
 		ID:   GenerateID(EntityAgent, lat, lon, name),
@@ -49,10 +59,12 @@ func (d *DB) CreateAgent(lat, lon, radius float64, name string) *Entity {
 		Lat:  lat,
 		Lon:  lon,
 		Data: map[string]interface{}{
-			"radius":     radius,
-			"status":     "active",
-			"poi_count":  0,
-			"last_index": nil,
+			"radius":      radius,
+			"status":      "active",
+			"prompt":      DefaultAgentPrompt,
+			"poi_count":   0,
+			"last_index":  nil,
+			"last_live":   nil,
 		},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -80,18 +92,71 @@ func (d *DB) FindOrCreateAgentNamed(lat, lon float64, name string) *Entity {
 	}
 
 	agent := d.CreateAgent(lat, lon, AgentRadius, name)
-	go IndexAgent(agent)
+	StartAgentLoop(agent)
 	return agent
 }
 
-// recoverStaleAgents resumes indexing for agents stuck in indexing state
+// Track running agent loops
+var runningAgents = make(map[string]bool)
+var runningAgentsMu sync.Mutex
+
+// StartAgentLoop starts the continuous agent loop
+func StartAgentLoop(agent *Entity) {
+	runningAgentsMu.Lock()
+	if runningAgents[agent.ID] {
+		runningAgentsMu.Unlock()
+		return // Already running
+	}
+	runningAgents[agent.ID] = true
+	runningAgentsMu.Unlock()
+	
+	go agentLoop(agent)
+}
+
+func agentLoop(agent *Entity) {
+	log.Printf("[agent] %s started", agent.Name)
+	
+	// Initial POI index
+	IndexAgent(agent)
+	
+	// Continuous live data loop
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	
+	for range ticker.C {
+		updateLiveData(agent)
+	}
+}
+
+func updateLiveData(agent *Entity) {
+	db := Get()
+	
+	// Weather
+	if weather := fetchWeather(agent.Lat, agent.Lon); weather != nil {
+		db.Insert(weather)
+	}
+	
+	// Prayer times
+	if prayer := fetchPrayerTimes(agent.Lat, agent.Lon); prayer != nil {
+		db.Insert(prayer)
+	}
+	
+	// Bus arrivals
+	arrivals := fetchBusArrivals(agent.Lat, agent.Lon)
+	for _, arr := range arrivals {
+		db.Insert(arr)
+	}
+	
+	// Update agent timestamp
+	agent.Data["last_live"] = time.Now().Format(time.RFC3339)
+	db.Insert(agent)
+}
+
+// recoverStaleAgents starts loops for all agents
 func (d *DB) recoverStaleAgents() {
 	agents := d.ListAgents()
 	for _, agent := range agents {
-		if status, _ := agent.Data["status"].(string); status == "indexing" {
-			log.Printf("[spatial] Resuming indexing for %s", agent.Name)
-			go IndexAgent(agent)
-		}
+		StartAgentLoop(agent)
 	}
 }
 

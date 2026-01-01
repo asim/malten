@@ -25,8 +25,6 @@ var (
 )
 
 // Get returns the singleton spatial database
-var liveStarted bool
-
 func Get() *DB {
 	dbOnce.Do(func() {
 		var err error
@@ -34,13 +32,8 @@ func Get() *DB {
 		if err != nil {
 			db = newMemory()
 		}
+		// Start agent loops - they handle live data
 		db.recoverStaleAgents()
-		
-		// Start live data indexer
-		if !liveStarted {
-			liveStarted = true
-			StartLiveIndexer()
-		}
 	})
 	return db
 }
