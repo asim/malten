@@ -550,9 +550,6 @@ function displayContext(text) {
 }
 
 // Make place names and counts clickable
-// Track expanded place cards to prevent duplicates
-var expandedPlaces = {};
-
 function makeClickable(text) {
     var html = text;
     
@@ -571,16 +568,13 @@ function makeClickable(text) {
 // Handle clicks on place links - toggle expansion
 $(document).on('click', '.place-link', function(e) {
     e.preventDefault();
-    var data = decodeURIComponent($(this).data('details'));
-    var key = data.substring(0, 50); // Use start of data as key
+    var link = $(this);
     
-    if (expandedPlaces[key]) {
-        // Already expanded - collapse by removing cards
-        delete expandedPlaces[key];
-        return;
-    }
+    // Prevent double-click
+    if (link.data('clicked')) return;
+    link.data('clicked', true);
     
-    expandedPlaces[key] = true;
+    var data = decodeURIComponent(link.data('details'));
     showPlacesCard(data);
 });
 
