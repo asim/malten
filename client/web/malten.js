@@ -955,7 +955,7 @@ function showWelcome() {
     welcome += '• Live bus arrivals\n';
     welcome += '• Weather & prayer times\n';
     welcome += '• Nearby cafes, shops, pharmacies\n\n';
-    welcome += 'Or ask me anything — "cafes nearby", "pharmacies", "reminder"';
+    welcome += 'Or ask me anything — "cafes nearby", "btc price", "reminder"';
     
     displayContext(welcome);
 }

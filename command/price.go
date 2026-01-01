@@ -1,0 +1,179 @@
+package command
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// Common coin aliases
+var coinAliases = map[string]string{
+	"btc":     "bitcoin",
+	"eth":     "ethereum",
+	"uni":     "uniswap",
+	"sol":     "solana",
+	"ada":     "cardano",
+	"dot":     "polkadot",
+	"matic":   "matic-network",
+	"link":    "chainlink",
+	"avax":    "avalanche-2",
+	"atom":    "cosmos",
+	"xrp":     "ripple",
+	"doge":    "dogecoin",
+	"shib":    "shiba-inu",
+	"ltc":     "litecoin",
+	"bch":     "bitcoin-cash",
+	"xlm":     "stellar",
+	"algo":    "algorand",
+	"vet":     "vechain",
+	"fil":     "filecoin",
+	"trx":     "tron",
+	"etc":     "ethereum-classic",
+	"xmr":     "monero",
+	"aave":    "aave",
+	"mkr":     "maker",
+	"comp":    "compound-governance-token",
+	"snx":     "havven",
+	"crv":     "curve-dao-token",
+	"sushi":   "sushi",
+	"yfi":     "yearn-finance",
+	"1inch":   "1inch",
+	"grt":     "the-graph",
+	"ens":     "ethereum-name-service",
+	"ldo":     "lido-dao",
+	"arb":     "arbitrum",
+	"op":      "optimism",
+	"pepe":    "pepe",
+	"wbtc":    "wrapped-bitcoin",
+	"steth":   "staked-ether",
+	"usdt":    "tether",
+	"usdc":    "usd-coin",
+	"dai":     "dai",
+	"busd":    "binance-usd",
+}
+
+func init() {
+	Register(&Command{
+		Name:        "price",
+		Description: "Get cryptocurrency price",
+		Usage:       "/price <coin>",
+		Handler:     priceHandler,
+		Match:       matchPrice,
+	})
+}
+
+// matchPrice handles natural language price queries
+// "btc price", "eth price", "bitcoin price", "price of btc"
+func matchPrice(input string) (bool, []string) {
+	input = strings.ToLower(input)
+	
+	// Check for "<coin> price" pattern
+	for coin := range coinAliases {
+		if strings.Contains(input, coin+" price") || strings.Contains(input, coin+" cost") {
+			return true, []string{coin}
+		}
+	}
+	
+	// Check for full names
+	for _, fullName := range coinAliases {
+		shortName := strings.Split(fullName, "-")[0] // bitcoin, ethereum, etc
+		if strings.Contains(input, shortName+" price") || strings.Contains(input, shortName+" cost") {
+			// Find the alias for this full name
+			for alias, name := range coinAliases {
+				if name == fullName {
+					return true, []string{alias}
+				}
+			}
+		}
+	}
+	
+	// Check for "price of <coin>"
+	if strings.Contains(input, "price of ") {
+		parts := strings.Split(input, "price of ")
+		if len(parts) > 1 {
+			coin := strings.TrimSpace(parts[1])
+			coin = strings.Split(coin, " ")[0] // take first word
+			if _, ok := coinAliases[coin]; ok {
+				return true, []string{coin}
+			}
+		}
+	}
+	
+	return false, nil
+}
+
+const priceCacheTTL = 60 * time.Second
+
+func priceHandler(ctx *Context, args []string) (string, error) {
+	if len(args) == 0 {
+		return "Usage: /price <coin> (e.g. /price btc, /price eth)", nil
+	}
+
+	coin := strings.ToLower(args[0])
+	originalCoin := coin
+	
+	// Check alias
+	if alias, ok := coinAliases[coin]; ok {
+		coin = alias
+	}
+
+	// Check cache first
+	cacheKey := "price:" + coin
+	if cached, ok := GlobalCache.Get(cacheKey); ok {
+		return cached, nil
+	}
+
+	// Call CoinGecko
+	url := fmt.Sprintf("https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=usd&include_24hr_change=true", coin)
+	
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "Error fetching price", err
+	}
+	defer resp.Body.Close()
+
+	var apiResult map[string]map[string]float64
+	if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
+		return "Error parsing response", err
+	}
+
+	data, ok := apiResult[coin]
+	if !ok {
+		return fmt.Sprintf("Coin '%s' not found", args[0]), nil
+	}
+
+	price := data["usd"]
+	change := data["usd_24h_change"]
+
+	// Format based on price magnitude
+	var priceStr string
+	if price < 0.01 {
+		priceStr = fmt.Sprintf("$%.6f", price)
+	} else if price < 1 {
+		priceStr = fmt.Sprintf("$%.4f", price)
+	} else if price < 100 {
+		priceStr = fmt.Sprintf("$%.2f", price)
+	} else {
+		priceStr = fmt.Sprintf("$%.0f", price)
+	}
+
+	// Format change
+	changeStr := ""
+	if change != 0 {
+		if change > 0 {
+			changeStr = fmt.Sprintf(" (+%.1f%%)", change)
+		} else {
+			changeStr = fmt.Sprintf(" (%.1f%%)", change)
+		}
+	}
+
+	result := fmt.Sprintf("%s: %s%s", strings.ToUpper(originalCoin), priceStr, changeStr)
+	
+	// Cache the result
+	GlobalCache.Set(cacheKey, result, priceCacheTTL)
+	
+	return result, nil
+}
