@@ -137,3 +137,30 @@ Options:
 - Don't change the primitives
 - Don't anthropomorphize agents
 - Don't call APIs if quadtree has data
+
+## Seamless Spatial Experience
+
+### Core Principle
+The stream/geohash is infrastructure, not UX. You don't "enter" a new stream - you're always in your continuous reality.
+
+### What the User Sees
+1. **Continuous view** - no jumps, no refreshes, no "loading new area"
+2. **Persistent timeline** - cards don't disappear when you cross a boundary
+3. **Smooth context updates** - weather, buses, places blend as you move
+4. **No stream switching UI** - it happens in background, invisible
+
+Like how your phone doesn't say "entering new cell tower coverage" - you're just connected.
+
+### Implementation
+- Geohash determines which agents are responsible
+- Agents index into spatial DB
+- User queries by lat/lon, gets seamless view
+- Stream ID can change internally, but UI doesn't reset
+- localStorage persists YOUR timeline across all locations
+
+### The Two Views
+- **Context box (top)** = live view of where you are NOW
+- **Timeline (below)** = YOUR history, everywhere you've been
+
+### What Geohash/Stream Actually Is
+Like a database shard key - helps organize data and assign agents to areas. User never sees sharding. No page reloads. No "switching streams". Just smooth movement through space with your personal timeline following you.
