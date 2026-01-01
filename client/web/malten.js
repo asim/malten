@@ -479,6 +479,8 @@ function getLocationAndContext() {
 function refreshContextFromState() {
     if (state.hasLocation()) {
         fetchContext();
+    } else if (!state.context) {
+        showWelcome();
     }
 }
 
@@ -596,5 +598,22 @@ $(document).ready(function() {
 function showCachedContext() {
     if (state.context) {
         displayContext(state.context);
+    } else {
+        // Nothing cached - show welcome
+        showWelcome();
     }
+}
+
+function showWelcome() {
+    var hour = new Date().getHours();
+    var greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    
+    var welcome = greeting + '\n\n';
+    welcome += 'Enable location to see what\'s around you:\n';
+    welcome += '• Live bus arrivals\n';
+    welcome += '• Weather & prayer times\n';
+    welcome += '• Nearby cafes, shops, pharmacies\n\n';
+    welcome += 'Or ask me anything — "cafes nearby", "btc price", "reminder"';
+    
+    displayContext(welcome);
 }
