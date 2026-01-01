@@ -94,6 +94,73 @@ func fetchWeather(lat, lon float64) *Entity {
 	}
 }
 
+// computePrayerDisplay calculates current/next prayer from stored timings at query time
+func computePrayerDisplay(e *Entity) string {
+	if e == nil || e.Data == nil {
+		return ""
+	}
+	
+	timingsRaw, ok := e.Data["timings"]
+	if !ok {
+		return e.Name // fallback to stored name
+	}
+	
+	// Convert timings to map[string]string
+	timings := make(map[string]string)
+	switch t := timingsRaw.(type) {
+	case map[string]interface{}:
+		for k, v := range t {
+			if s, ok := v.(string); ok {
+				timings[k] = s
+			}
+		}
+	case map[string]string:
+		timings = t
+	default:
+		return e.Name
+	}
+	
+	prayers := []string{"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"}
+	nowStr := time.Now().Format("15:04")
+	
+	var current, next, nextTime string
+	for i, p := range prayers {
+		pTime := timings[p]
+		if len(pTime) > 5 {
+			pTime = pTime[:5] // strip seconds if present
+		}
+		if pTime > nowStr {
+			if i > 0 {
+				current = prayers[i-1]
+			}
+			if p == "Sunrise" {
+				next = "Dhuhr"
+				nextTime = timings["Dhuhr"]
+			} else {
+				next = p
+				nextTime = pTime
+			}
+			break
+		}
+	}
+	if next == "" {
+		current = "Isha"
+		next = "Fajr"
+		nextTime = timings["Fajr"]
+	}
+	if current == "Sunrise" {
+		current = "Fajr"
+	}
+	if len(nextTime) > 5 {
+		nextTime = nextTime[:5]
+	}
+	
+	if current != "" {
+		return fmt.Sprintf("🕌 %s now · %s %s", current, next, nextTime)
+	}
+	return fmt.Sprintf("🕌 %s %s", next, nextTime)
+}
+
 func fetchPrayerTimes(lat, lon float64) *Entity {
 	// Check spatial cache first - prayer times valid for ~50km (same city)
 	db := Get()
@@ -379,7 +446,7 @@ func GetLiveContext(lat, lon float64) string {
 	}
 	prayer := db.Query(lat, lon, 10000, EntityPrayer, 1)
 	if len(prayer) > 0 {
-		header = append(header, prayer[0].Name)
+		header = append(header, computePrayerDisplay(prayer[0]))
 	}
 	if len(header) > 0 {
 		parts = append(parts, strings.Join(header, " · "))
