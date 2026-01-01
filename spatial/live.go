@@ -287,26 +287,30 @@ func GetLiveContext(lat, lon float64) string {
 	db := Get()
 	var parts []string
 	
-	// Weather (nearest)
+	// Where am I? Street + area
+	location := reverseGeocode(lat, lon)
+	if location != "" {
+		parts = append(parts, "📍 "+location)
+	}
+	
+	// Weather + Prayer on same line
+	var header []string
 	weather := db.Query(lat, lon, 10000, EntityWeather, 1)
 	if len(weather) > 0 {
-		parts = append(parts, weather[0].Name)
+		header = append(header, weather[0].Name)
 	}
-	
-	// Prayer (nearest)
 	prayer := db.Query(lat, lon, 10000, EntityPrayer, 1)
 	if len(prayer) > 0 {
-		if len(parts) > 0 {
-			parts[0] = parts[0] + " · " + prayer[0].Name
-		} else {
-			parts = append(parts, prayer[0].Name)
-		}
+		header = append(header, prayer[0].Name)
+	}
+	if len(header) > 0 {
+		parts = append(parts, strings.Join(header, " · "))
 	}
 	
-	// Bus arrivals (nearby)
-	arrivals := db.Query(lat, lon, 500, EntityArrival, 3)
-	for _, arr := range arrivals {
-		parts = append(parts, arr.Name)
+	// Nearest bus stop with arrivals - am I AT a stop?
+	nearestStop := getNearestStopWithArrivals(lat, lon)
+	if nearestStop != "" {
+		parts = append(parts, nearestStop)
 	}
 	
 	// Places summary
@@ -316,6 +320,102 @@ func GetLiveContext(lat, lon float64) string {
 	}
 	
 	return strings.Join(parts, "\n")
+}
+
+// reverseGeocode gets street name and area
+func reverseGeocode(lat, lon float64) string {
+	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?lat=%f&lon=%f&format=json&zoom=18",
+		lat, lon)
+	
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "Malten/1.0")
+	
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	
+	var data struct {
+		Address struct {
+			Road   string `json:"road"`
+			Suburb string `json:"suburb"`
+			Town   string `json:"town"`
+		} `json:"address"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return ""
+	}
+	
+	road := data.Address.Road
+	area := data.Address.Suburb
+	if area == "" {
+		area = data.Address.Town
+	}
+	
+	if road != "" && area != "" {
+		return road + ", " + area
+	}
+	if road != "" {
+		return road
+	}
+	return area
+}
+
+// getNearestStopWithArrivals returns the nearest stop and its arrivals
+func getNearestStopWithArrivals(lat, lon float64) string {
+	// Find very close stops (within 100m - you're basically AT the stop)
+	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=100",
+		tflBaseURL, lat, lon)
+	
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "Malten/1.0")
+	
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	
+	var stops struct {
+		StopPoints []struct {
+			NaptanID   string  `json:"naptanId"`
+			CommonName string  `json:"commonName"`
+			Distance   float64 `json:"distance"`
+		} `json:"stopPoints"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&stops); err != nil || len(stops.StopPoints) == 0 {
+		return ""
+	}
+	
+	// Get arrivals for nearest stop
+	stop := stops.StopPoints[0]
+	arrivals := fetchStopArrivals(stop.NaptanID)
+	if len(arrivals) == 0 {
+		return fmt.Sprintf("🚏 %s (no buses)", stop.CommonName)
+	}
+	
+	// Format: "🚏 Whitton Station" then list next buses
+	var lines []string
+	if stop.Distance < 30 {
+		lines = append(lines, fmt.Sprintf("🚏 At %s", stop.CommonName))
+	} else {
+		lines = append(lines, fmt.Sprintf("🚏 %s (%.0fm)", stop.CommonName, stop.Distance))
+	}
+	
+	// Show next 3 arrivals
+	for i, arr := range arrivals {
+		if i >= 3 {
+			break
+		}
+		if arr.Minutes <= 1 {
+			lines = append(lines, fmt.Sprintf("   %s → %s arriving now", arr.Line, shortDest(arr.Destination)))
+		} else {
+			lines = append(lines, fmt.Sprintf("   %s → %s in %dm", arr.Line, shortDest(arr.Destination), arr.Minutes))
+		}
+	}
+	
+	return strings.Join(lines, "\n")
 }
 
 func getPlacesSummary(db *DB, lat, lon float64) string {

@@ -366,7 +366,7 @@ function requestLocation() {
 }
 
 var lastPingSent = 0;
-var pingInterval = 60000; // Send at most once per minute
+var pingInterval = 15000; // Update every 15 seconds when moving
 
 // Send fresh location immediately (bypasses throttle)
 function sendFreshLocation() {
