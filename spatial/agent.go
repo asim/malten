@@ -116,16 +116,21 @@ func StartAgentLoop(agent *Entity) {
 func agentLoop(agent *Entity) {
 	log.Printf("[agent] %s started", agent.Name)
 	
-	// Initial POI index
-	IndexAgent(agent)
-	
-	// Continuous live data loop
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	
-	for range ticker.C {
+	// Start live data immediately (don't wait for POI index)
+	go func() {
 		updateLiveData(agent)
-	}
+		
+		// Continuous live data loop
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			updateLiveData(agent)
+		}
+	}()
+	
+	// POI index runs in parallel (takes longer)
+	IndexAgent(agent)
 }
 
 func updateLiveData(agent *Entity) {
@@ -146,6 +151,8 @@ func updateLiveData(agent *Entity) {
 	for _, arr := range arrivals {
 		db.Insert(arr)
 	}
+	
+	log.Printf("[agent] %s live update: %d arrivals", agent.Name, len(arrivals))
 	
 	// Update agent timestamp
 	agent.Data["last_live"] = time.Now().Format(time.RFC3339)

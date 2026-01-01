@@ -103,6 +103,10 @@ func SetLocation(token string, lat, lon float64) {
 	// Insert/update user in spatial index
 	updateUserInSpatialIndex(token, lat, lon)
 	
+	// Ensure agent exists for this area (creates and starts indexing if new)
+	db := spatial.Get()
+	db.FindOrCreateAgent(lat, lon)
+	
 	// Build and cache their context view
 	go updateUserContext(token, lat, lon)
 }
