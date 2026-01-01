@@ -16,11 +16,14 @@ Spatial AI for the real world. Foursquare if built in the AI era.
 - Real-time view of the world
 - File: `spatial.json`
 
-### Cards = Stream Messages
-- Cards are just messages in the stream
-- Standard format for real-time updates
+### Messages
 - Everything is a message on the stream
-- Persisted in localStorage (24hr) for personal timeline
+- Messages can have different formats:
+  - **Card** - compact info (bus arrival, weather alert)
+  - **Map** - spatial view
+  - **List** - nearby places
+  - **Text** - plain response
+- Format is presentation, message is the primitive
 
 ## Architecture
 
@@ -62,9 +65,34 @@ User pings location
 Context query
   → Quadtree lookup (fast, no API calls)
   → Build context string
-  → Client detects changes → creates card
-  → Card = message on stream
+  → Client detects changes → creates message
+  → Message on stream (card format for events)
 ```
+
+## Message Formats
+
+### Card Format
+Compact, timestamped, color-coded by type:
+```
+🚏 Arrived at Whitton Station     14:30
+```
+Used for: transport, weather alerts, prayer times, location events
+
+### Map Format (TODO)
+Spatial view of entities around user.
+
+### List Format
+Nearby places with details:
+```
+📍 NEARBY CAFES
+• Puccino's · Map
+  High Street, TW2 7LG
+• Better Bagels · Map
+  121 High Street
+```
+
+### Text Format
+Plain responses from commands/AI.
 
 ## Files
 - `spatial/` - quadtree, entities, agents, live data
@@ -80,7 +108,7 @@ Context query
 ## Key Principles
 1. Streams, Agents, Commands - the three primitives
 2. Quadtree is source of truth
-3. Cards are stream messages
+3. Everything is a message (format varies)
 4. Agents build the world view
 5. Context from quadtree, not API calls
 6. Proactive > reactive

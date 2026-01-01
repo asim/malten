@@ -10,20 +10,24 @@
 - Maps and stores everything
 - Real-time world view
 
-### Cards = Stream Messages
+### Messages
 - Everything is a message on the stream
-- Cards are the standard format
-- Personal timeline in localStorage (24hr)
+- Messages have formats (presentation layer):
+  - **Card** - compact event (arrival, alert)
+  - **Map** - spatial view
+  - **List** - nearby places
+  - **Text** - plain response
+- Format is how you display it, message is the primitive
 
 ---
 
-## Last Session - 2026-01-01 14:45 UTC
+## Last Session - 2026-01-01 14:50 UTC
 
 ### What We Built
 1. **Expanded agent indexing** - trains, tubes, bus stops, more POIs
 2. **Transport arrivals** - buses, tubes, rail from TfL
-3. **Card deduplication** - no duplicates within time window
-4. **Card persistence** - 24hr in localStorage
+3. **Message deduplication** - no duplicates within time window
+4. **Message persistence** - 24hr in localStorage
 
 ### Agent Categories Now Indexed
 - Transport: railway=station, highway=bus_stop, public_transport=station
@@ -42,9 +46,9 @@
 
 ### Git Log
 ```
+804841b Document core primitives
 ff27847 Deduplicate cards
 396aa26 Expand agent indexing: trains, tubes, more POIs
-4687b59 Update docs for session continuity
 0379518 Query quadtree for bus arrivals before TfL API
 c86475a Persist cards in localStorage for 24 hours
 fd61a8e Cards with timestamps, status indicator, postcodes
@@ -54,5 +58,6 @@ fd61a8e Cards with timestamps, status indicator, postcodes
 ### To Continue
 1. Agents should predict, learn patterns
 2. Geohash streams - auto-switch by location
-3. More proactive suggestions
-4. Events - what's happening nearby
+3. Map message format
+4. More proactive suggestions
+5. Events - what's happening nearby
