@@ -123,6 +123,18 @@ var state = {
     detectChanges: function(oldCtx, newCtx) {
         if (!oldCtx || !newCtx) return;
         
+        // Extract location from context
+        var oldLoc = this.extractLocation(oldCtx);
+        var newLoc = this.extractLocation(newCtx);
+        
+        // Location changed significantly (different street/area)
+        if (newLoc && oldLoc && newLoc !== oldLoc) {
+            var cardText = '📍 ' + newLoc;
+            if (!this.hasRecentCard(cardText, 10)) {
+                this.createCard(cardText);
+            }
+        }
+        
         // Extract bus stop from context
         var oldStop = this.extractBusStop(oldCtx);
         var newStop = this.extractBusStop(newCtx);
@@ -163,6 +175,10 @@ var state = {
             }
         }
         return false;
+    },
+    extractLocation: function(ctx) {
+        var match = ctx.match(/📍 ([^\n]+)/);
+        return match ? match[1].trim() : null;
     },
     extractBusStop: function(ctx) {
         var match = ctx.match(/🚏 ([^\n(]+)/);
