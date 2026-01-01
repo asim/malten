@@ -602,6 +602,10 @@ function displayContext(text) {
 function makeClickable(text) {
     var html = text;
     
+    // Enable location button
+    html = html.replace(/\{enable_location\}/g, 
+        '<a href="#" class="enable-location-btn">📍 Enable location</a>');
+    
     // Match {data} format - contains all places data (single or multiple separated by ;;)
     html = html.replace(/\{([^}]+)\}/g, function(match, data) {
         var places = data.split(';;');
@@ -613,6 +617,12 @@ function makeClickable(text) {
     
     return html;
 }
+
+// Handle enable location button click
+$(document).on('click', '.enable-location-btn', function(e) {
+    e.preventDefault();
+    getLocationAndContext();
+});
 
 // Handle clicks on place links - toggle expansion
 $(document).on('click', '.place-link', function(e) {
@@ -882,7 +892,7 @@ function showWelcome() {
     var greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     
     var welcome = greeting + '\n\n';
-    welcome += 'Enable location to see what\'s around you:\n';
+    welcome += '{enable_location}\n\n';
     welcome += '• Live bus arrivals\n';
     welcome += '• Weather & prayer times\n';
     welcome += '• Nearby cafes, shops, pharmacies\n\n';
