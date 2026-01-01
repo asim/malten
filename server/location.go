@@ -41,32 +41,41 @@ func getSessionToken(w http.ResponseWriter, r *http.Request) string {
 	return token
 }
 
-// ContextHandler returns local context for a location
+// ContextHandler returns local context for the user's session
 func ContextHandler(w http.ResponseWriter, r *http.Request) {
+	token := getSessionToken(w, r)
+	
+	// First check if we have pre-built context for this user
+	if ctx := command.GetUserContext(token); ctx != "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"context": ctx})
+		return
+	}
+	
+	// Fall back to location from request params
 	r.ParseForm()
-
 	latStr := r.Form.Get("lat")
 	lonStr := r.Form.Get("lon")
 
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		http.Error(w, "Invalid latitude", 400)
+	if latStr == "" || lonStr == "" {
+		// Try to get from stored location
+		if loc := command.GetLocation(token); loc != nil {
+			w.Header().Set("Content-Type", "application/json")
+			ctx := spatial.GetLiveContext(loc.Lat, loc.Lon)
+			json.NewEncoder(w).Encode(map[string]interface{}{"context": ctx})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"context": ""})
 		return
 	}
 
-	lon, err := strconv.ParseFloat(lonStr, 64)
-	if err != nil {
-		http.Error(w, "Invalid longitude", 400)
-		return
-	}
+	lat, _ := strconv.ParseFloat(latStr, 64)
+	lon, _ := strconv.ParseFloat(lonStr, 64)
 
-	// Instant lookup from spatial index - no API calls
 	context := spatial.GetLiveContext(lat, lon)
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"context": context,
-	})
+	json.NewEncoder(w).Encode(map[string]interface{}{"context": context})
 }
 
 // PingHandler receives location updates from clients
@@ -77,7 +86,6 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := getSessionToken(w, r)
-
 	r.ParseForm()
 
 	latStr := r.Form.Get("lat")
@@ -95,12 +103,17 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store location (expires after 5 min)
+	// Store location and update user in quadtree
+	// This also builds their context view in background
 	command.SetLocation(token, lat, lon)
+
+	// Return context immediately from spatial index
+	context := spatial.GetLiveContext(lat, lon)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok": true,
+		"ok":      true,
+		"context": context,
 	})
 }
 

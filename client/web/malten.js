@@ -350,8 +350,12 @@ function requestLocation() {
     navigator.geolocation.getCurrentPosition(
         function(pos) {
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
-            $.post(pingUrl, { lat: state.lat, lon: state.lon });
-            fetchLocalContext(state.lat, state.lon);
+            $.post(pingUrl, { lat: state.lat, lon: state.lon }).done(function(data) {
+                if (data.context) {
+                    state.setContext(data.context);
+                    displayContext(data.context);
+                }
+            });
             startLocationWatch();
         },
         function(err) {
@@ -399,8 +403,9 @@ function startLocationWatch() {
     );
 }
 
-function fetchLocalContext(lat, lon) {
-    $.get(contextUrl, { lat: lat, lon: lon }).done(function(data) {
+function fetchContext() {
+    // Server knows our location from session - just ask for context
+    $.get(contextUrl).done(function(data) {
         if (data.context && data.context.length > 0) {
             state.setContext(data.context);
             displayContext(data.context);
@@ -436,7 +441,12 @@ function disableLocation() {
 
 function sendLocation(lat, lon) {
     state.setLocation(lat, lon);
-    $.post(pingUrl, { lat: lat, lon: lon });
+    $.post(pingUrl, { lat: lat, lon: lon }).done(function(data) {
+        if (data.context) {
+            state.setContext(data.context);
+            displayContext(data.context);
+        }
+    });
 }
 
 // Get location and refresh context
@@ -449,8 +459,13 @@ function getLocationAndContext() {
     navigator.geolocation.getCurrentPosition(
         function(pos) {
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
-            $.post(pingUrl, { lat: state.lat, lon: state.lon });
-            fetchLocalContext(state.lat, state.lon);
+            // Ping returns context - no separate fetch needed
+            $.post(pingUrl, { lat: state.lat, lon: state.lon }).done(function(data) {
+                if (data.context) {
+                    state.setContext(data.context);
+                    displayContext(data.context);
+                }
+            });
             startLocationWatch();
         },
         function(err) {
@@ -463,7 +478,7 @@ function getLocationAndContext() {
 
 function refreshContextFromState() {
     if (state.hasLocation()) {
-        fetchLocalContext(state.lat, state.lon);
+        fetchContext();
     }
 }
 

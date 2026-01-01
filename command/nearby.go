@@ -90,16 +90,58 @@ func cleanupLocations() {
 	}
 }
 
-// SetLocation stores location for a session token
+// SetLocation stores location for a session token and updates their view
 func SetLocation(token string, lat, lon float64) {
 	locationsMu.Lock()
-	defer locationsMu.Unlock()
-	
 	locations[token] = &Location{
 		Lat:       lat,
 		Lon:       lon,
 		UpdatedAt: time.Now(),
 	}
+	locationsMu.Unlock()
+	
+	// Insert/update user in spatial index
+	updateUserInSpatialIndex(token, lat, lon)
+	
+	// Build and cache their context view
+	go updateUserContext(token, lat, lon)
+}
+
+func updateUserInSpatialIndex(token string, lat, lon float64) {
+	db := spatial.Get()
+	expiry := time.Now().Add(locationTTL)
+	
+	user := &spatial.Entity{
+		ID:        "user-" + token[:8],
+		Type:      spatial.EntityPerson,
+		Name:      "user",
+		Lat:       lat,
+		Lon:       lon,
+		Data:      map[string]interface{}{"token": token},
+		ExpiresAt: &expiry,
+	}
+	db.Insert(user)
+}
+
+// User context cache
+var (
+	userContexts   = make(map[string]string)
+	userContextsMu sync.RWMutex
+)
+
+func updateUserContext(token string, lat, lon float64) {
+	ctx := spatial.GetLiveContext(lat, lon)
+	
+	userContextsMu.Lock()
+	userContexts[token] = ctx
+	userContextsMu.Unlock()
+}
+
+// GetUserContext returns the pre-built context for a user
+func GetUserContext(token string) string {
+	userContextsMu.RLock()
+	defer userContextsMu.RUnlock()
+	return userContexts[token]
 }
 
 // GetLocation retrieves location for a session token
