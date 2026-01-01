@@ -71,6 +71,12 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle natural language nearby queries ("cafes near me", "Twickenham cafes")
+	if isNearby, args := detectNearbyQuery(command); isNearby {
+		Default.Events <- NewMessage(HandleNearbyCommand(args, token), stream)
+		return
+	}
+
 	// Everything else goes to AI with tool selection
 	go handleAI(command, stream, token)
 }
@@ -145,8 +151,11 @@ func handleCommand(cmd, stream, token string) {
 	case "ping":
 		Default.Events <- NewMessage(HandlePingCommand(cmd, token), stream)
 
-	case "nearby":
+	case "nearby", "near":
 		Default.Events <- NewMessage(HandleNearbyCommand(args, token), stream)
+
+	case "agents":
+		Default.Events <- NewMessage(HandleAgentsCommand(), stream)
 	}
 }
 
@@ -164,6 +173,59 @@ func detectNavCommand(input string) string {
 		return "/" + input
 	}
 	return ""
+}
+
+// detectNearbyQuery checks if input is a nearby/location query
+// Handles: "cafes near me", "nearby cafes", "Twickenham cafes", "petrol station"
+func detectNearbyQuery(input string) (bool, []string) {
+	input = strings.TrimSpace(input)
+	lower := strings.ToLower(input)
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return false, nil
+	}
+
+	// Remove filler words
+	var cleaned []string
+	for _, p := range parts {
+		l := strings.ToLower(p)
+		if l == "near" || l == "nearby" || l == "me" || l == "in" || l == "around" {
+			continue
+		}
+		cleaned = append(cleaned, p)
+	}
+
+	// Check for multi-word types first (e.g., "petrol station")
+	multiType, remaining := command.CheckMultiWordType(cleaned)
+	if multiType != "" {
+		// Found multi-word type, return it with any remaining location words
+		result := append([]string{multiType}, remaining...)
+		return true, result
+	}
+
+	// Check if any word is a valid place type
+	hasPlaceType := false
+	for _, p := range cleaned {
+		if command.IsValidPlaceType(strings.ToLower(p)) {
+			hasPlaceType = true
+			break
+		}
+	}
+
+	if !hasPlaceType {
+		return false, nil
+	}
+
+	// Check if it looks like a nearby query
+	// Either starts with nearby/near, contains "near me", or is just "<location> <type>"
+	if strings.HasPrefix(lower, "near") ||
+		strings.Contains(lower, "near me") ||
+		strings.Contains(lower, "around me") ||
+		len(cleaned) >= 1 {
+		return true, cleaned
+	}
+
+	return false, nil
 }
 
 func handleAI(prompt, stream, token string) {

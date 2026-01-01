@@ -86,11 +86,8 @@ function displayMessages(array, direction) {
         item.appendChild(d1);
         item.appendChild(d2);
 
-        if (direction >= 0) {
-            list.appendChild(item);
-        } else {
-            list.insertBefore(item, list.firstChild);
-        }
+        // Always prepend - newest at top
+        list.insertBefore(item, list.firstChild);
         seen[array[i].Id] = array[i];
     }
 
@@ -98,10 +95,7 @@ function displayMessages(array, direction) {
         last = array[array.length - 1].Created;
     }
 
-    // Auto-scroll to bottom
-    if (direction >= 0) {
-        window.scrollTo(0, document.body.scrollHeight);
-    }
+
 }
 
 function loadMessages() {
@@ -210,6 +204,7 @@ function loadStream() {
     
     var form = document.getElementById('form');
     form.elements["stream"].value = getStream();
+    
     form.elements["prompt"].focus();
 }
 
@@ -450,10 +445,9 @@ function shareListener() {
 }
 
 function loadListeners() {
-
-    
-    $(window).scroll(function() {
-        if ($(window).scrollTop() == $(document).height() - $(window).height()) {
+    // Scroll to load more (scroll down = load older)
+    window.addEventListener('scroll', function() {
+        if (window.scrollY + window.innerHeight >= document.body.scrollHeight - 50) {
             loadMore();
         }
     });

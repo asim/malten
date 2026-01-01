@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/asim/malten/command"
+	"github.com/asim/malten/spatial"
 )
 
 const sessionCookieName = "malten_session"
@@ -100,38 +101,57 @@ func HandlePingCommand(cmd string, token string) string {
 }
 
 // HandleNearbyCommand processes nearby requests with location
-// Supports: /nearby cafes, /nearby cafes Twickenham, /nearby cafes 51.4,-0.3
+// Supports: /nearby cafes, /nearby Twickenham cafes, /nearby petrol station, /nearby cafes 51.4,-0.3
 func HandleNearbyCommand(args []string, token string) string {
 	if len(args) == 0 {
-		return "Usage: /nearby <type> [location]\nExamples: /nearby cafes, /nearby cafes Twickenham, /nearby cafes 51.4,-0.3"
+		return "Usage: /nearby <type> [location]\nExamples: /nearby cafes, /nearby Twickenham cafes, /nearby petrol station"
 	}
 
-	placeType := args[0]
+	// Find the place type and location from args
+	// Place type can be anywhere, location is everything else
+	var placeType string
+	var locationParts []string
 	var lat, lon float64
 
-	if len(args) >= 2 {
-		// Check if second arg is coordinates (lat,lon)
-		if coords := strings.Split(args[1], ","); len(coords) == 2 {
+	for _, arg := range args {
+		lower := strings.ToLower(arg)
+		// Check if this arg is a known place type
+		if command.IsValidPlaceType(lower) {
+			placeType = lower
+		} else if coords := strings.Split(arg, ","); len(coords) == 2 {
+			// Check if it's coordinates
 			if parsedLat, err := strconv.ParseFloat(coords[0], 64); err == nil {
 				if parsedLon, err := strconv.ParseFloat(coords[1], 64); err == nil {
 					lat, lon = parsedLat, parsedLon
+					continue
 				}
 			}
+			locationParts = append(locationParts, arg)
+		} else {
+			locationParts = append(locationParts, arg)
 		}
-		// If not coords, it's a place name - geocode it
-		if lat == 0 && lon == 0 {
-			placeName := strings.Join(args[1:], " ")
-			geoLat, geoLon, err := command.Geocode(placeName)
-			if err != nil {
-				return fmt.Sprintf("📍 Could not find location: %s", placeName)
-			}
-			lat, lon = geoLat, geoLon
+	}
+
+	// If no place type found, use first arg as search term
+	if placeType == "" {
+		placeType = strings.Join(args, " ")
+	}
+
+	// If we have location parts but no coords, geocode them
+	if lat == 0 && lon == 0 && len(locationParts) > 0 {
+		placeName := strings.Join(locationParts, " ")
+		geoLat, geoLon, err := command.Geocode(placeName)
+		if err != nil {
+			return fmt.Sprintf("📍 Could not find location: %s", placeName)
 		}
-	} else {
-		// No location specified, use user's ping location
+		lat, lon = geoLat, geoLon
+	}
+
+	// If still no location, use user's ping location
+	if lat == 0 && lon == 0 {
 		loc := command.GetLocation(token)
 		if loc == nil {
-			return "📍 Location not available. Enable location? Use /ping on\nOr specify: /nearby cafes Twickenham"
+			return "📍 Location not available. Enable location? Use /ping on\nOr specify: /nearby Twickenham cafes"
 		}
 		lat, lon = loc.Lat, loc.Lon
 	}
@@ -141,4 +161,34 @@ func HandleNearbyCommand(args []string, token string) string {
 		return "Error searching: " + err.Error()
 	}
 	return result
+}
+
+// HandleAgentsCommand lists spatial agents
+func HandleAgentsCommand() string {
+	db := spatial.Get()
+	agents := db.ListAgents()
+
+	if len(agents) == 0 {
+		return "🤖 No agents.\nAgents are created when you search a new area."
+	}
+
+	var result strings.Builder
+	result.WriteString("🤖 AGENTS\n\n")
+
+	for _, a := range agents {
+		radius, _ := a.Data["radius"].(float64)
+		status, _ := a.Data["status"].(string)
+		poiCount, _ := a.Data["poi_count"].(float64)
+		lastIndex, _ := a.Data["last_index"].(string)
+
+		result.WriteString(fmt.Sprintf("• %s\n", a.Name))
+		result.WriteString(fmt.Sprintf("  📍 %.4f, %.4f (%.0fm)\n", a.Lat, a.Lon, radius))
+		result.WriteString(fmt.Sprintf("  📊 %d POIs | %s\n", int(poiCount), status))
+		if lastIndex != "" {
+			result.WriteString(fmt.Sprintf("  🕐 %s\n", lastIndex))
+		}
+		result.WriteString("\n")
+	}
+
+	return strings.TrimSpace(result.String())
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asim/malten/spatial"
 )
 
 const overpassURL = "https://overpass-api.de/api/interpreter"
@@ -154,8 +156,8 @@ type OverpassResponse struct {
 	Elements []OSMElement `json:"elements"`
 }
 
-// validTypes is the set of recognized place types
-var validTypes = map[string]bool{
+// ValidTypes is the set of recognized place types
+var ValidTypes = map[string]bool{
 	"cafe": true, "cafes": true, "coffee": true,
 	"restaurant": true, "restaurants": true, "food": true,
 	"bar": true, "bars": true,
@@ -166,11 +168,61 @@ var validTypes = map[string]bool{
 	"atm": true, "atms": true,
 	"supermarket": true, "grocery": true,
 	"shop": true, "shops": true, "store": true,
-	"gas": true, "petrol": true, "fuel": true,
+	"gas": true, "petrol": true, "fuel": true, "station": true,
 	"parking": true,
 	"gym": true,
 	"mosque": true, "church": true, "temple": true,
 	"hotel": true, "hotels": true,
+}
+
+// IsValidPlaceType checks if a string is a recognized place type
+func IsValidPlaceType(s string) bool {
+	return ValidTypes[s]
+}
+
+// MultiWordTypes maps multi-word phrases to canonical types
+var MultiWordTypes = map[string]string{
+	"petrol station": "fuel",
+	"gas station":    "fuel",
+	"fuel station":   "fuel",
+	"coffee shop":    "cafe",
+	"coffee shops":   "cafe",
+}
+
+// CheckMultiWordType checks if input contains a multi-word type, returns type and remaining words
+func CheckMultiWordType(words []string) (string, []string) {
+	input := strings.ToLower(strings.Join(words, " "))
+	for phrase, placeType := range MultiWordTypes {
+		if strings.Contains(input, phrase) {
+			// Remove the phrase words from the list
+			var remaining []string
+			phraseWords := strings.Fields(phrase)
+			skipNext := 0
+			for i, w := range words {
+				if skipNext > 0 {
+					skipNext--
+					continue
+				}
+				// Check if this starts the phrase
+				if i+len(phraseWords) <= len(words) {
+					match := true
+					for j, pw := range phraseWords {
+						if strings.ToLower(words[i+j]) != pw {
+							match = false
+							break
+						}
+					}
+					if match {
+						skipNext = len(phraseWords) - 1
+						continue
+					}
+				}
+				remaining = append(remaining, w)
+			}
+			return placeType, remaining
+		}
+	}
+	return "", words
 }
 
 // placeTypes maps common terms to OSM amenity/shop types
@@ -201,6 +253,7 @@ var placeTypes = map[string]string{
 	"gas":         "amenity=fuel",
 	"petrol":      "amenity=fuel",
 	"fuel":        "amenity=fuel",
+	"station":     "amenity=fuel",
 	"parking":     "amenity=parking",
 	"gym":         "leisure=fitness_centre",
 	"mosque":      "amenity=place_of_worship][religion=muslim",
@@ -212,11 +265,11 @@ var placeTypes = map[string]string{
 
 
 
-const searchRadius = 1000.0 // 1km radius
+const searchRadius = 2000.0 // 2km radius
 
 // searchByName finds places by name in the spatial DB
 func searchByName(name string, lat, lon float64) (string, error) {
-	db := GetSpatialDB()
+	db := spatial.Get()
 	results := db.FindByName(lat, lon, searchRadius*2, name, 10) // wider search for name
 
 	if len(results) == 0 {
@@ -230,20 +283,8 @@ func searchByName(name string, lat, lon float64) (string, error) {
 		if i >= 5 {
 			break
 		}
-		// Build search term with context
-		var searchTerm string
-		if tagsData, ok := e.Data["tags"].(map[string]interface{}); ok {
-			if city, ok := tagsData["addr:city"].(string); ok && city != "" {
-				searchTerm = e.Name + " " + city
-			} else if street, ok := tagsData["addr:street"].(string); ok && street != "" {
-				searchTerm = e.Name + " " + street
-			} else {
-				searchTerm = fmt.Sprintf("%s %.4f,%.4f", e.Name, e.Lat, e.Lon)
-			}
-		} else {
-			searchTerm = fmt.Sprintf("%s %.4f,%.4f", e.Name, e.Lat, e.Lon)
-		}
-		mapLink := fmt.Sprintf("https://google.com/maps/search/%s", url.QueryEscape(searchTerm))
+		// Google Maps link with name and coordinates
+		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(e.Name), e.Lat, e.Lon)
 		result.WriteString(fmt.Sprintf("• %s · %s\n", e.Name, mapLink))
 
 		// Add address
@@ -265,18 +306,23 @@ func searchByName(name string, lat, lon float64) (string, error) {
 }
 
 // NearbyWithLocation performs the actual nearby search with coordinates
+const agentRadius = 5000.0 // 5km agent territory
+
 func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 	placeType = strings.ToLower(strings.TrimSpace(placeType))
 
 	// If not a valid type, search by name instead
-	if !validTypes[placeType] {
+	if !ValidTypes[placeType] {
 		return searchByName(placeType, lat, lon)
 	}
 
 	category := normalizeType(placeType)
 
+	// Find or create agent for this area
+	db := spatial.Get()
+	db.FindOrCreateAgent(lat, lon)
+
 	// Check spatial DB first
-	db := GetSpatialDB()
 	cached := db.QueryPlaces(lat, lon, searchRadius, category, 20)
 
 	if len(cached) > 0 {
@@ -292,8 +338,8 @@ func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 	query := fmt.Sprintf(`
 [out:json][timeout:10];
 (
-  node[%s](around:1000,%f,%f);
-  way[%s](around:1000,%f,%f);
+  node[%s](around:2000,%f,%f);
+  way[%s](around:2000,%f,%f);
 );
 out center 10;
 `, osmType, lat, lon, osmType, lat, lon)
@@ -305,13 +351,18 @@ out center 10;
 	}
 	defer resp.Body.Close()
 
+	// Check for rate limiting or server errors
+	if resp.StatusCode != 200 {
+		return fallbackGoogleMapsLink(placeType, lat, lon), nil
+	}
+
 	var data OverpassResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return "Error parsing results", err
+		return fallbackGoogleMapsLink(placeType, lat, lon), nil
 	}
 
 	if len(data.Elements) == 0 {
-		return fmt.Sprintf("No %s found nearby", placeType), nil
+		return fallbackGoogleMapsLink(placeType, lat, lon), nil
 	}
 
 	// Cache the results in background
@@ -333,7 +384,7 @@ func normalizeType(placeType string) string {
 		"atms": "atm",
 		"grocery": "supermarket",
 		"shops": "shop", "store": "shop",
-		"petrol": "fuel", "gas": "fuel",
+		"petrol": "fuel", "gas": "fuel", "station": "fuel",
 		"hotels": "hotel",
 	}
 	if canonical, ok := aliases[placeType]; ok {
@@ -344,7 +395,7 @@ func normalizeType(placeType string) string {
 
 // cacheOSMResults stores OSM results as entities in the spatial DB
 func cacheOSMResults(elements []OSMElement, category string) {
-	db := GetSpatialDB()
+	db := spatial.Get()
 
 	for _, el := range elements {
 		lat, lon := el.GetCoords()
@@ -358,8 +409,8 @@ func cacheOSMResults(elements []OSMElement, category string) {
 			tags[k] = v
 		}
 
-		entity := &Entity{
-			Type: EntityPlace,
+		entity := &spatial.Entity{
+			Type: spatial.EntityPlace,
 			Name: el.Tags["name"],
 			Lat:  lat,
 			Lon:  lon,
@@ -376,7 +427,7 @@ func cacheOSMResults(elements []OSMElement, category string) {
 }
 
 // formatCachedEntities formats cached entities for display
-func formatCachedEntities(entities []*Entity, placeType string) string {
+func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 	var result strings.Builder
 	result.WriteString(fmt.Sprintf("📍 NEARBY %s (cached)\n\n", strings.ToUpper(placeType)))
 
@@ -392,20 +443,8 @@ func formatCachedEntities(entities []*Entity, placeType string) string {
 			name = "(unnamed)"
 		}
 
-		// Google Maps search with location context
-		var searchTerm string
-		if tagsData, ok := e.Data["tags"].(map[string]interface{}); ok {
-			if city, ok := tagsData["addr:city"].(string); ok && city != "" {
-				searchTerm = name + " " + city
-			} else if street, ok := tagsData["addr:street"].(string); ok && street != "" {
-				searchTerm = name + " " + street
-			} else {
-				searchTerm = fmt.Sprintf("%s %.4f,%.4f", name, e.Lat, e.Lon)
-			}
-		} else {
-			searchTerm = fmt.Sprintf("%s %.4f,%.4f", name, e.Lat, e.Lon)
-		}
-		mapLink := fmt.Sprintf("https://google.com/maps/search/%s", url.QueryEscape(searchTerm))
+		// Google Maps link with name and coordinates
+		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(name), e.Lat, e.Lon)
 		result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
 
 		// Extract tags
@@ -455,16 +494,8 @@ func formatOSMResults(elements []OSMElement, placeType string, lat, lon float64)
 			elLat, elLon = lat, lon
 		}
 
-		// Google Maps search with location context
-		var searchTerm string
-		if city := el.Tags["addr:city"]; city != "" {
-			searchTerm = name + " " + city
-		} else if street := el.Tags["addr:street"]; street != "" {
-			searchTerm = name + " " + street
-		} else {
-			searchTerm = fmt.Sprintf("%s %.4f,%.4f", name, elLat, elLon)
-		}
-		mapLink := fmt.Sprintf("https://google.com/maps/search/%s", url.QueryEscape(searchTerm))
+		// Google Maps link with name and coordinates
+		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(name), elLat, elLon)
 		result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
 
 		if addr := formatAddress(el.Tags); addr != "" {
@@ -482,6 +513,15 @@ func formatOSMResults(elements []OSMElement, placeType string, lat, lon float64)
 	}
 
 	return strings.TrimSpace(result.String())
+}
+
+// fallbackGoogleMapsLink returns a Google Maps search link when OSM fails
+// ReverseGeocode gets area name from coordinates
+
+func fallbackGoogleMapsLink(placeType string, lat, lon float64) string {
+	searchTerm := url.QueryEscape(placeType)
+	link := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,15z", searchTerm, lat, lon)
+	return fmt.Sprintf("📍 Search %s on Google Maps:\n%s", placeType, link)
 }
 
 func formatAddress(tags map[string]string) string {
