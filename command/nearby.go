@@ -81,9 +81,9 @@ func init() {
 	
 	// Register place info command (hours, etc)
 	Register(&Command{
-		Name:        "placeinfo",
+		Name:        "place",
 		Description: "Get info about a specific place",
-		Usage:       "/placeinfo <name>",
+		Usage:       "/place <name>",
 		Handler:     handlePlaceInfo,
 		Match:       matchPlaceInfo,
 	})
@@ -619,7 +619,7 @@ func matchNearby(input string) (bool, []string) {
 		return false, nil
 	}
 	
-	// Don't match question patterns - those go to placeinfo
+	// Don't match question patterns - those go to place
 	questionPhrases := []string{"what time", "when does", "is .* open", "opening hours", "hours for"}
 	for _, q := range questionPhrases {
 		if strings.Contains(lower, q) || matchWildcard(lower, q) {
@@ -822,7 +822,7 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 	}
 	
 	placeName := strings.Join(args, " ")
-	log.Printf("[placeinfo] Looking for %q at %.4f,%.4f", placeName, ctx.Lat, ctx.Lon)
+	log.Printf("[place] Looking for %q at %.4f,%.4f", placeName, ctx.Lat, ctx.Lon)
 	
 	if !ctx.HasLocation() {
 		return "Enable location to find places near you", nil
@@ -831,7 +831,7 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 	// Search spatial index for this place
 	db := spatial.Get()
 	places := db.Query(ctx.Lat, ctx.Lon, 5000, spatial.EntityPlace, 100) // 5km radius
-	log.Printf("[placeinfo] Found %d places in 2km radius", len(places))
+	log.Printf("[place] Found %d places in 2km radius", len(places))
 	
 	// Find matching place
 	var match *spatial.Entity
@@ -847,12 +847,12 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 		// Log first few names to debug
 		for i, p := range places {
 			if i < 5 {
-				log.Printf("[placeinfo] Place %d: %q", i, p.Name)
+				log.Printf("[place] Place %d: %q", i, p.Name)
 			}
 		}
 		return fmt.Sprintf("No %s found nearby", placeName), nil
 	}
-	log.Printf("[placeinfo] Found match: %s, Data keys: %v", match.Name, getKeys(match.Data))
+	log.Printf("[place] Found match: %s, Data keys: %v", match.Name, getKeys(match.Data))
 	
 	// Build response with hours
 	var result strings.Builder
