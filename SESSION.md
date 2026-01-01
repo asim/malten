@@ -30,20 +30,33 @@ Stream: gcpsxb (Hampton area)
 
 Everything else falls through to AI.
 
+## UI Layout
+
+```
+[Context box]     <- ALWAYS at top, current location/weather/prayer/buses/places
+[Messages area]   <- Cards below, chronological (oldest top, newest bottom)
+  - older card
+  - newer card  
+  - newest card
+```
+
+Context is the live view of NOW. Cards are your history/timeline.
+
 ## Current Issues
 
 ### Card ordering
-- Cards display newest at top
-- User wants chronological (oldest top, newest bottom)?
-- Or context always at top, separate from cards?
+- Currently newest at top (wrong)
+- Should be chronological: oldest top, newest bottom
+- Context box stays fixed at top
 
 ### Bus data intermittent
 - Sometimes shows "no buses" even when TfL has data
-- Restart fixes it - something with in-memory state getting stale
+- Restart fixes it - stale in-memory state
 - Need to investigate quadtree query or entity loading
 
 ## Recent Commits
 ```
+f470c49 Session state for continuation
 8d8b258 Rename placeinfo to place
 73829c2 Remove unused commands
 f606548 Remove slash commands - spatial-first
@@ -61,6 +74,5 @@ dde1896 Channels within streams: private session messages
 - `client/web/` - PWA
 
 ## Next
-1. Fix card ordering (decide on layout)
+1. Fix card ordering - chronological (oldest top, newest bottom)
 2. Investigate bus data reliability
-3. Push to origin
