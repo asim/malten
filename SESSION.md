@@ -50,15 +50,50 @@ Context query:
 - `client/web/malten.js` - state object, welcome message, 15s update interval
 
 ### What's Missing (User Feedback)
-- Rain forecast ("is it going to rain?")
-- Walking directions/time ("how long to walk to X")
+- Rain forecast ("is it going to rain?") - Open-Meteo has hourly forecast
+- Walking directions/time ("how long to walk to X") - OSRM or Google Directions API
 - More responsive feel - still feels like snapshots not live
 - Self-programming capability (Malten fixes itself)
+- Trains - National Rail API (needs registration)
+- Events - what's happening nearby today
+
+### Known Issues Fixed This Session
+- Context disappeared on refresh → now persists in localStorage + persistent div
+- Agents not indexing live data → fixed parallel execution
+- New areas had no agent → SetLocation now creates agent on ping
+- Empty screen on first visit → welcome message added
+- Whitton had no buses → agent wasn't created, fixed
+
+### Data Sources
+- **TfL API** (free, no key) - buses, tubes, stops, arrivals
+- **Open-Meteo** (free, no key) - weather, hourly forecast available
+- **Aladhan** (free, no key) - prayer times
+- **OSM/Nominatim** (free) - reverse geocode, POIs via Overpass
+- **Google Maps links** - fallback for directions
+
+### User Preferences (from claude.md)
+- Muslim - prayer times important, no anthropomorphizing
+- Engineer - brevity, correct terminology
+- Wants spatial AI that works without typing
+- Building Mu (blog, chat, news, video, mail) - Malten is spatial component
 
 ### Git State
 ```
-Latest: 37a2a40 Live street-level context
-Branch: master (pushed)
+d1fc1ad Save session state for conversation continuity
+37a2a40 Live street-level context
+4a48964 Fix: create agent on ping, run live updates in parallel
+68ceac5 Show welcome message when no context available
+7e106fa Server maintains user view - ping returns context
+a1ecb87 Consolidate state management into single object
+e2d8c9c Fix: always show cached context on load, store last location
+49ee15c Agent as continuous loop with prompt, persistent context UI
+7f70a6c Live data indexer - instant context from spatial index
+daf1acb Instant context with caching
+c3f503f Context-aware summary on page load
+b28bd51 Auto-show local context on page load
+fb4ba3b Add live bus arrivals via TfL API
+e3d5347 Add speech-to-text input
+80efb25 Add service worker for offline support
 ```
 
 ### To Continue
