@@ -1,11 +1,35 @@
-## The Model - READ THIS FIRST
+## START HERE - Bugs to Fix First
+
+### Priority Bugs (reported 2026-01-01 15:30)
+
+1. **Location not updating** - Shows Whitton when user is in Hampton
+2. **Cards/messages disappearing** - Bus update and local info gone after refresh
+3. **Local info not clickable** - Shops should have Map links
+4. **Context splitting** - Weather/prayer as separate message, location line missing
+5. **No bus info in Hampton** - Agent might not have indexed, or no stops in radius
+
+### To Debug
+```bash
+# Check Hampton area in quadtree
+curl -s "http://localhost:9090/ping" -X POST -d "lat=51.417&lon=-0.362" | jq .
+
+# Check localStorage in browser console
+JSON.parse(localStorage.getItem('malten_state'))
+
+# Check agent logs
+journalctl -u malten --since "5 minutes ago" | grep -i hampton
+```
+
+---
+
+## The Model
 
 ### User Experience
 Open app → see real world around you instantly:
 - Weather, prayer times, area name
 - Bus/train times, nearby places
 - Move → updates automatically
-- Timeline of events as messages
+- Timeline of messages
 - Same area = same view (shared spatial reality)
 
 ### Five Primitives
@@ -21,69 +45,45 @@ Open app → see real world around you instantly:
 - **Stream = Geo Area** - moving through space = moving through streams
 - **Agent = Per Stream** - each area has an agent maintaining it
 - **Messages = Events in Space** - what happens in that area
+- **Message Formats** - card, map, list, text (presentation layer)
+
+### Storage
+- **Quadtree** (`spatial.json`) - spatial index, server-side, shared
+- **localStorage** - personal timeline, client-side, 24hr, free
+- **Server-side personal** - cross-device sync, paid feature (future)
 
 ---
 
-## Last Session - 2026-01-01 15:00 UTC
+## Last Session Summary - 2026-01-01
 
-### What We Built
-1. Commands as core abstraction
-2. Proactive messages (detect changes, create events)
-3. Message persistence (24hr localStorage)
-4. Expanded agent indexing (trains, tubes, more POIs)
-5. Quadtree-first lookups (no API if cached)
+### Built
+- Commands as core abstraction (dispatch in command pkg)
+- Proactive messages (detect context changes)
+- Message persistence (24hr localStorage)
+- Message deduplication (prevent duplicates)
+- Expanded agent indexing (trains, tubes, bus stops, more POIs)
+- Quadtree-first lookups (cache before API)
+- Status indicator, timestamps, postcodes
 
 ### Agent Indexes
-- Transport: stations, bus stops
-- Food: cafes, restaurants, pubs
-- Health: pharmacies, clinics
-- Services: banks, ATMs, post offices
-- Shopping: supermarkets, bakeries
+Transport: stations, bus stops | Food: cafes, restaurants, pubs
+Health: pharmacies, clinics | Services: banks, ATMs, post offices
+Shopping: supermarkets, bakeries | Live: weather, prayer, arrivals (30s)
 
-### Live Data (30s)
-- Weather + rain forecast
-- Prayer times
-- Bus/tube/rail arrivals
-
-### Open Question
-If streams = geo areas, what about private/custom streams?
-- Option 1: Remove - pure spatial
-- Option 2: Keep with prefix (~private, @user)
-- Option 3: Hybrid - default geo, can create others
-
-### Git: 094dc25
-
-### To Continue
-1. Implement geohash → stream mapping
-2. Auto-switch stream on move
-3. Decide on private streams
-4. Map message format
-5. Agent learning/prediction
+### Git
+```
+a832731 Document bugs
+bc04e8e Document the model
+094dc25 Messages are primitive, formats are presentation
+ff27847 Deduplicate cards
+396aa26 Expand agent indexing
+```
 
 ---
 
-## Bugs to Fix (reported 2026-01-01)
+## Next Up (after bugs)
 
-### 1. Location not updating
-- Shows Whitton when user is in Hampton
-- Geolocation might not be triggering
-- Or location update not calling setLocation properly
-
-### 2. Cards disappearing
-- Bus update and local info disappeared after some time
-- localStorage might be getting cleared/overwritten
-- Or deduplication logic too aggressive?
-
-### 3. Local info not clickable
-- Shops/places should have Map links
-- Links might not be rendering
-
-### 4. Context splitting
-- Weather/prayer showing as separate message
-- Location line missing
-- Context string might be malformed
-
-### 5. No bus info in Hampton
-- Agent might not have indexed area
-- Or no bus stops within 100m radius
-- Check quadtree for Hampton area entities
+1. **Geohash → Stream** - Auto-switch stream based on location
+2. **Agent messages to stream** - Post events to geo stream, not just quadtree
+3. **Map message format** - Spatial view
+4. **Agent learning** - Predict, patterns
