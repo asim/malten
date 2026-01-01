@@ -413,15 +413,7 @@ function connectWebSocket() {
     };
 }
 
-function setCurrent() {
-    var current = document.getElementById('current');
-    var stream = getStream();
-    current.innerText = "#" + stream;
-    document.title = stream === "~" ? "Malten" : stream;
-}
-
 function loadStream() {
-    setCurrent();
     connectWebSocket();
     
     var form = document.getElementById('form');
@@ -430,7 +422,6 @@ function loadStream() {
 }
 
 function initialLoad() {
-    setCurrent();
     clearMessages();
     loadMessages();
     connectWebSocket();
@@ -446,11 +437,10 @@ function submitCommand() {
     
     if (prompt.length === 0) return false;
 
-    // Handle goto command locally (with or without slash)
+    // Handle goto command locally (deprecated but keep for compatibility)
     var gotoMatch = prompt.match(/^\/?goto\s+#?(.+)$/i);
     if (gotoMatch) {
         form.elements["prompt"].value = '';
-        window.location.hash = gotoMatch[1];
         return false;
     }
 
@@ -503,15 +493,6 @@ function submitCommand() {
     $.post(commandUrl, data);
 
     form.elements["prompt"].value = '';
-    return false;
-}
-
-function createNewStream() {
-    $.post('/streams', {}, function(data) {
-        if (data && data.stream) {
-            window.location.hash = data.stream;
-        }
-    });
     return false;
 }
 
@@ -797,28 +778,6 @@ function refreshContextFromState() {
     }
 }
 
-function gotoStream(t) {
-    var input = document.getElementById('goto').elements['gstream'];
-    var stream = input.value.replace(/^#+/, '').trim();
-    if (stream.length > 0) {
-        input.value = '';
-        window.location.hash = stream;
-    }
-    return false;
-}
-
-function shareListener() {
-    var shareButton = document.getElementById("share");
-    if (!shareButton) return;
-    
-    shareButton.addEventListener('click', function(e) {
-        e.preventDefault();
-        if (navigator.share) {
-            navigator.share({ title: 'Malten', url: window.location.href });
-        }
-    });
-}
-
 // Speech recognition
 var recognition = null;
 var isListening = false;
@@ -885,8 +844,6 @@ function loadListeners() {
         }
     });
 
-    // hashchange no longer resets UI - streams are determined by location
-    shareListener();
     initSpeech();
 }
 

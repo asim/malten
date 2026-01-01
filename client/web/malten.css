@@ -56,18 +56,6 @@ ul li {
   width: 80%;
 }
 
-#goto {
-  display: inline-block;
-}
-
-#gstream {
-  font-size: 1.0em;
-  margin-left: 2px;
-  width: 50px;
-  text-align: left;
-  border: none;
-}
-
 #head {
   position: sticky;
   top: 0;
@@ -79,10 +67,6 @@ ul li {
 #head a {
   color: #333;
   text-decoration: none;
-}
-
-#nav {
-  float: right;
 }
 
 #present {
@@ -129,12 +113,6 @@ ul li {
 #prompt-line form {
   display: flex;
   align-items: center;
-}
-
-#prompt-line #current {
-  color: rgba(0,0,0,.5);
-  padding-right: 5px;
-  white-space: nowrap;
 }
 
 #prompt-line input {
