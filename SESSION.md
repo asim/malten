@@ -1,25 +1,11 @@
-## QUICK START - Read in 1 Minute
+## QUICK START
 
 ### What is Malten
-Spatial AI. Open app → see world around you. Weather, prayer, buses, places. Moves with you.
-
-### Five Primitives (NEVER CHANGE)
-- **Streams** - geo areas as text channels
-- **Agents** - index areas, build world view
-- **Commands** - all actions
-- **Database** - quadtree (`spatial.json`)
-- **Events** - replayable log (`events.jsonl`)
-
-### Key Files
-- `spatial/` - quadtree, agents, live data
-- `command/` - all commands (dispatch here, not server)
-- `server/` - thin HTTP/WebSocket
-- `client/web/` - PWA, localStorage for personal timeline
+Spatial AI. Open app → see world around you. Weather, prayer, buses, places. Moves with you seamlessly.
 
 ### Run
 ```bash
-cd /home/exedev/malten
-systemctl status malten  # should be running on :9090
+systemctl status malten  # running on :9090
 journalctl -u malten -f  # logs
 ```
 
@@ -28,100 +14,114 @@ journalctl -u malten -f  # logs
 curl -s "http://localhost:9090/ping" -X POST -d "lat=51.417&lon=-0.362" | jq .
 ```
 
-### Current State
-- Agents index POIs from OSM, live data every 30s
-- Context from quadtree (fast), falls back to API
-- Messages persist 24hr in localStorage
-- Cards = message format with timestamp
-
 ---
 
-## START HERE - Bugs Fixed
+## Architecture
 
-### Bugs Fixed (2026-01-01 16:00)
+### Five Primitives (NEVER CHANGE)
+- **Streams** - geohash areas (invisible infrastructure)
+- **Agents** - index areas, build world view
+- **Commands** - actions (natural language, slash optional)
+- **Database** - quadtree (`spatial.json`)
+- **Events** - replayable log (`events.jsonl`)
 
-1. ✅ **Location not updating** - Fixed: reduced maximumAge, enabled high accuracy
-2. ✅ **Cards persist** - Cards stored in localStorage, survive refresh
-3. ✅ **Local info clickable** - "3 cafes" etc. now link to /nearby
-4. ✅ **Context unified** - Location, weather, prayer, bus all in context block
-5. ✅ **Bus info showing** - Increased arrival query radius from 100m to 300m
+### Agentic Model
+Agents are the ONLY thing that fetches external APIs. Users only read from the index.
 
-### To Debug
-```bash
-# Check Hampton area in quadtree
-curl -s "http://localhost:9090/ping" -X POST -d "lat=51.417&lon=-0.362" | jq .
+```
+Agent Loop (background, every 30s):
+  - Index location names (reverse geocode)
+  - Index weather
+  - Index prayer times
+  - Index transport arrivals
+  - Index POIs
 
-# Check localStorage in browser console
-JSON.parse(localStorage.getItem('malten_state'))
+User Request:
+  - Read from spatial index
+  - Zero API calls
+  - Instant response
+```
 
-# Check agent logs
-journalctl -u malten --since "5 minutes ago" | grep -i hampton
+### Seamless Spatial Experience
+Stream/geohash is infrastructure, not UX. User never sees it.
+
+- **Continuous view** - no jumps, no refreshes
+- **Persistent timeline** - cards don't disappear when crossing boundaries
+- **Smooth context updates** - weather, buses, places blend as you move
+- **Silent stream switching** - WebSocket reconnects in background
+
+The two views:
+- **Context (top)** = live view of where you are NOW
+- **Timeline (below)** = YOUR history, everywhere you've been
+
+### Data Flow
+```
+Location → Geohash → Stream ID (invisible)
+                  → Agent for area indexes data
+                  → User queries spatial index
+                  → Context displayed (no fetch)
 ```
 
 ---
 
-## The Model
+## Key Files
+- `spatial/` - quadtree, agents, geohash, live data
+- `command/` - all commands (natural language + slash)
+- `server/` - thin HTTP/WebSocket
+- `client/web/` - PWA (served from disk via -web flag)
 
-### User Experience
-Open app → see real world around you instantly:
-- Weather, prayer times, area name
-- Bus/train times, nearby places
-- Move → updates automatically
-- Timeline of messages
-- Same area = same view (shared spatial reality)
-
-### Five Primitives
-| Primitive | Purpose |
-|-----------|----------|
-| **Streams** | Textual view of geo space. One per area. |
-| **Agents** | Indexers. One per area. Build world view. |
-| **Commands** | Actions. Everything is a command. |
-| **Database** | Quadtree. Spatial index. World state. |
-| **Events** | Replayable log. `events.jsonl` |
-
-### Key Insight
-- **Stream = Geo Area** - moving through space = moving through streams
-- **Agent = Per Stream** - each area has an agent maintaining it
-- **Messages = Events in Space** - what happens in that area
-- **Message Formats** - card, map, list, text (presentation layer)
-
-### Storage
-- **Quadtree** (`spatial.json`) - spatial index, server-side, shared
-- **localStorage** - personal timeline, client-side, 24hr, free
-- **Server-side personal** - cross-device sync, paid feature (future)
+### Dev Mode
+Server runs with `-web=/home/exedev/malten/client/web` - changes to JS/CSS are instant, no rebuild.
 
 ---
 
-## Last Session Summary - 2026-01-01
+## What's Working
 
-### Built
-- Commands as core abstraction (dispatch in command pkg)
-- Proactive messages (detect context changes)
-- Message persistence (24hr localStorage)
-- Message deduplication (prevent duplicates)
-- Expanded agent indexing (trains, tubes, bus stops, more POIs)
-- Quadtree-first lookups (cache before API)
-- Status indicator, timestamps, postcodes
+### Context shows:
+- 📍 Location (street, postcode)
+- Weather + prayer on one line
+- 🚏 Nearest bus stop with arrivals
+- Places: clickable, expand inline with full details
 
-### Agent Indexes
-Transport: stations, bus stops | Food: cafes, restaurants, pubs
-Health: pharmacies, clinics | Services: banks, ATMs, post offices
-Shopping: supermarkets, bakeries | Live: weather, prayer, arrivals (30s)
+### Cards created on:
+- Location change (new street/area)
+- Bus stop arrival
+- Prayer time change
+- Rain warning
 
-### Git
+### Clickable places:
+- All data embedded in context (no API calls on click)
+- Single place shows name (Boots, Waitrose)
+- Multiple shows count (8 places)
+- Click expands to card with address, hours, phone, map link
+
+### Spatial caching:
+- Weather: 5km radius
+- Prayer: 50km radius
+- Transport: per stop, extended TTL if API fails
+- Location: 500m radius, 1hr TTL
+
+---
+
+## Recent Commits
 ```
-a832731 Document bugs
-bc04e8e Document the model
-094dc25 Messages are primitive, formats are presentation
-ff27847 Deduplicate cards
-396aa26 Expand agent indexing
+2488012 Remove stream UI - no more share/new/goto
+18c1644 Add location change cards as you move
+3c99a97 Seamless geohash streams - silent switching
+28868a6 Document seamless spatial experience
+e0b8b82 Agents index everything - zero API calls in GetLiveContext
+ebcc88a Spatial caching for external APIs
+e7c12aa Keep arrivals when TfL API returns empty
+cfa84b1 Include business name in Maps URL
+e40ff52 Map links on new line, underlined
+6523def Embed all places data - zero API calls
 ```
 
 ---
 
-## Next Up (after bugs)
-
-1. **Geohash → Stream** - Auto-switch stream based on location
-2. **Agent messages to stream** - Post events to geo stream, not just quadtree
-3. **Map message format** - Spatial view
-4. **Agent learning** - Predict, patterns
+## UI State
+- Clean header: just logo
+- Prompt: "Ask anything..." (natural language)
+- No visible stream/hash
+- No share/new/goto links
+- Cards persist in localStorage (version 2)
