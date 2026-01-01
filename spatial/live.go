@@ -25,7 +25,7 @@ var httpClient = &http.Client{Timeout: 10 * time.Second}
 // Live data fetch functions - called by agent loops
 
 func fetchWeather(lat, lon float64) *Entity {
-	url := fmt.Sprintf("%s?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&timezone=auto",
+	url := fmt.Sprintf("%s?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&hourly=precipitation_probability&timezone=auto&forecast_hours=6",
 		weatherURL, lat, lon)
 	
 	req, _ := http.NewRequest("GET", url, nil)
@@ -42,21 +42,44 @@ func fetchWeather(lat, lon float64) *Entity {
 			Temperature float64 `json:"temperature_2m"`
 			WeatherCode int     `json:"weather_code"`
 		} `json:"current"`
+		Hourly struct {
+			Time       []string `json:"time"`
+			PrecipProb []int    `json:"precipitation_probability"`
+		} `json:"hourly"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil
 	}
 	
+	// Check rain forecast
+	rainForecast := ""
+	for i, prob := range data.Hourly.PrecipProb {
+		if prob >= 50 && i < len(data.Hourly.Time) {
+			// Parse time to get hour
+			t, _ := time.Parse("2006-01-02T15:04", data.Hourly.Time[i])
+			hour := t.Format("15:04")
+			if i == 0 {
+				rainForecast = fmt.Sprintf("🌧️ Rain likely now (%d%%)", prob)
+			} else {
+				rainForecast = fmt.Sprintf("🌧️ Rain at %s (%d%%)", hour, prob)
+			}
+			break
+		}
+	}
+	
+	name := fmt.Sprintf("%s %.0f°C", weatherIcon(data.Current.WeatherCode), data.Current.Temperature)
+	
 	expiry := time.Now().Add(weatherTTL)
 	return &Entity{
 		ID:   GenerateID(EntityWeather, lat, lon, "weather"),
 		Type: EntityWeather,
-		Name: fmt.Sprintf("%s %.0f°C", weatherIcon(data.Current.WeatherCode), data.Current.Temperature),
+		Name: name,
 		Lat:  lat,
 		Lon:  lon,
 		Data: map[string]interface{}{
-			"temp_c":       data.Current.Temperature,
-			"weather_code": data.Current.WeatherCode,
+			"temp_c":        data.Current.Temperature,
+			"weather_code":  data.Current.WeatherCode,
+			"rain_forecast": rainForecast,
 		},
 		ExpiresAt: &expiry,
 	}
@@ -295,9 +318,14 @@ func GetLiveContext(lat, lon float64) string {
 	
 	// Weather + Prayer on same line
 	var header []string
+	var rainForecast string
 	weather := db.Query(lat, lon, 10000, EntityWeather, 1)
 	if len(weather) > 0 {
 		header = append(header, weather[0].Name)
+		// Extract rain forecast from data
+		if rf, ok := weather[0].Data["rain_forecast"].(string); ok && rf != "" {
+			rainForecast = rf
+		}
 	}
 	prayer := db.Query(lat, lon, 10000, EntityPrayer, 1)
 	if len(prayer) > 0 {
@@ -305,6 +333,9 @@ func GetLiveContext(lat, lon float64) string {
 	}
 	if len(header) > 0 {
 		parts = append(parts, strings.Join(header, " · "))
+	}
+	if rainForecast != "" {
+		parts = append(parts, rainForecast)
 	}
 	
 	// Nearest bus stop with arrivals - am I AT a stop?

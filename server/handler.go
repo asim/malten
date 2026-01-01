@@ -35,9 +35,9 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
 	stream := r.Form.Get("stream")
-	command := r.Form.Get("prompt")
+	input := r.Form.Get("prompt")
 	token := getSessionToken(w, r)
-	if len(command) == 0 {
+	if len(input) == 0 {
 		return
 	}
 
@@ -47,38 +47,55 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// default length
-	if len(command) > MaxMessageSize {
-		command = command[:MaxMessageSize]
+	if len(input) > MaxMessageSize {
+		input = input[:MaxMessageSize]
 	}
 
 	// Save user message first
 	select {
-	case Default.Events <- NewMessage(command, stream):
+	case Default.Events <- NewMessage(input, stream):
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating message", 504)
 		return
 	}
 
 	// Handle slash commands (explicit command syntax)
-	if strings.HasPrefix(command, "/") {
-		handleCommand(command, stream, token)
+	if strings.HasPrefix(input, "/") {
+		handleCommand(input, stream, token)
 		return
 	}
 
 	// Handle navigation commands without slash (goto, new)
-	if cmd := detectNavCommand(command); cmd != "" {
+	if cmd := detectNavCommand(input); cmd != "" {
 		handleCommand(cmd, stream, token)
 		return
 	}
 
+	// Handle walking queries ("how long to walk to X", "walk to X")
+	// Check this BEFORE nearby queries to avoid "walk to Station" matching as "station" nearby
+	if dest := detectWalkQuery(input); dest != "" {
+		if loc := command.GetLocation(token); loc != nil {
+			result, err := command.WalkTo(loc.Lat, loc.Lon, dest)
+			if err != nil {
+				Default.Events <- NewMessage("❌ "+err.Error(), stream)
+			} else {
+				Default.Events <- NewMessage(result, stream)
+			}
+		} else {
+			Default.Events <- NewMessage("📍 Enable location first to get walking time", stream)
+		}
+		return
+	}
+
 	// Handle natural language nearby queries ("cafes near me", "Twickenham cafes")
-	if isNearby, args := detectNearbyQuery(command); isNearby {
+	if isNearby, args := detectNearbyQuery(input); isNearby {
 		Default.Events <- NewMessage(HandleNearbyCommand(args, token), stream)
 		return
 	}
 
+
 	// Everything else goes to AI with tool selection
-	go handleAI(command, stream, token)
+	go handleAI(input, stream, token)
 }
 
 func handleCommand(cmd, stream, token string) {
@@ -175,6 +192,36 @@ func detectNavCommand(input string) string {
 	// Only handle navigation commands client-side can't intercept
 	if cmd == "goto" || cmd == "new" {
 		return "/" + input
+	}
+	return ""
+}
+
+// detectWalkQuery extracts destination from walking queries
+// Handles: "how long to walk to X", "walk to X", "walking time to X", "how far is X"
+func detectWalkQuery(input string) string {
+	input = strings.TrimSpace(input)
+	lower := strings.ToLower(input)
+	
+	// Patterns to match
+	patterns := []string{
+		"how long to walk to ",
+		"how far to walk to ",
+		"walking time to ",
+		"walk time to ",
+		"walk to ",
+		"how far is ",
+		"how long to ",
+	}
+	
+	for _, p := range patterns {
+		if idx := strings.Index(lower, p); idx != -1 {
+			dest := strings.TrimSpace(input[idx+len(p):])
+			// Remove trailing question mark
+			dest = strings.TrimSuffix(dest, "?")
+			if dest != "" {
+				return dest
+			}
+		}
 	}
 	return ""
 }
