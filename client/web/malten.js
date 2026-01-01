@@ -24,9 +24,12 @@ var state = {
             var saved = localStorage.getItem('malten_state');
             if (saved) {
                 var s = JSON.parse(saved);
-                // Clear if version mismatch
+                // Clear cards if version mismatch, keep location
                 if (s.version !== this.version) {
-                    localStorage.removeItem('malten_state');
+                    this.lat = s.lat || null;
+                    this.lon = s.lon || null;
+                    this.cards = [];
+                    this.save();
                     return;
                 }
                 this.lat = s.lat || null;
