@@ -18,11 +18,17 @@ var pendingMessages = {};
 
 // Consolidated state management
 var state = {
+    version: 2, // Increment to clear old state on format change
     load: function() {
         try {
             var saved = localStorage.getItem('malten_state');
             if (saved) {
                 var s = JSON.parse(saved);
+                // Clear if version mismatch
+                if (s.version !== this.version) {
+                    localStorage.removeItem('malten_state');
+                    return;
+                }
                 this.lat = s.lat || null;
                 this.lon = s.lon || null;
                 this.context = s.context || null;
@@ -38,6 +44,7 @@ var state = {
     },
     save: function() {
         localStorage.setItem('malten_state', JSON.stringify({
+            version: this.version,
             lat: this.lat,
             lon: this.lon,
             context: this.context,
