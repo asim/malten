@@ -59,3 +59,31 @@ If streams = geo areas, what about private/custom streams?
 3. Decide on private streams
 4. Map message format
 5. Agent learning/prediction
+
+---
+
+## Bugs to Fix (reported 2026-01-01)
+
+### 1. Location not updating
+- Shows Whitton when user is in Hampton
+- Geolocation might not be triggering
+- Or location update not calling setLocation properly
+
+### 2. Cards disappearing
+- Bus update and local info disappeared after some time
+- localStorage might be getting cleared/overwritten
+- Or deduplication logic too aggressive?
+
+### 3. Local info not clickable
+- Shops/places should have Map links
+- Links might not be rendering
+
+### 4. Context splitting
+- Weather/prayer showing as separate message
+- Location line missing
+- Context string might be malformed
+
+### 5. No bus info in Hampton
+- Agent might not have indexed area
+- Or no bus stops within 100m radius
+- Check quadtree for Hampton area entities
