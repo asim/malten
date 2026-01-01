@@ -3,6 +3,7 @@ package spatial
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -304,6 +305,18 @@ func shortDest(dest string) string {
 	return dest
 }
 
+// haversine calculates distance between two points in km
+func haversine(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371 // Earth's radius in km
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return R * c
+}
+
 // GetLiveContext queries the spatial index for live data near a location
 // This is instant - no API calls, just index lookup
 func GetLiveContext(lat, lon float64) string {
@@ -400,7 +413,48 @@ func reverseGeocode(lat, lon float64) string {
 
 // getNearestStopWithArrivals returns the nearest stop and its arrivals
 func getNearestStopWithArrivals(lat, lon float64) string {
-	// Find very close stops (within 100m - you're basically AT the stop)
+	db := Get()
+	
+	// Query quadtree for arrivals indexed by agent (100m radius)
+	arrivals := db.Query(lat, lon, 100, EntityArrival, 3)
+	if len(arrivals) > 0 {
+		// Use cached arrival data from quadtree
+		arr := arrivals[0]
+		stopName, _ := arr.Data["stop_name"].(string)
+		arrData, _ := arr.Data["arrivals"].([]interface{})
+		
+		if len(arrData) == 0 {
+			return fmt.Sprintf("🚏 %s (no buses)", stopName)
+		}
+		
+		// Format arrivals from cached data
+		var lines []string
+		dist := haversine(lat, lon, arr.Lat, arr.Lon) * 1000 // km to m
+		if dist < 30 {
+			lines = append(lines, fmt.Sprintf("🚏 At %s", stopName))
+		} else {
+			lines = append(lines, fmt.Sprintf("🚏 %s (%.0fm)", stopName, dist))
+		}
+		
+		for i, a := range arrData {
+			if i >= 3 {
+				break
+			}
+			if amap, ok := a.(map[string]interface{}); ok {
+				line, _ := amap["line"].(string)
+				dest, _ := amap["destination"].(string)
+				mins, _ := amap["minutes"].(float64)
+				if mins <= 1 {
+					lines = append(lines, fmt.Sprintf("   %s → %s arriving now", line, shortDest(dest)))
+				} else {
+					lines = append(lines, fmt.Sprintf("   %s → %s in %.0fm", line, shortDest(dest), mins))
+				}
+			}
+		}
+		return strings.Join(lines, "\n")
+	}
+	
+	// Fallback: no cached data, query TfL directly (agent may not have indexed yet)
 	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=100",
 		tflBaseURL, lat, lon)
 	
@@ -424,10 +478,9 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		return ""
 	}
 	
-	// Get arrivals for nearest stop
 	stop := stops.StopPoints[0]
-	arrivals := fetchStopArrivals(stop.NaptanID)
-	if len(arrivals) == 0 {
+	fetchedArrivals := fetchStopArrivals(stop.NaptanID)
+	if len(fetchedArrivals) == 0 {
 		return fmt.Sprintf("🚏 %s (no buses)", stop.CommonName)
 	}
 	
@@ -440,7 +493,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 	}
 	
 	// Show next 3 arrivals
-	for i, arr := range arrivals {
+	for i, arr := range fetchedArrivals {
 		if i >= 3 {
 			break
 		}
