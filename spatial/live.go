@@ -591,8 +591,8 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		return strings.Join(lines, "\n")
 	}
 	
-	// Fallback: no cached data, query TfL directly (agent may not have indexed yet)
-	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=100",
+	// Fallback: no cached data with arrivals, query TfL directly
+	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=300",
 		tflBaseURL, lat, lon)
 	
 	req, _ := http.NewRequest("GET", url, nil)
