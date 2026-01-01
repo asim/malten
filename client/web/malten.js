@@ -362,11 +362,6 @@ function loadStream() {
     form.elements["prompt"].focus();
 }
 
-function submitNearby(type) {
-    document.getElementById('prompt').value = '/nearby ' + type;
-    submitCommand();
-}
-
 function submitCommand() {
     var form = document.getElementById('form');
     var prompt = form.elements["prompt"].value.trim();
@@ -418,11 +413,16 @@ function submitCommand() {
     };
     displayMessages([msg], 1);
 
-    // Post to /commands
-    $.post(commandUrl, {
+    // Post to /commands with location if available
+    var data = {
         prompt: prompt,
         stream: getStream()
-    });
+    };
+    if (state.hasLocation()) {
+        data.lat = state.lat;
+        data.lon = state.lon;
+    }
+    $.post(commandUrl, data);
 
     form.elements["prompt"].value = '';
     return false;
@@ -534,14 +534,63 @@ function displayContext(text) {
     contextDisplayed = true;
     // Render in persistent context div, not messages
     var ctx = document.getElementById('context');
-    // Make place counts clickable (e.g., "3 cafes" -> link to /nearby cafes)
-    var html = text.replace(/\n/g, '<br>');
-    html = html.replace(/(\d+)\s+(cafes?|restaurants?|pubs?|shops?|supermarkets?|pharmacies?|banks?|stations?)/gi, function(match, count, type) {
-        var singular = type.replace(/s$/, '').replace(/ies$/, 'y');
-        return '<a href="#" onclick="submitNearby(\'' + singular + '\'); return false;">' + match + '</a>';
-    });
+    var html = makeClickable(text).replace(/\n/g, '<br>');
     ctx.innerHTML = html;
     ctx.style.display = text ? 'block' : 'none';
+}
+
+// Make place names and counts clickable
+function makeClickable(text) {
+    var html = text;
+    
+    // Match "3 cafes", "2 restaurants" etc -> /nearby type
+    html = html.replace(/(\d+)\s+(cafes?|restaurants?|pubs?|shops?|supermarkets?|pharmacies?|banks?|stations?)/gi, function(match, count, type) {
+        var singular = type.replace(/s$/, '').replace(/ies$/, 'y');
+        return '<a href="#" class="place-link" data-type="category" data-query="/nearby ' + singular + '">' + match + '</a>';
+    });
+    
+    // Match [id:name] format for single places with known ID
+    html = html.replace(/([☕🍽️💊🛒🏪])\s+\[([^:]+):([^\]]+)\]/g, function(match, icon, id, name) {
+        return icon + ' <a href="#" class="place-link" data-type="place" data-id="' + id + '" data-name="' + name + '">' + name + '</a>';
+    });
+    
+    return html;
+}
+
+// Handle clicks on place links
+$(document).on('click', '.place-link', function(e) {
+    e.preventDefault();
+    var type = $(this).data('type');
+    
+    if (type === 'category') {
+        // Category search like "3 cafes"
+        document.getElementById('prompt').value = $(this).data('query');
+    } else if (type === 'place') {
+        // Single place with ID - fetch and expand inline
+        var id = $(this).data('id');
+        var link = $(this);
+        fetchPlaceDetails(id, link);
+    }
+});
+
+// Fetch place details and show as card
+function fetchPlaceDetails(id, linkElement) {
+    $.get('/place/' + id).done(function(data) {
+        // Build details as a card message
+        var details = '📍 ' + data.name;
+        if (data.address) details += '\n' + data.address;
+        if (data.postcode) details += ', ' + data.postcode;
+        if (data.hours) details += '\n🕒 ' + data.hours;
+        if (data.phone) details += '\n📞 ' + data.phone;
+        details += '\n<a href="https://www.google.com/maps/search/' + encodeURIComponent(data.name) + '/@' + data.lat + ',' + data.lon + ',17z" target="_blank">Open in Maps</a>';
+        
+        // Show as card in messages
+        displaySystemMessage(details);
+    }).fail(function() {
+        // Fallback to map link
+        var name = linkElement.data('name') || linkElement.text();
+        window.open('https://www.google.com/maps/search/' + encodeURIComponent(name), '_blank');
+    });
 }
 
 function displaySystemMessage(text, timestamp) {
@@ -554,9 +603,10 @@ function displaySystemMessage(text, timestamp) {
     }
     var cardType = getCardType(text);
     var card = document.createElement('li');
+    var html = makeClickable(text).replace(/\n/g, '<br>');
     card.innerHTML = '<div class="card ' + cardType + '">' +
         '<span class="card-time">' + time + '</span>' +
-        text.replace(/\n/g, '<br>') +
+        html +
         '</div>';
     
     var messages = document.getElementById('messages');
@@ -568,9 +618,10 @@ function displayCardAtEnd(text, timestamp) {
     var time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     var cardType = getCardType(text);
     var card = document.createElement('li');
+    var html = makeClickable(text).replace(/\n/g, '<br>');
     card.innerHTML = '<div class="card ' + cardType + '">' +
         '<span class="card-time">' + time + '</span>' +
-        text.replace(/\n/g, '<br>') +
+        html +
         '</div>';
     
     var messages = document.getElementById('messages');
@@ -614,15 +665,11 @@ function hideStatus() {
 
 function sendLocation(lat, lon) {
     state.setLocation(lat, lon);
-    showStatus('Updating...');
     $.post(pingUrl, { lat: lat, lon: lon }).done(function(data) {
-        hideStatus();
         if (data.context) {
             state.setContext(data.context);
             displayContext(data.context);
         }
-    }).fail(function() {
-        hideStatus();
     });
 }
 

@@ -526,7 +526,8 @@ func getPlacesSummary(db *DB, lat, lon float64) string {
 		if len(places) > 0 {
 			icon := icons[cat]
 			if len(places) == 1 {
-				summary = append(summary, fmt.Sprintf("%s %s", icon, places[0].Name))
+				// Single place: include ID for direct lookup
+				summary = append(summary, fmt.Sprintf("%s [%s:%s]", icon, places[0].ID, places[0].Name))
 			} else {
 				summary = append(summary, fmt.Sprintf("%s %d %ss", icon, len(places), cat))
 			}

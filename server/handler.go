@@ -69,9 +69,21 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		Session: token,
 		Input:   input,
 	}
-	if loc := command.GetLocation(token); loc != nil {
-		ctx.Lat = loc.Lat
-		ctx.Lon = loc.Lon
+	// First try location from POST (inline with command)
+	if latStr := r.Form.Get("lat"); latStr != "" {
+		if lat, err := strconv.ParseFloat(latStr, 64); err == nil {
+			if lon, err := strconv.ParseFloat(r.Form.Get("lon"), 64); err == nil {
+				ctx.Lat = lat
+				ctx.Lon = lon
+			}
+		}
+	}
+	// Fall back to session location
+	if ctx.Lat == 0 && ctx.Lon == 0 {
+		if loc := command.GetLocation(token); loc != nil {
+			ctx.Lat = loc.Lat
+			ctx.Lon = loc.Lon
+		}
 	}
 
 	// Try command dispatch (handles /commands and natural language)

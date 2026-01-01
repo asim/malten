@@ -237,7 +237,7 @@ func (d *DB) FindByName(lat, lon, radiusMeters float64, name string, limit int) 
 
 	filter := func(p *quadtree.Point) bool {
 		entity, ok := p.Data().(*Entity)
-		if !ok {
+		if !ok || entity.Type != EntityPlace {
 			return false
 		}
 		if entity.ExpiresAt != nil && time.Now().After(*entity.ExpiresAt) {
@@ -255,6 +255,22 @@ func (d *DB) FindByName(lat, lon, radiusMeters float64, name string, limit int) 
 		}
 	}
 	return results
+}
+
+// GetByID retrieves an entity by its ID
+func (d *DB) GetByID(id string) *Entity {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	
+	if point, ok := d.entities[id]; ok {
+		if entity, ok := point.Data().(*Entity); ok {
+			if entity.ExpiresAt != nil && time.Now().After(*entity.ExpiresAt) {
+				return nil
+			}
+			return entity
+		}
+	}
+	return nil
 }
 
 // Close closes the database

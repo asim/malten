@@ -33,6 +33,7 @@ func main() {
 
 	http.HandleFunc("/ping", server.PingHandler)
 	http.HandleFunc("/context", server.ContextHandler)
+	http.HandleFunc("/place/", server.PlaceHandler)
 
 	http.HandleFunc("/commands", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
