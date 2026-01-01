@@ -27,6 +27,13 @@ var httpClient = &http.Client{Timeout: 10 * time.Second}
 // Live data fetch functions - called by agent loops
 
 func fetchWeather(lat, lon float64) *Entity {
+	// Check spatial cache first - weather valid for ~5km
+	db := Get()
+	cached := db.Query(lat, lon, 5000, EntityWeather, 1)
+	if len(cached) > 0 && cached[0].ExpiresAt != nil && time.Now().Before(*cached[0].ExpiresAt) {
+		return nil // Already have fresh data nearby
+	}
+	
 	url := fmt.Sprintf("%s?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&hourly=precipitation_probability&timezone=auto&forecast_hours=6",
 		weatherURL, lat, lon)
 	
@@ -88,6 +95,13 @@ func fetchWeather(lat, lon float64) *Entity {
 }
 
 func fetchPrayerTimes(lat, lon float64) *Entity {
+	// Check spatial cache first - prayer times valid for ~50km (same city)
+	db := Get()
+	cached := db.Query(lat, lon, 50000, EntityPrayer, 1)
+	if len(cached) > 0 && cached[0].ExpiresAt != nil && time.Now().Before(*cached[0].ExpiresAt) {
+		return nil // Already have fresh data nearby
+	}
+	
 	now := time.Now()
 	url := fmt.Sprintf("%s/%s?latitude=%.2f&longitude=%.2f&method=2",
 		prayerTimesURL, now.Format("02-01-2006"), lat, lon)
@@ -172,6 +186,19 @@ func fetchBusArrivals(lat, lon float64) []*Entity {
 // stopType: NaptanPublicBusCoachTram, NaptanMetroStation, NaptanRailStation
 // icon: 🚌 🚇 🚆
 func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
+	// Check if we have fresh arrivals in this area already
+	db := Get()
+	cached := db.Query(lat, lon, 500, EntityArrival, 3)
+	freshCount := 0
+	for _, arr := range cached {
+		if arr.ExpiresAt != nil && time.Now().Before(*arr.ExpiresAt) {
+			freshCount++
+		}
+	}
+	if freshCount >= 2 {
+		return nil // Already have fresh arrivals nearby
+	}
+	
 	// Get nearby stops
 	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=%s&radius=500",
 		tflBaseURL, lat, lon, stopType)
