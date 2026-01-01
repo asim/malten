@@ -3,6 +3,7 @@ var messageUrl = "/messages";
 var streamUrl = "/streams";
 var eventUrl = "/events";
 var pingUrl = "/ping";
+var contextUrl = "/context";
 var limit = 25;
 var locationEnabled = false;
 var locationWatchId = null;
@@ -322,6 +323,8 @@ function requestLocation() {
             }).done(function(data) {
                 console.log("Ping response:", data);
                 displaySystemMessage("📍 Location enabled (" + lat.toFixed(4) + ", " + lon.toFixed(4) + ")");
+                // Fetch local context
+                fetchLocalContext(lat, lon);
             }).fail(function(err) {
                 console.log("Ping error:", err);
                 displaySystemMessage("📍 Location error: Failed to send to server");
@@ -381,6 +384,14 @@ function startLocationWatch() {
         },
         { enableHighAccuracy: false, timeout: 30000, maximumAge: 60000 }
     );
+}
+
+function fetchLocalContext(lat, lon) {
+    $.get(contextUrl, { lat: lat, lon: lon }).done(function(data) {
+        if (data.context && data.context.length > 0) {
+            displaySystemMessage(data.context);
+        }
+    });
 }
 
 function displaySystemMessage(text) {

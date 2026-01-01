@@ -108,6 +108,7 @@ func handleCommand(cmd, stream, token string) {
 /goto <stream> - Switch to a stream
 /ping on|off - Enable/disable location sharing
 /nearby <type> - Find nearby places (cafes, restaurants, etc)
+/bus - Live bus arrivals nearby
 /price <coin> - Get crypto price
 /reminder [query] - Daily reminder or search Islamic texts
 /chat <question> - Ask AI with real-time context
@@ -153,6 +154,9 @@ func handleCommand(cmd, stream, token string) {
 
 	case "nearby", "near":
 		Default.Events <- NewMessage(HandleNearbyCommand(args, token), stream)
+
+	case "bus", "buses":
+		Default.Events <- NewMessage(command.HandleBusCommand(token), stream)
 
 	case "agents":
 		Default.Events <- NewMessage(HandleAgentsCommand(), stream)

@@ -41,6 +41,33 @@ func getSessionToken(w http.ResponseWriter, r *http.Request) string {
 	return token
 }
 
+// ContextHandler returns local context for a location
+func ContextHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	latStr := r.Form.Get("lat")
+	lonStr := r.Form.Get("lon")
+
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil {
+		http.Error(w, "Invalid latitude", 400)
+		return
+	}
+
+	lon, err := strconv.ParseFloat(lonStr, 64)
+	if err != nil {
+		http.Error(w, "Invalid longitude", 400)
+		return
+	}
+
+	context := command.GetLocalContext(lat, lon)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"context": context,
+	})
+}
+
 // PingHandler receives location updates from clients
 func PingHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
