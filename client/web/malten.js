@@ -433,6 +433,36 @@ function checkLocationEnabled() {
     }
 }
 
+// Get location immediately and show context - this is a spatial app
+function getLocationAndContext() {
+    if (!navigator.geolocation) return;
+    
+    navigator.geolocation.getCurrentPosition(
+        function(pos) {
+            var lat = pos.coords.latitude;
+            var lon = pos.coords.longitude;
+            
+            // Store for future queries
+            locationEnabled = true;
+            localStorage.setItem('locationEnabled', 'true');
+            
+            // Send to server
+            $.post(pingUrl, { lat: lat, lon: lon });
+            
+            // Get and show local context immediately
+            fetchLocalContext(lat, lon);
+            
+            // Start watching for movement
+            startLocationWatch();
+        },
+        function(err) {
+            // Silent fail - user can enable manually
+            console.log("Location not available:", err.message);
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+    );
+}
+
 function gotoStream(t) {
     var input = document.getElementById('goto').elements['gstream'];
     var stream = input.value.replace(/^#+/, '').trim();
@@ -536,5 +566,6 @@ if ('serviceWorker' in navigator) {
 $(document).ready(function() {
     loadListeners();
     loadStream();
-    checkLocationEnabled();
+    // Always try to get location on load - this is a spatial app
+    getLocationAndContext();
 });

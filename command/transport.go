@@ -7,7 +7,14 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/asim/malten/spatial"
 )
+
+// GetSpatialDB returns the spatial database
+func GetSpatialDB() *spatial.DB {
+	return spatial.Get()
+}
 
 const tflBaseURL = "https://api.tfl.gov.uk"
 
@@ -104,7 +111,7 @@ func GetLocalContext(lat, lon float64) string {
 		var busInfo []string
 
 		for _, stop := range stops {
-			if seen[stop.CommonName] || len(busInfo) >= 3 {
+			if seen[stop.CommonName] || len(busInfo) >= 2 {
 				continue
 			}
 			seen[stop.CommonName] = true
@@ -136,11 +143,66 @@ func GetLocalContext(lat, lon float64) string {
 		}
 	}
 
+	// Add nearby places summary from spatial DB
+	placesSummary := getNearbyPlacesSummary(lat, lon)
+	if placesSummary != "" {
+		parts = append(parts, placesSummary)
+	}
+
 	if len(parts) == 0 {
 		return ""
 	}
 
-	return strings.Join(parts, "\n\n")
+	return strings.Join(parts, "\n")
+}
+
+// getNearbyPlacesSummary returns a compact summary of nearby POIs
+func getNearbyPlacesSummary(lat, lon float64) string {
+	db := GetSpatialDB()
+	if db == nil {
+		return ""
+	}
+
+	// Get counts by category
+	categories := []string{"cafe", "restaurant", "pharmacy", "supermarket"}
+	var summary []string
+
+	for _, cat := range categories {
+		places := db.QueryPlaces(lat, lon, 500, cat, 10)
+		if len(places) > 0 {
+			icon := categoryIcon(cat)
+			if len(places) == 1 {
+				summary = append(summary, fmt.Sprintf("%s %s", icon, places[0].Name))
+			} else {
+				summary = append(summary, fmt.Sprintf("%s %d %ss", icon, len(places), cat))
+			}
+		}
+	}
+
+	if len(summary) == 0 {
+		return ""
+	}
+
+	return strings.Join(summary, " · ")
+}
+
+func categoryIcon(cat string) string {
+	switch cat {
+	case "cafe":
+		return "☕"
+	case "restaurant":
+		return "🍽️"
+	case "pharmacy":
+		return "💊"
+	case "supermarket":
+		return "🛒"
+	case "bank":
+		return "🏦"
+	case "fuel":
+		return "⛽"
+	default:
+		return "📍"
+	}
 }
 
 // shortDest shortens destination names
