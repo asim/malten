@@ -273,6 +273,18 @@ func (d *DB) GetByID(id string) *Entity {
 	return nil
 }
 
+// ExtendArrivalsTTL extends the expiry of arrivals near a location
+// Used when API returns empty to preserve existing data
+func (d *DB) ExtendArrivalsTTL(lat, lon, radiusMeters float64) {
+	arrivals := d.Query(lat, lon, radiusMeters, EntityArrival, 10)
+	for _, arr := range arrivals {
+		if arr.ExpiresAt != nil {
+			newExpiry := time.Now().Add(2 * time.Minute)
+			arr.ExpiresAt = &newExpiry
+		}
+	}
+}
+
 // Close closes the database
 func (d *DB) Close() error {
 	d.mu.Lock()

@@ -151,24 +151,33 @@ func updateLiveData(agent *Entity) {
 	
 	// Buses
 	busArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanPublicBusCoachTram", "🚌")
-	for _, arr := range busArrivals {
-		db.Insert(arr)
+	if len(busArrivals) > 0 {
+		for _, arr := range busArrivals {
+			db.Insert(arr)
+		}
+		totalArrivals += len(busArrivals)
+	} else {
+		// API returned nothing - extend existing arrivals TTL
+		db.ExtendArrivalsTTL(agent.Lat, agent.Lon, 500)
 	}
-	totalArrivals += len(busArrivals)
 	
 	// Tube stations
 	tubeArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanMetroStation", "🚇")
-	for _, arr := range tubeArrivals {
-		db.Insert(arr)
+	if len(tubeArrivals) > 0 {
+		for _, arr := range tubeArrivals {
+			db.Insert(arr)
+		}
+		totalArrivals += len(tubeArrivals)
 	}
-	totalArrivals += len(tubeArrivals)
 	
 	// Rail stations (Overground, National Rail)
 	railArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanRailStation", "🚆")
-	for _, arr := range railArrivals {
-		db.Insert(arr)
+	if len(railArrivals) > 0 {
+		for _, arr := range railArrivals {
+			db.Insert(arr)
+		}
+		totalArrivals += len(railArrivals)
 	}
-	totalArrivals += len(railArrivals)
 	
 	log.Printf("[agent] %s live update: %d arrivals", agent.Name, totalArrivals)
 	
