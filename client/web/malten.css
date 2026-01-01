@@ -238,3 +238,61 @@ ul li {
   line-height: 1.8;
   font-size: 13px;
 }
+
+/* Cards - timeline events */
+.card {
+  background: #f8f9fa;
+  padding: 10px 15px;
+  margin: 8px 0;
+  border-radius: 8px;
+  border-left: 3px solid #ccc;
+  position: relative;
+}
+
+.card .card-time {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 11px;
+  color: #999;
+}
+
+.card.card-location {
+  border-left-color: #e74c3c;
+}
+
+.card.card-transport {
+  border-left-color: #3498db;
+}
+
+.card.card-weather {
+  border-left-color: #f39c12;
+}
+
+.card.card-prayer {
+  border-left-color: #27ae60;
+}
+
+/* Status indicator */
+#status {
+  display: none;
+  padding: 8px 15px;
+  margin: 0 10px;
+  font-size: 12px;
+  color: #666;
+}
+
+#status.active {
+  display: block;
+}
+
+#status::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4a9eff;
+  margin-right: 8px;
+  animation: pulse 1s infinite;
+}

@@ -500,14 +500,25 @@ function displayContext(text) {
 }
 
 function displaySystemMessage(text) {
-    var msg = {
-        Id: 'system-' + Date.now(),
-        Text: text,
-        Created: Date.now() * 1e6,
-        Type: 'message',
-        Stream: getStream()
-    };
-    displayMessages([msg], 1);
+    // Create a card in the messages area
+    var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var cardType = getCardType(text);
+    var card = document.createElement('li');
+    card.innerHTML = '<div class="card ' + cardType + '">' +
+        '<span class="card-time">' + time + '</span>' +
+        text.replace(/\n/g, '<br>') +
+        '</div>';
+    
+    var messages = document.getElementById('messages');
+    messages.insertBefore(card, messages.firstChild);
+}
+
+function getCardType(text) {
+    if (text.indexOf('🚏') >= 0 || text.indexOf('🚌') >= 0) return 'card-transport';
+    if (text.indexOf('🌧️') >= 0 || text.indexOf('☀️') >= 0 || text.indexOf('⛅') >= 0) return 'card-weather';
+    if (text.indexOf('🕌') >= 0) return 'card-prayer';
+    if (text.indexOf('📍') >= 0) return 'card-location';
+    return '';
 }
 
 function disableLocation() {
@@ -517,13 +528,28 @@ function disableLocation() {
     }
 }
 
+function showStatus(msg) {
+    var el = document.getElementById('status');
+    el.textContent = msg;
+    el.classList.add('active');
+}
+
+function hideStatus() {
+    var el = document.getElementById('status');
+    el.classList.remove('active');
+}
+
 function sendLocation(lat, lon) {
     state.setLocation(lat, lon);
+    showStatus('Updating...');
     $.post(pingUrl, { lat: lat, lon: lon }).done(function(data) {
+        hideStatus();
         if (data.context) {
             state.setContext(data.context);
             displayContext(data.context);
         }
+    }).fail(function() {
+        hideStatus();
     });
 }
 

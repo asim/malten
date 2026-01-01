@@ -369,9 +369,10 @@ func reverseGeocode(lat, lon float64) string {
 	
 	var data struct {
 		Address struct {
-			Road   string `json:"road"`
-			Suburb string `json:"suburb"`
-			Town   string `json:"town"`
+			Road     string `json:"road"`
+			Suburb   string `json:"suburb"`
+			Town     string `json:"town"`
+			Postcode string `json:"postcode"`
 		} `json:"address"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
@@ -379,7 +380,11 @@ func reverseGeocode(lat, lon float64) string {
 	}
 	
 	road := data.Address.Road
-	area := data.Address.Suburb
+	// Prefer postcode over suburb/town - clearer for users
+	area := data.Address.Postcode
+	if area == "" {
+		area = data.Address.Suburb
+	}
 	if area == "" {
 		area = data.Address.Town
 	}
