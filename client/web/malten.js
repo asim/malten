@@ -362,6 +362,11 @@ function loadStream() {
     form.elements["prompt"].focus();
 }
 
+function submitNearby(type) {
+    document.getElementById('prompt').value = '/nearby ' + type;
+    submitCommand();
+}
+
 function submitCommand() {
     var form = document.getElementById('form');
     var prompt = form.elements["prompt"].value.trim();
@@ -473,7 +478,7 @@ function requestLocation() {
         function(err) {
             console.log("Location error:", err.message);
         },
-        { enableHighAccuracy: false, timeout: 30000, maximumAge: 300000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
 }
 
@@ -492,7 +497,7 @@ function sendFreshLocation() {
         function(err) {
             console.log("Fresh location error:", err.message);
         },
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
 }
 
@@ -511,7 +516,7 @@ function startLocationWatch() {
         function(err) {
             console.log("Location watch error:", err.message);
         },
-        { enableHighAccuracy: false, timeout: 30000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
     );
 }
 
@@ -529,7 +534,13 @@ function displayContext(text) {
     contextDisplayed = true;
     // Render in persistent context div, not messages
     var ctx = document.getElementById('context');
-    ctx.innerHTML = text.replace(/\n/g, '<br>');
+    // Make place counts clickable (e.g., "3 cafes" -> link to /nearby cafes)
+    var html = text.replace(/\n/g, '<br>');
+    html = html.replace(/(\d+)\s+(cafes?|restaurants?|pubs?|shops?|supermarkets?|pharmacies?|banks?|stations?)/gi, function(match, count, type) {
+        var singular = type.replace(/s$/, '').replace(/ies$/, 'y');
+        return '<a href="#" onclick="submitNearby(\'' + singular + '\'); return false;">' + match + '</a>';
+    });
+    ctx.innerHTML = html;
     ctx.style.display = text ? 'block' : 'none';
 }
 
@@ -638,7 +649,7 @@ function getLocationAndContext() {
             console.log("Location error:", err.message);
             refreshContextFromState();
         },
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
     );
 }
 

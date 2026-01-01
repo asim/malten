@@ -424,8 +424,8 @@ func reverseGeocode(lat, lon float64) string {
 func getNearestStopWithArrivals(lat, lon float64) string {
 	db := Get()
 	
-	// Query quadtree for arrivals indexed by agent (100m radius)
-	arrivals := db.Query(lat, lon, 100, EntityArrival, 3)
+	// Query quadtree for arrivals indexed by agent (300m radius to catch nearby stops)
+	arrivals := db.Query(lat, lon, 300, EntityArrival, 3)
 	if len(arrivals) > 0 {
 		// Use cached arrival data from quadtree
 		arr := arrivals[0]

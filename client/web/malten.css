@@ -239,6 +239,16 @@ ul li {
   font-size: 13px;
 }
 
+#context a {
+  color: #4a9eff;
+  text-decoration: none;
+  border-bottom: 1px dotted #4a9eff;
+}
+
+#context a:hover {
+  border-bottom-style: solid;
+}
+
 /* Cards - timeline events */
 .card {
   background: #f8f9fa;
