@@ -1,4 +1,4 @@
-const CACHE_NAME = 'malten-v8';
+const CACHE_NAME = 'malten-v9';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

@@ -5,7 +5,6 @@ var eventUrl = "/events";
 var pingUrl = "/ping";
 var contextUrl = "/context";
 var limit = 25;
-var locationEnabled = false;
 var locationWatchId = null;
 var last = timeAgo();
 var maxChars = 1024;
@@ -16,6 +15,48 @@ var ws = null;
 var currentStream = null;
 var reconnectTimer = null;
 var pendingMessages = {};
+
+// Consolidated state management
+var state = {
+    load: function() {
+        try {
+            var saved = localStorage.getItem('malten_state');
+            if (saved) {
+                var s = JSON.parse(saved);
+                this.lat = s.lat || null;
+                this.lon = s.lon || null;
+                this.context = s.context || null;
+                this.contextTime = s.contextTime || 0;
+            }
+        } catch(e) {}
+    },
+    save: function() {
+        localStorage.setItem('malten_state', JSON.stringify({
+            lat: this.lat,
+            lon: this.lon,
+            context: this.context,
+            contextTime: this.contextTime
+        }));
+    },
+    setLocation: function(lat, lon) {
+        this.lat = lat;
+        this.lon = lon;
+        this.save();
+    },
+    setContext: function(ctx) {
+        this.context = ctx;
+        this.contextTime = Date.now();
+        this.save();
+    },
+    hasLocation: function() {
+        return this.lat && this.lon;
+    },
+    lat: null,
+    lon: null,
+    context: null,
+    contextTime: 0
+};
+state.load();
 
 String.prototype.parseURL = function() {
     // Match URLs including @, commas, %, etc
@@ -244,7 +285,7 @@ function submitCommand() {
 
     // Handle nearby - send fresh location before query
     var nearbyMatch = prompt.match(/^\/?nearby\s+/i);
-    if (nearbyMatch && locationEnabled) {
+    if (nearbyMatch && state.hasLocation()) {
         sendFreshLocation();
     }
 
@@ -306,43 +347,15 @@ function enableLocation() {
 }
 
 function requestLocation() {
-    // This triggers the permission popup
     navigator.geolocation.getCurrentPosition(
         function(pos) {
-            locationEnabled = true;
-            localStorage.setItem('locationEnabled', 'true');
-            
-            var lat = pos.coords.latitude;
-            var lon = pos.coords.longitude;
-            
-            // Send location and wait for confirmation
-            console.log("Sending location:", lat, lon);
-            $.post(pingUrl, {
-                lat: lat,
-                lon: lon
-            }).done(function(data) {
-                console.log("Ping response:", data);
-                displaySystemMessage("📍 Location enabled (" + lat.toFixed(4) + ", " + lon.toFixed(4) + ")");
-                // Fetch local context
-                fetchLocalContext(lat, lon);
-            }).fail(function(err) {
-                console.log("Ping error:", err);
-                displaySystemMessage("📍 Location error: Failed to send to server");
-            });
-            
-            // Start watching
+            state.setLocation(pos.coords.latitude, pos.coords.longitude);
+            $.post(pingUrl, { lat: state.lat, lon: state.lon });
+            fetchLocalContext(state.lat, state.lon);
             startLocationWatch();
         },
         function(err) {
-            console.log("Location error:", err.code, err.message);
-            var msg = "📍 Location error: ";
-            switch(err.code) {
-                case 1: msg += "Permission denied"; break;
-                case 2: msg += "Position unavailable"; break;
-                case 3: msg += "Timeout"; break;
-                default: msg += err.message;
-            }
-            displaySystemMessage(msg);
+            console.log("Location error:", err.message);
         },
         { enableHighAccuracy: false, timeout: 30000, maximumAge: 300000 }
     );
@@ -386,33 +399,11 @@ function startLocationWatch() {
     );
 }
 
-var contextDisplayed = false;
-
 function fetchLocalContext(lat, lon) {
-    // Show cached context immediately if available
-    var cached = localStorage.getItem('lastContext');
-    var cachedLoc = localStorage.getItem('lastContextLoc');
-    var cachedTime = parseInt(localStorage.getItem('lastContextTime') || '0');
-    var now = Date.now();
-    var locKey = lat.toFixed(2) + ',' + lon.toFixed(2);
-    
-    // Show cache if same area and less than 5 min old
-    if (cached && cachedLoc === locKey && (now - cachedTime) < 300000 && !contextDisplayed) {
-        displayContext(cached);
-    }
-    
-    // Fetch fresh in background
     $.get(contextUrl, { lat: lat, lon: lon }).done(function(data) {
         if (data.context && data.context.length > 0) {
-            // Update cache
-            localStorage.setItem('lastContext', data.context);
-            localStorage.setItem('lastContextLoc', locKey);
-            localStorage.setItem('lastContextTime', now.toString());
-            
-            // Display if not already shown or if different
-            if (!contextDisplayed || cached !== data.context) {
-                displayContext(data.context);
-            }
+            state.setContext(data.context);
+            displayContext(data.context);
         }
     });
 }
@@ -437,9 +428,6 @@ function displaySystemMessage(text) {
 }
 
 function disableLocation() {
-    locationEnabled = false;
-    localStorage.setItem('locationEnabled', 'false');
-    
     if (locationWatchId) {
         navigator.geolocation.clearWatch(locationWatchId);
         locationWatchId = null;
@@ -447,69 +435,35 @@ function disableLocation() {
 }
 
 function sendLocation(lat, lon) {
-    console.log("[watch] Sending location:", lat, lon);
-    $.post(pingUrl, {
-        lat: lat,
-        lon: lon
-    }).done(function(data) {
-        console.log("[watch] Ping response:", data);
-    }).fail(function(err) {
-        console.log("[watch] Ping error:", err);
-    });
+    state.setLocation(lat, lon);
+    $.post(pingUrl, { lat: lat, lon: lon });
 }
 
-function checkLocationEnabled() {
-    if (localStorage.getItem('locationEnabled') === 'true') {
-        enableLocation();
-    }
-}
-
-// Get location immediately and show context - this is a spatial app
+// Get location and refresh context
 function getLocationAndContext() {
     if (!navigator.geolocation) {
-        // No geolocation - try to use last known location
-        useLastKnownLocation();
+        refreshContextFromState();
         return;
     }
     
     navigator.geolocation.getCurrentPosition(
         function(pos) {
-            var lat = pos.coords.latitude;
-            var lon = pos.coords.longitude;
-            
-            // Store location
-            locationEnabled = true;
-            localStorage.setItem('locationEnabled', 'true');
-            localStorage.setItem('lastLat', lat.toString());
-            localStorage.setItem('lastLon', lon.toString());
-            
-            // Send to server
-            $.post(pingUrl, { lat: lat, lon: lon });
-            
-            // Get and show local context
-            fetchLocalContext(lat, lon);
-            
-            // Start watching for movement
+            state.setLocation(pos.coords.latitude, pos.coords.longitude);
+            $.post(pingUrl, { lat: state.lat, lon: state.lon });
+            fetchLocalContext(state.lat, state.lon);
             startLocationWatch();
         },
         function(err) {
-            console.log("Location not available:", err.message);
-            // Try last known location
-            useLastKnownLocation();
+            console.log("Location error:", err.message);
+            refreshContextFromState();
         },
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
     );
 }
 
-function useLastKnownLocation() {
-    var lat = parseFloat(localStorage.getItem('lastLat'));
-    var lon = parseFloat(localStorage.getItem('lastLon'));
-    
-    if (lat && lon) {
-        // Refresh context from last known location
-        fetchLocalContext(lat, lon);
-    } else {
-        displaySystemMessage("📍 Enable location to see what's nearby");
+function refreshContextFromState() {
+    if (state.hasLocation()) {
+        fetchLocalContext(state.lat, state.lon);
     }
 }
 
@@ -625,9 +579,7 @@ $(document).ready(function() {
 });
 
 function showCachedContext() {
-    var cached = localStorage.getItem('lastContext');
-    // Always show cached context if we have it - better stale than empty
-    if (cached) {
-        displayContext(cached);
+    if (state.context) {
+        displayContext(state.context);
     }
 }
