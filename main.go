@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"flag"
 	"io/fs"
 	"log"
 	"net/http"
@@ -13,10 +14,23 @@ import (
 //go:embed client/web/*
 var html embed.FS
 
+var webDir = flag.String("web", "", "Serve static files from this directory (dev mode)")
+
 func main() {
-	htmlContent, err := fs.Sub(html, "client/web")
-	if err != nil {
-		log.Fatal(err)
+	flag.Parse()
+	
+	var staticFS http.FileSystem
+	if *webDir != "" {
+		// Dev mode: serve from disk
+		log.Printf("Serving static files from %s", *webDir)
+		staticFS = http.Dir(*webDir)
+	} else {
+		// Production: use embedded files
+		htmlContent, err := fs.Sub(html, "client/web")
+		if err != nil {
+			log.Fatal(err)
+		}
+		staticFS = http.FS(htmlContent)
 	}
 
 	// Initialize AI agent
@@ -26,8 +40,8 @@ func main() {
 		log.Println("AI initialized")
 	}
 
-	// serve the html directory by default
-	http.Handle("/", http.FileServer(http.FS(htmlContent)))
+	// serve static files
+	http.Handle("/", http.FileServer(staticFS))
 
 	http.HandleFunc("/events", server.GetEvents)
 
