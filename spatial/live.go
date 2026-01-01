@@ -3,6 +3,7 @@ package spatial
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -252,6 +253,10 @@ func fetchBusArrivals(lat, lon float64) []*Entity {
 // fetchTransportArrivals gets arrivals for any TfL stop type
 // stopType: NaptanPublicBusCoachTram, NaptanMetroStation, NaptanRailStation
 // icon: 🚌 🚇 🚆
+// fetchTransportArrivals returns:
+//   - slice of entities if new arrivals were fetched
+//   - empty slice if API returned no arrivals (caller should extend TTL)
+//   - nil if skipped because fresh cache exists (caller should not extend TTL)
 func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	// Check if we have fresh arrivals in this area already
 	db := Get()
@@ -263,8 +268,10 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 		}
 	}
 	if freshCount >= 2 {
-		return nil // Already have fresh arrivals nearby
+		log.Printf("[transport] Skipping fetch for %.4f,%.4f - have %d fresh arrivals", lat, lon, freshCount)
+		return nil // nil = skipped, don't extend TTL
 	}
+	log.Printf("[transport] Fetching %s arrivals for %.4f,%.4f (cached fresh: %d)", stopType, lat, lon, freshCount)
 	
 	// Get nearby stops
 	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=%s&radius=500",
@@ -303,8 +310,10 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 		// Get arrivals for this stop
 		arrivals := fetchStopArrivals(stop.NaptanID)
 		if len(arrivals) == 0 {
+			log.Printf("[transport] Stop %s has no arrivals", stop.CommonName)
 			continue
 		}
+		log.Printf("[transport] Stop %s: %d arrivals", stop.CommonName, len(arrivals))
 		
 		// Format arrivals
 		var times []string

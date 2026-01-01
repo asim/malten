@@ -156,15 +156,18 @@ func updateLiveData(agent *Entity) {
 	
 	// Buses
 	busArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanPublicBusCoachTram", "🚌")
-	if len(busArrivals) > 0 {
-		for _, arr := range busArrivals {
-			db.Insert(arr)
+	if busArrivals != nil {
+		if len(busArrivals) > 0 {
+			for _, arr := range busArrivals {
+				db.Insert(arr)
+			}
+			totalArrivals += len(busArrivals)
+		} else {
+			// API returned empty - extend existing arrivals TTL
+			db.ExtendArrivalsTTL(agent.Lat, agent.Lon, 500)
 		}
-		totalArrivals += len(busArrivals)
-	} else {
-		// API returned nothing - extend existing arrivals TTL
-		db.ExtendArrivalsTTL(agent.Lat, agent.Lon, 500)
 	}
+	// nil = skipped because fresh cache exists, don't extend TTL
 	
 	// Tube stations
 	tubeArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanMetroStation", "🚇")
