@@ -14,21 +14,19 @@ curl -s "http://localhost:9090/ping" -X POST -d "lat=51.417&lon=-0.362" | jq .
 - **Database** - quadtree spatial index (spatial.json)
 - **Events** - replayable log (events.jsonl)
 
-### Streams with Channels
-```
-Stream: gcpsxb (Hampton area)
-├── (public) - spatial events everyone sees
-├── @session123 - my questions/responses (private)
-```
-- Empty channel = public
-- @session = addressed to that session
+### Spatial Context
+What you see based on where you are:
+- 📍 Location (street, postcode)
+- Weather, temperature
+- 🕌 Prayer times
+- 🚧 Traffic disruptions (TfL API - within 5km)
+- 🚏 Bus/train arrivals (nearest stop with actual arrivals)
+- ☕🍽️💊 Nearby places
 
-### Commands (thin layer that queries agents)
+### Commands
 - **nearby** - "cafes nearby", spatial search
-- **place** - "what time does X close", specific place info
-- **reminder** - Islamic content
-
-Everything else falls through to AI.
+- **place** - "what time does X close", specific place info  
+- **reminder** - Islamic content (Quran/Hadith)
 
 ## UI Layout
 
@@ -39,36 +37,50 @@ Everything else falls through to AI.
   - older card
 ```
 
-### Card Structure
-Question and answer should be ONE card:
+### Q+A Cards
+Question and answer combined into single card:
 ```
 [Card]
-  Q: cafes nearby
-  A: NEARBY CAFES (cached)
-     • Sun Deck Cafe...
-     • Chino's Cafe...
+  cafes nearby           <- question at top
+  ─────────────────
+  📍 NEARBY CAFES        <- answer below
+  • Sun Deck Cafe...
 ```
-Not two separate cards. Response belongs with its question.
 
-## Current Issues
+## Recent Fixes (This Session)
 
-### ✅ Card structure (FIXED)
+### ✅ Q+A Cards
 - Question and answer now combined into single card
-- Question appears at top, answer below
-- Uses pending card pattern - shows "..." while waiting
+- Shows "..." while waiting for response
+- Purple left border for Q+A cards
 
-### ✅ Bus data intermittent (FIXED)
-- Root cause: when fresh cache existed, skipping fetch but still calling ExtendTTL
-- This kept stale data alive indefinitely
-- Fix: nil = skipped (don't extend TTL), empty slice = API returned nothing (extend TTL)
+### ✅ Bus Data Reliability
+- Fixed TTL extension when cache exists (was extending stale data)
+- Check both directions of bus stops (N/S)
+- Increased search radius to 500m
+- Skip stops with no arrivals, find next with actual arrivals
+- Fallback to TfL API when cache empty
+
+### ✅ Traffic Disruptions
+- Added TfL Road Disruption API
+- Shows serious/moderate disruptions within 5km
+- 🚧 for roadworks, 🚨 for accidents
+
+### ✅ Quadtree Optimization
+- KNearest now collects all candidates first
+- Deduplicates via map, sorts once at end
+- Much faster for spatial queries
 
 ## Recent Commits
 ```
-62c540d Fix: cards reverse chronological (newest top)
-8d8b258 Rename placeinfo to place
-73829c2 Remove unused commands
-f606548 Remove slash commands - spatial-first
-dde1896 Channels within streams: private session messages
+5b48075 Add traffic disruptions to spatial context (TfL API)
+7b9fa12 Remove price command - not spatial
+a17c392 Fix: increase bus search radius to 500m for both cache and fallback
+c9ef222 Fix: check both directions of bus stops
+e536d8c Fix: increase fallback bus stop search radius
+abd838e Fix: skip stops with no arrivals
+5d35394 Fix: don't extend TTL when skipping fetch
+2f32f56 Q+A combined into single card
 ```
 
 ## Key Files
@@ -77,6 +89,8 @@ dde1896 Channels within streams: private session messages
 - `server/` - HTTP/WebSocket, streams, channels
 - `client/web/` - PWA
 
-## Next
-1. Combine question + answer into single card
-2. Investigate bus data reliability
+## Quadtree
+Separate repo: `/home/exedev/quadtree`
+- Uses Haversine for distance
+- WGS-84 ellipsoid for Earth radius
+- Optimized KNearest (94c8fa7)
