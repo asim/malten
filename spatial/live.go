@@ -162,10 +162,18 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 	}
 }
 
+// fetchBusArrivals is deprecated, use fetchTransportArrivals
 func fetchBusArrivals(lat, lon float64) []*Entity {
+	return fetchTransportArrivals(lat, lon, "NaptanPublicBusCoachTram", "🚌")
+}
+
+// fetchTransportArrivals gets arrivals for any TfL stop type
+// stopType: NaptanPublicBusCoachTram, NaptanMetroStation, NaptanRailStation
+// icon: 🚌 🚇 🚆
+func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	// Get nearby stops
-	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=500",
-		tflBaseURL, lat, lon)
+	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=%s&radius=500",
+		tflBaseURL, lat, lon, stopType)
 	
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "Malten/1.0")
@@ -217,13 +225,14 @@ func fetchBusArrivals(lat, lon float64) []*Entity {
 		entities = append(entities, &Entity{
 			ID:   GenerateID(EntityArrival, stop.Lat, stop.Lon, stop.NaptanID),
 			Type: EntityArrival,
-			Name: fmt.Sprintf("🚌 %s: %s", stop.CommonName, strings.Join(times, ", ")),
+			Name: fmt.Sprintf("%s %s: %s", icon, stop.CommonName, strings.Join(times, ", ")),
 			Lat:  stop.Lat,
 			Lon:  stop.Lon,
 			Data: map[string]interface{}{
-				"stop_id":   stop.NaptanID,
-				"stop_name": stop.CommonName,
-				"arrivals":  arrivals,
+				"stop_id":    stop.NaptanID,
+				"stop_name":  stop.CommonName,
+				"stop_type":  stopType,
+				"arrivals":   arrivals,
 			},
 			ExpiresAt: &expiry,
 		})

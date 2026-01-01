@@ -146,13 +146,31 @@ func updateLiveData(agent *Entity) {
 		db.Insert(prayer)
 	}
 	
-	// Bus arrivals
-	arrivals := fetchBusArrivals(agent.Lat, agent.Lon)
-	for _, arr := range arrivals {
+	// Transport arrivals (buses, tubes, trains)
+	var totalArrivals int
+	
+	// Buses
+	busArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanPublicBusCoachTram", "🚌")
+	for _, arr := range busArrivals {
 		db.Insert(arr)
 	}
+	totalArrivals += len(busArrivals)
 	
-	log.Printf("[agent] %s live update: %d arrivals", agent.Name, len(arrivals))
+	// Tube stations
+	tubeArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanMetroStation", "🚇")
+	for _, arr := range tubeArrivals {
+		db.Insert(arr)
+	}
+	totalArrivals += len(tubeArrivals)
+	
+	// Rail stations (Overground, National Rail)
+	railArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanRailStation", "🚆")
+	for _, arr := range railArrivals {
+		db.Insert(arr)
+	}
+	totalArrivals += len(railArrivals)
+	
+	log.Printf("[agent] %s live update: %d arrivals", agent.Name, totalArrivals)
 	
 	// Update agent timestamp
 	agent.Data["last_live"] = time.Now().Format(time.RFC3339)
@@ -184,10 +202,25 @@ func IndexAgent(agent *Entity) {
 	Get().Insert(agent)
 
 	categories := []string{
-		"amenity=cafe", "amenity=restaurant", "amenity=pharmacy",
-		"amenity=hospital", "amenity=bank", "amenity=fuel",
-		"amenity=place_of_worship", "shop=supermarket",
-		"amenity=parking", "tourism=hotel",
+		// Food & drink
+		"amenity=cafe", "amenity=restaurant", "amenity=fast_food",
+		"amenity=pub", "amenity=bar",
+		// Health
+		"amenity=pharmacy", "amenity=hospital", "amenity=clinic",
+		"amenity=dentist", "amenity=doctors",
+		// Transport
+		"railway=station", "railway=halt",
+		"highway=bus_stop", "amenity=bus_station",
+		"public_transport=station",
+		// Services
+		"amenity=bank", "amenity=atm", "amenity=post_office",
+		"amenity=fuel", "amenity=parking",
+		// Shopping
+		"shop=supermarket", "shop=convenience", "shop=bakery",
+		"shop=butcher", "shop=greengrocer",
+		// Other
+		"amenity=place_of_worship", "tourism=hotel",
+		"leisure=park", "amenity=library",
 	}
 
 	var totalCount int
@@ -244,14 +277,10 @@ out center 50;
 		return 0
 	}
 
-	// Extract category name
+	// Extract category name from tag=value format
 	cat := category
-	if strings.HasPrefix(category, "amenity=") {
-		cat = category[8:]
-	} else if strings.HasPrefix(category, "shop=") {
-		cat = category[5:]
-	} else if strings.HasPrefix(category, "tourism=") {
-		cat = category[8:]
+	if idx := strings.Index(category, "="); idx > 0 {
+		cat = category[idx+1:]
 	}
 
 	db := Get()
