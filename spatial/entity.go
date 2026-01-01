@@ -10,13 +10,16 @@ import (
 type EntityType string
 
 const (
-	EntityPlace   EntityType = "place"   // Static locations (cafes, shops, etc)
-	EntityAgent   EntityType = "agent"   // Area indexers
-	EntityVehicle EntityType = "vehicle" // Moving vehicles
-	EntityPerson  EntityType = "person"  // People (with consent)
-	EntityEvent   EntityType = "event"   // Time-bounded happenings
-	EntityZone    EntityType = "zone"    // Areas/regions
-	EntitySensor  EntityType = "sensor"  // IoT devices
+	EntityPlace    EntityType = "place"    // Static locations (cafes, shops, etc)
+	EntityAgent    EntityType = "agent"    // Area indexers
+	EntityVehicle  EntityType = "vehicle"  // Moving vehicles (buses, trains)
+	EntityPerson   EntityType = "person"   // People (with consent)
+	EntityEvent    EntityType = "event"    // Time-bounded happenings
+	EntityZone     EntityType = "zone"     // Areas/regions
+	EntitySensor   EntityType = "sensor"   // IoT devices
+	EntityWeather  EntityType = "weather"  // Weather conditions
+	EntityPrayer   EntityType = "prayer"   // Prayer times
+	EntityArrival  EntityType = "arrival"  // Transport arrivals
 )
 
 // Entity represents any spatial object in the world

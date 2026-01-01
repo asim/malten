@@ -60,7 +60,8 @@ func ContextHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	context := command.GetLocalContext(lat, lon)
+	// Instant lookup from spatial index - no API calls
+	context := spatial.GetLiveContext(lat, lon)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
