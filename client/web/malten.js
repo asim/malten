@@ -392,8 +392,8 @@ function connectWebSocket() {
                 delete pendingMessages[ev.Text];
                 return;
             }
-            // Display as card
-            displaySystemMessage(ev.Text);
+            // Save and display as card
+            state.createCard(ev.Text);
             seen[ev.Id] = ev;
             clipMessages();
         }
@@ -471,12 +471,12 @@ function submitCommand() {
         sendFreshLocation();
     }
 
-    // Display user's question as card immediately for responsiveness
+    // Save user's question as card
+    state.createCard(prompt);
     var tempId = 'local-' + Date.now();
     pendingMessages[prompt] = tempId;
-    displaySystemMessage(prompt);
 
-    // Post to /commands with location if available
+    // Post to /commands with location, get response directly (no WebSocket needed)
     var data = {
         prompt: prompt,
         stream: getStream()
@@ -485,7 +485,13 @@ function submitCommand() {
         data.lat = state.lat;
         data.lon = state.lon;
     }
-    $.post(commandUrl, data);
+    $.post(commandUrl, data, function(response) {
+        // If we get a direct response, display it
+        if (response && response.trim()) {
+            delete pendingMessages[prompt];
+            state.createCard(response);
+        }
+    });
 
     form.elements["prompt"].value = '';
     return false;

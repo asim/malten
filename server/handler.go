@@ -89,12 +89,15 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	// Try command dispatch (handles /commands and natural language)
 	if result, handled := command.Dispatch(ctx); handled {
 		if result != "" {
+			// Return response directly (HTTP) and broadcast (WebSocket)
+			w.Write([]byte(result))
 			Default.Events <- NewMessage(result, stream)
 		}
 		return
 	}
 
 	// Everything else goes to AI with tool selection
+	// For AI, response comes async via WebSocket only
 	go handleAI(input, stream, token)
 }
 
