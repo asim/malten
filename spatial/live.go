@@ -302,18 +302,24 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	seen := make(map[string]bool)
 	
 	for _, stop := range stops.StopPoints {
-		if seen[stop.CommonName] || len(entities) >= 3 {
+		if seen[stop.CommonName] {
+			log.Printf("[transport] Skipping %s (already seen)", stop.CommonName)
 			continue
 		}
-		seen[stop.CommonName] = true
+		if len(entities) >= 3 {
+			log.Printf("[transport] Stopping at %s (have 3 entities)", stop.CommonName)
+			break
+		}
 		
 		// Get arrivals for this stop
 		arrivals := fetchStopArrivals(stop.NaptanID)
 		if len(arrivals) == 0 {
-			log.Printf("[transport] Stop %s has no arrivals", stop.CommonName)
+			log.Printf("[transport] Stop %s (%s) has no arrivals", stop.CommonName, stop.NaptanID)
 			continue
 		}
-		log.Printf("[transport] Stop %s: %d arrivals", stop.CommonName, len(arrivals))
+		// Only mark as seen once we have arrivals (so we don't skip the other direction)
+		seen[stop.CommonName] = true
+		log.Printf("[transport] Stop %s (%s): %d arrivals", stop.CommonName, stop.NaptanID, len(arrivals))
 		
 		// Format arrivals
 		var times []string
