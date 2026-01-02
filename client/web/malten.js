@@ -81,12 +81,17 @@ var state = {
                 this.lastBusStop = s.lastBusStop || null;
                 this.cards = s.cards || [];
                 this.seenNewsUrls = s.seenNewsUrls || [];
+                this.conversation = s.conversation || null;
                 // Prune old cards on load
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
                 // Prune old news URLs (keep last 7 days)
                 var newsCutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
                 this.seenNewsUrls = this.seenNewsUrls.filter(function(n) { return n.time > newsCutoff; });
+                // Clear conversation if older than 1 hour
+                if (this.conversation && Date.now() - this.conversation.time > 3600000) {
+                    this.conversation = null;
+                }
             }
         } catch(e) {}
     },
@@ -100,7 +105,8 @@ var state = {
             locationHistory: this.locationHistory.slice(-20),
             lastBusStop: this.lastBusStop,
             cards: this.cards,
-            seenNewsUrls: this.seenNewsUrls
+            seenNewsUrls: this.seenNewsUrls,
+            conversation: this.conversation
         }));
     },
     hasSeenNews: function(newsText) {
@@ -258,7 +264,8 @@ var state = {
     locationHistory: [],
     lastBusStop: null,
     cards: [],
-    seenNewsUrls: []
+    seenNewsUrls: [],
+    conversation: null
 };
 state.load();
 
@@ -664,20 +671,59 @@ function displayContext(text, forceUpdate) {
         }
     }
     
-    // Update the pinned context card (outside messages list)
+    // Build summary line (first line of each type)
+    var summary = buildContextSummary(text);
+    var fullHtml = makeClickable(text).replace(/\n/g, '<br>');
+    
+    // Update the context card (outside messages list)
     var contextCard = document.getElementById('context-card');
-    var html = makeClickable(text).replace(/\n/g, '<br>');
+    var cardHtml = '<div class="context-summary">' + summary + '</div>' +
+        '<div class="context-full">' + fullHtml + '</div>';
     
     if (!contextCard) {
         // Create context card before messages container
         var div = document.createElement('div');
         div.id = 'context-card';
-        div.innerHTML = html;
+        div.innerHTML = cardHtml;
+        div.onclick = function() { this.classList.toggle('expanded'); };
         var container = document.getElementById('messages-container');
         container.parentNode.insertBefore(div, container);
     } else {
-        contextCard.innerHTML = html;
+        var wasExpanded = contextCard.classList.contains('expanded');
+        contextCard.innerHTML = cardHtml;
+        if (wasExpanded) contextCard.classList.add('expanded');
     }
+}
+
+// Build one-line summary from context
+function buildContextSummary(text) {
+    var parts = [];
+    var lines = text.split('\n');
+    
+    // Extract key info
+    lines.forEach(function(line) {
+        if (line.indexOf('📍') === 0) {
+            // Location - just area name
+            var loc = line.replace('📍 ', '').split(',')[0];
+            parts.push('📍 ' + loc);
+        } else if (line.indexOf('☀️') === 0 || line.indexOf('🌧️') === 0 || line.indexOf('⛅') === 0 || line.indexOf('🌤️') === 0) {
+            // Weather - just temp
+            var temp = line.match(/\d+°C/);
+            if (temp) parts.push(temp[0]);
+        } else if (line.indexOf('🕌') === 0) {
+            // Prayer - just current
+            var prayer = line.match(/([A-Z][a-z]+) (now|in \d+m)/);
+            if (prayer) parts.push('🕌 ' + prayer[0]);
+        } else if (line.match(/^\d+ →/)) {
+            // Bus - first one only
+            if (!parts.some(function(p) { return p.indexOf('🚌') >= 0; })) {
+                var bus = line.match(/^(\d+) → .+ in (\d+m)/);
+                if (bus) parts.push('🚌 ' + bus[1] + ' ' + bus[2]);
+            }
+        }
+    });
+    
+    return parts.join(' · ') || 'Tap to expand';
 }
 
 // Make place names and counts clickable
@@ -842,6 +888,11 @@ function createConversationCard(text) {
     scrollToBottom();
     
     activeConversation = card;
+    
+    // Save conversation to state
+    state.conversation = { time: ts, messages: [{ role: 'user', text: text }] };
+    state.save();
+    
     resetConversationTimeout();
 }
 
@@ -873,6 +924,12 @@ function appendToConversation(role, text) {
         thread.appendChild(loadingDiv);
     }
     
+    // Save to state
+    if (state.conversation) {
+        state.conversation.messages.push({ role: role, text: text });
+        state.save();
+    }
+    
     scrollToBottom();
     resetConversationTimeout();
 }
@@ -894,10 +951,36 @@ function endConversation() {
         if (loading) loading.remove();
     }
     activeConversation = null;
+    state.conversation = null;
+    state.save();
     if (conversationTimeout) {
         clearTimeout(conversationTimeout);
         conversationTimeout = null;
     }
+}
+
+// Restore conversation from state on load
+function restoreConversation() {
+    if (!state.conversation || !state.conversation.messages) return;
+    
+    var ts = state.conversation.time;
+    var card = document.createElement('li');
+    card.className = 'conversation-item';
+    
+    var threadHtml = '';
+    state.conversation.messages.forEach(function(msg) {
+        var msgClass = msg.role === 'user' ? 'convo-user' : 'convo-ai';
+        var html = msg.role === 'user' ? escapeHTML(msg.text) : makeClickable(msg.text).replace(/\n/g, '<br>');
+        threadHtml += '<div class="convo-msg ' + msgClass + '">' + html + '</div>';
+    });
+    
+    card.innerHTML = '<div class="card conversation-card" data-timestamp="' + ts + '">' +
+        '<div class="convo-thread">' + threadHtml + '</div>' +
+        '</div>';
+    
+    var messages = document.getElementById('messages');
+    messages.appendChild(card);
+    scrollToBottom();
 }
 
 // Unused pending card functions kept for compatibility
@@ -1177,6 +1260,9 @@ $(document).ready(function() {
     
     // Load persisted cards from localStorage
     loadPersistedCards();
+    
+    // Restore any active conversation
+    restoreConversation();
     
     // Show cached context immediately
     showCachedContext();

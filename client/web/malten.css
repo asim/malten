@@ -196,12 +196,34 @@ ul li {
 /* Context card - pinned at top */
 #context-card {
   background: #f8f9fa;
-  padding: 14px 16px;
   margin: 10px;
   border-radius: 12px;
   border: 1px solid #e8e8e8;
-  line-height: 1.8;
   font-size: 13px;
+  cursor: pointer;
+}
+
+#context-card .context-summary {
+  padding: 12px 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#context-card .context-full {
+  display: none;
+  padding: 14px 16px;
+  padding-top: 0;
+  line-height: 1.8;
+}
+
+#context-card.expanded .context-summary {
+  display: none;
+}
+
+#context-card.expanded .context-full {
+  display: block;
+  padding-top: 14px;
 }
 
 #context-card a {
