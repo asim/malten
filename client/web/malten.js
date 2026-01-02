@@ -523,10 +523,16 @@ function submitCommand() {
         sendFreshLocation();
     }
 
+    // Ensure WebSocket is connected to correct stream before sending
+    var targetStream = getStream();
+    if (currentStream !== targetStream) {
+        connectWebSocket();
+    }
+    
     // Post to /commands with location - response comes via WebSocket
     var data = {
         prompt: prompt,
-        stream: getStream()
+        stream: targetStream
     };
     if (state.hasLocation()) {
         data.lat = state.lat;
