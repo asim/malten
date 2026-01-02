@@ -1033,10 +1033,6 @@ function sendLocation(lat, lon) {
             state.setContext(data.context);
             displayContext(data.context);
         }
-        if (data.news && !state.hasSeenNews(data.news)) {
-            state.markNewsSeen(data.news);
-            state.createCard(data.news);
-        }
     });
 }
 
@@ -1063,10 +1059,6 @@ function getLocationAndContext() {
                 if (data.context) {
                     state.setContext(data.context);
                     displayContext(data.context);
-                }
-                if (data.news && !state.hasSeenNews(data.news)) {
-                    state.markNewsSeen(data.news);
-                    state.createCard(data.news);
                 }
             });
             startLocationWatch();

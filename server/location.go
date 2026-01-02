@@ -110,14 +110,12 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 	// Return context immediately from spatial index
 	context := spatial.GetLiveContext(lat, lon)
 	stream := spatial.StreamFromLocation(lat, lon)
-	news := spatial.GetBreakingNews()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":      true,
 		"context": context,
 		"stream":  stream,
-		"news":    news,
 	})
 }
 
