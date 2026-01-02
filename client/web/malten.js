@@ -860,8 +860,11 @@ function insertCardByTimestamp(card, timestamp, shouldScroll) {
 }
 
 function scrollToBottom() {
-    var area = document.getElementById('messages-area');
-    if (area) area.scrollTop = area.scrollHeight;
+    // Use setTimeout to ensure DOM has rendered
+    setTimeout(function() {
+        var area = document.getElementById('messages-area');
+        if (area) area.scrollTop = area.scrollHeight;
+    }, 50);
 }
 
 function showLoading() {
@@ -1253,6 +1256,19 @@ function loadListeners() {
             if (area.scrollTop + area.clientHeight >= area.scrollHeight - 50) {
                 loadMore();
             }
+        });
+    }
+
+    // Collapse context card when input is focused (mobile keyboard)
+    var prompt = document.getElementById('prompt');
+    if (prompt) {
+        prompt.addEventListener('focus', function() {
+            var contextCard = document.getElementById('context-card');
+            if (contextCard) {
+                contextCard.classList.remove('expanded');
+            }
+            // Scroll to bottom when keyboard opens
+            scrollToBottom();
         });
     }
 
