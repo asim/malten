@@ -144,15 +144,6 @@ var state = {
             return; // Full context card replaces individual changes
         }
         
-        // Bus stop - only log if changed and not recent
-        var newStop = this.extractBusStop(newCtx);
-        if (newStop) {
-            var cardText = '🚏 ' + newStop;
-            if (!this.hasRecentCard(cardText, 60)) {
-                this.createCard(cardText);
-            }
-        }
-        
         // Rain warning (and not recently logged)
         if (newCtx.indexOf('🌧️ Rain') >= 0 && oldCtx.indexOf('🌧️ Rain') < 0) {
             var rainMatch = newCtx.match(/🌧️ Rain[^\n]+/);
@@ -185,10 +176,6 @@ var state = {
     },
     extractLocation: function(ctx) {
         var match = ctx.match(/📍 ([^\n]+)/);
-        return match ? match[1].trim() : null;
-    },
-    extractBusStop: function(ctx) {
-        var match = ctx.match(/🚏 ([^\n(]+)/);
         return match ? match[1].trim() : null;
     },
     extractPrayer: function(ctx) {
@@ -795,6 +782,7 @@ function displayQACardAtEnd(question, answer, timestamp) {
 }
 
 function loadPersistedCards() {
+    console.log('loadPersistedCards:', state.cards ? state.cards.length : 0);
     if (!state.cards || state.cards.length === 0) return;
     
     var lastDateStr = '';
