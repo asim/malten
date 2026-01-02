@@ -505,7 +505,8 @@ function loadStream() {
 
 function initialLoad() {
     clearMessages();
-    loadMessages();
+    // Skip loadMessages() - personal timeline comes from localStorage
+    // Server messages are stream-based, but user's view is personal
     connectWebSocket();
     
     var form = document.getElementById('form');
@@ -1283,6 +1284,9 @@ $(document).ready(function() {
     // Load persisted cards and conversation from localStorage
     loadPersistedCards();
     restoreConversation();
+    
+    // Scroll to bottom after loading persisted content
+    scrollToBottom();
     
     // Show cached context immediately
     showCachedContext();
