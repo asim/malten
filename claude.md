@@ -238,3 +238,75 @@ User moves location
   → localStorage unchanged (personal timeline continuous)
   → Server messages are in new stream's channel
 ```
+
+## Cache & TTL Strategy
+
+### Entity TTLs
+| Entity | TTL | Radius | Notes |
+|--------|-----|--------|-------|
+| Weather | 10min | 5km | Same weather for nearby area |
+| Prayer | 1hr | 50km | City-wide, recalculated on display |
+| Arrival | 5min | 500m | Bus/train times, stale-tolerant |
+| Disruption | 10min | 10km | Traffic/roadworks |
+| Location | 1hr | 500m | Reverse geocoded street names |
+| Place | none | 500m | POIs from OSM, no expiry |
+
+### Stale Data Handling
+- `QueryWithMaxAge(lat, lon, radius, type, limit, maxAgeSecs)` - accepts stale data
+- Arrivals allow 10min stale (600s) - better to show old bus times than nothing
+- Stale arrivals show ⏳ indicator
+- Background refresh triggered when stale data served
+
+### Cache Consistency Rules
+1. Query radius must match fetch radius (prayer times bug was 10km vs 50km mismatch)
+2. Fetch functions return nil if fresh cache exists (to avoid duplicate inserts)
+3. GetLiveContext queries cache first, fetches on-demand if empty
+4. Agents refresh in background every 30s, but user queries never wait
+
+### Recent Fixes (Jan 2026)
+- Prayer times: Fixed radius mismatch (10km→50km in GetLiveContext)
+- Disruptions: Added EntityDisruption type + caching (was fetch-every-time)
+- Arrivals: Added stale tolerance via QueryWithMaxAge
+
+## Session: Cinema/Foursquare Integration (Jan 2 2026)
+
+### Problems Fixed
+1. **Cinema not found** - Added `amenity=cinema` to OSM indexing
+2. **"Kingston Curzon is fictional"** - AI hallucinated when no data. Added supplementary cinema data from Curzon API
+3. **Foursquare integration** - Falls back to Foursquare Places API when OSM returns nothing
+4. **"nearest" geocoded as Alabama** - Word "nearest" was being geocoded to a cemetery in Alabama. Fixed filler word list
+5. **"bowling" geocoded as Scotland** - Search terms were being geocoded as locations. Fixed to not geocode search term itself
+
+### New Files
+- `spatial/websearch.go` - Foursquare Places API integration
+- `spatial/supplementary.go` - Static cinema chain data (Curzon)
+- `data/cinemas.json` - Curzon cinema locations
+- `command/web.go` - `/web on|off|status` command
+
+### Environment
+- `FOURSQUARE_API_KEY` in `.env` - Service API key for Places API
+- New endpoint: `places-api.foursquare.com` with Bearer auth
+
+### Data Flow for POI Search
+1. Check spatial DB cache (OSM data)
+2. Check supplementary data (cinema chains)
+3. Query OSM Overpass API
+4. **Fallback**: Foursquare Places API
+5. **Final fallback**: Google Maps link
+
+### Fixed: Natural Language Place Queries (Jan 2 2026)
+Problem: "bowling near me" was hijacked by `isContextQuestion` (matched "near me") → sent to AI with context → AI had no bowling data → hallucinated.
+
+Fix: `isContextQuestion` now only returns true for "near me" if the place type is one we have in context (cafe, restaurant, pharmacy, supermarket, shop). Unknown types like bowling, arcade, spa fall through to LLM tool selection, which now includes the `nearby` tool.
+
+Flow:
+1. "bowling near me" → isContextQuestion=false (bowling not in contextPlaceTypes)
+2. selectTool asks LLM → returns `{"tool": "nearby", "args": {"type": "bowling"}}`
+3. executeTool("nearby") → NearbyWithLocation("bowling")
+4. "bowling" not in ValidTypes → searchByName → Foursquare → real results
+
+### Key Files Changed
+- `spatial/agent.go` - Added cinema/theatre to indexed categories
+- `command/nearby.go` - Added Foursquare fallback, fixed geocoding bugs, 5km radius for sparse POIs
+- `agent/agent.go` - Added nearby tool to selection prompt
+- `server/handler.go` - Store location on POST for AI tool usage
