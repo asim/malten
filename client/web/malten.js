@@ -770,14 +770,19 @@ function makeClickable(text) {
         return '<a href="#" class="place-link" data-type="places" data-details="' + encodeURIComponent(data) + '">' + label + '</a>';
     });
     
-    // Convert URLs to clickable links - detect news vs maps
+    // Convert URLs to clickable links - detect type by URL pattern
     html = html.replace(/(https?:\/\/[A-Za-z0-9-_.]+\.[A-Za-z0-9-_:%&~\?\/.=#,@+]+)/g, function(url) {
         // News domains
         var newsPatterns = /bbc\.com|bbc\.co\.uk|theguardian\.com|news\.|cnn\.com|reuters\.|nytimes\.|sky\.com|independent\.co\.uk|telegraph\.co\.uk|mirror\.co\.uk|dailymail\.co\.uk|metro\.co\.uk|huffpost|washingtonpost|apnews|aljazeera/i;
         if (newsPatterns.test(url)) {
             return '<a href="' + url + '" target="_blank" class="article-link">Read article →</a>';
         }
-        return '<a href="' + url + '" target="_blank" class="map-link">Map</a>';
+        // Google Maps links
+        if (url.includes('google.com/maps') || url.includes('maps.google.com')) {
+            return '<a href="' + url + '" target="_blank" class="map-link">Map</a>';
+        }
+        // Other links - treat as website
+        return '<a href="' + url + '" target="_blank" class="web-link">Web</a>';
     });
     
     return html;

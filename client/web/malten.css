@@ -343,7 +343,8 @@ ul li {
 
 /* Action links */
 .article-link,
-.map-link {
+.map-link,
+.web-link {
   color: #1a73e8 !important;
   font-weight: 500;
   font-size: 12px;
@@ -351,7 +352,8 @@ ul li {
 }
 
 .article-link:hover,
-.map-link:hover {
+.map-link:hover,
+.web-link:hover {
   text-decoration: underline !important;
 }
 

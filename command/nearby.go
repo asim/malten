@@ -111,6 +111,7 @@ func cleanupLocations() {
 
 // SetLocation stores location for a session token and updates their view
 func SetLocation(token string, lat, lon float64) {
+	log.Printf("[nearby] SetLocation(%s, %f, %f)", token, lat, lon)
 	locationsMu.Lock()
 	locations[token] = &Location{
 		Lat:       lat,
@@ -126,8 +127,8 @@ func SetLocation(token string, lat, lon float64) {
 	db := spatial.Get()
 	db.FindOrCreateAgent(lat, lon)
 	
-	// Build and cache their context view
-	go updateUserContext(token, lat, lon)
+	// Build and cache their context view (sync - needed for immediate AI requests)
+	updateUserContext(token, lat, lon)
 }
 
 func updateUserInSpatialIndex(token string, lat, lon float64) {
@@ -238,6 +239,7 @@ var ValidTypes = map[string]bool{
 	"gym": true,
 	"mosque": true, "church": true, "temple": true,
 	"hotel": true, "hotels": true,
+	"cinema": true, "cinemas": true, "theatre": true, "theater": true,
 }
 
 // IsValidPlaceType checks if a string is a recognized place type
@@ -326,11 +328,31 @@ var placeTypes = map[string]string{
 	"temple":      "amenity=place_of_worship",
 	"hotel":       "tourism=hotel",
 	"hotels":      "tourism=hotel",
+	"cinema":      "amenity=cinema",
+	"cinemas":     "amenity=cinema",
+	"theatre":     "amenity=theatre",
+	"theater":     "amenity=theatre",
 }
 
 
 
-const searchRadius = 2000.0 // 2km radius
+const searchRadius = 2000.0 // 2km default radius
+
+// getSearchRadius returns appropriate search radius for different place types
+func getSearchRadius(placeType string) float64 {
+	// Sparse POIs need larger radius
+	sparseTypes := map[string]bool{
+		"cinema": true, "cinemas": true,
+		"theatre": true, "theater": true,
+		"hospital": true, "hospitals": true,
+		"hotel": true, "hotels": true,
+		"gym": true,
+	}
+	if sparseTypes[placeType] {
+		return 5000.0 // 5km for sparse POIs
+	}
+	return searchRadius
+}
 
 // searchByName finds places by name in the spatial DB
 func searchByName(name string, lat, lon float64) (string, error) {
@@ -338,6 +360,10 @@ func searchByName(name string, lat, lon float64) (string, error) {
 	results := db.FindByName(lat, lon, searchRadius*2, name, 10) // wider search for name
 
 	if len(results) == 0 {
+		// Try Foursquare as fallback
+		if webResults := spatial.WebSearchPlaces(name, lat, lon); len(webResults) > 0 {
+			return formatCachedEntities(webResults, name+" (web)"), nil
+		}
 		return fmt.Sprintf("No '%s' found nearby. Try /nearby cafes to see what's around.", name), nil
 	}
 
@@ -374,6 +400,7 @@ func searchByName(name string, lat, lon float64) (string, error) {
 const agentRadius = 5000.0 // 5km agent territory
 
 func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
+	log.Printf("[nearby] NearbyWithLocation(%s, %f, %f)", placeType, lat, lon)
 	placeType = strings.ToLower(strings.TrimSpace(placeType))
 
 	// If not a valid type, search by name instead
@@ -387,8 +414,26 @@ func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 	db := spatial.Get()
 	db.FindOrCreateAgent(lat, lon)
 
-	// Check spatial DB first
-	cached := db.QueryPlaces(lat, lon, searchRadius, category, 20)
+	// Check spatial DB first (use appropriate radius for place type)
+	radius := getSearchRadius(placeType)
+	cached := db.QueryPlaces(lat, lon, radius, category, 20)
+	
+	// For cinemas, also check supplementary data (chain cinemas not in OSM)
+	if category == "cinema" {
+		supplementary := spatial.GetSupplementaryCinemas(lat, lon, radius)
+		if len(supplementary) > 0 {
+			// Merge, avoiding duplicates by name
+			existing := make(map[string]bool)
+			for _, e := range cached {
+				existing[strings.ToLower(e.Name)] = true
+			}
+			for _, s := range supplementary {
+				if !existing[strings.ToLower(s.Name)] {
+					cached = append(cached, s)
+				}
+			}
+		}
+	}
 
 	if len(cached) > 0 {
 		return formatCachedEntities(cached, placeType), nil
@@ -403,21 +448,24 @@ func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 	query := fmt.Sprintf(`
 [out:json][timeout:10];
 (
-  node[%s](around:2000,%f,%f);
-  way[%s](around:2000,%f,%f);
+  node[%s](around:%.0f,%f,%f);
+  way[%s](around:%.0f,%f,%f);
 );
 out center 10;
-`, osmType, lat, lon, osmType, lat, lon)
+`, osmType, radius, lat, lon, osmType, radius, lat, lon)
 
 	client := &http.Client{Timeout: 15 * time.Second}
+	log.Printf("[nearby] Querying OSM for %s around %.4f,%.4f (%.0fm)", osmType, lat, lon, radius)
 	resp, err := client.PostForm(overpassURL, url.Values{"data": {query}})
 	if err != nil {
+		log.Printf("[nearby] OSM query failed: %v", err)
 		return "Error searching for places", err
 	}
 	defer resp.Body.Close()
 
 	// Check for rate limiting or server errors
 	if resp.StatusCode != 200 {
+		log.Printf("[nearby] OSM returned status %d", resp.StatusCode)
 		return fallbackGoogleMapsLink(placeType, lat, lon), nil
 	}
 
@@ -427,6 +475,10 @@ out center 10;
 	}
 
 	if len(data.Elements) == 0 {
+		// Try web search as fallback before Google Maps link
+		if webResults := spatial.WebSearchPlaces(placeType, lat, lon); len(webResults) > 0 {
+			return formatCachedEntities(webResults, placeType+" (web)"), nil
+		}
 		return fallbackGoogleMapsLink(placeType, lat, lon), nil
 	}
 
@@ -508,12 +560,18 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 			name = "(unnamed)"
 		}
 
-		// Google Maps link with name and coordinates
+		// Links: Map and Website (if available)
 		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(name), e.Lat, e.Lon)
-		result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
+		if website, ok := e.Data["website"].(string); ok && website != "" {
+			result.WriteString(fmt.Sprintf("• %s · %s · %s\n", name, mapLink, website))
+		} else {
+			result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
+		}
 
-		// Extract tags
-		if tagsData, ok := e.Data["tags"].(map[string]interface{}); ok {
+		// Extract address - try direct address first (Foursquare), then tags (OSM)
+		if addr, ok := e.Data["address"].(string); ok && addr != "" {
+			result.WriteString(fmt.Sprintf("  %s\n", addr))
+		} else if tagsData, ok := e.Data["tags"].(map[string]interface{}); ok {
 			tags := make(map[string]string)
 			for k, v := range tagsData {
 				if s, ok := v.(string); ok {
@@ -526,6 +584,10 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 			if hours := tags["opening_hours"]; hours != "" {
 				result.WriteString(fmt.Sprintf("  🕐 %s\n", hours))
 			}
+		}
+		// Phone if available
+		if phone, ok := e.Data["phone"].(string); ok && phone != "" {
+			result.WriteString(fmt.Sprintf("  📞 %s\n", phone))
 		}
 		result.WriteString("\n")
 	}
@@ -619,8 +681,8 @@ func matchNearby(input string) (bool, []string) {
 		return false, nil
 	}
 	
-	// Don't match question patterns - those go to place
-	questionPhrases := []string{"what time", "when does", "is .* open", "opening hours", "hours for"}
+	// Don't match question patterns - those go to AI or place command
+	questionPhrases := []string{"what time", "when does", "is .* open", "opening hours", "hours for", "what about", "tell me about", "info on", "information about"}
 	for _, q := range questionPhrases {
 		if strings.Contains(lower, q) || matchWildcard(lower, q) {
 			return false, nil
@@ -631,7 +693,10 @@ func matchNearby(input string) (bool, []string) {
 	var cleaned []string
 	for _, p := range parts {
 		l := strings.ToLower(p)
-		if l == "near" || l == "nearby" || l == "me" || l == "in" || l == "around" {
+		if l == "near" || l == "nearby" || l == "me" || l == "in" || l == "around" ||
+			l == "nearest" || l == "closest" || l == "find" || l == "show" || l == "where" ||
+			l == "is" || l == "the" || l == "a" || l == "an" || l == "to" ||
+			l == "what" || l == "about" || l == "any" || l == "are" || l == "there" {
 			continue
 		}
 		cleaned = append(cleaned, p)
@@ -696,11 +761,13 @@ func handleNearby(ctx *Context, args []string) (string, error) {
 		}
 	}
 
+	// If no valid place type found, use full input as search term (not as location!)
 	if placeType == "" {
 		placeType = strings.Join(args, " ")
+		locationParts = nil // Don't geocode the search term itself
 	}
 
-	// Geocode location if provided
+	// Geocode location if provided (only if we have both a place type AND location parts)
 	if lat == 0 && lon == 0 && len(locationParts) > 0 {
 		placeName := strings.Join(locationParts, " ")
 		geoLat, geoLon, err := Geocode(placeName)
