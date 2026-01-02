@@ -164,3 +164,77 @@ Like how your phone doesn't say "entering new cell tower coverage" - you're just
 
 ### What Geohash/Stream Actually Is
 Like a database shard key - helps organize data and assign agents to areas. User never sees sharding. No page reloads. No "switching streams". Just smooth movement through space with your personal timeline following you.
+
+## Keys and Storage
+
+### Client-Side (Browser)
+
+| Key | Type | Purpose |
+|-----|------|----------|
+| `malten_state` | localStorage | Personal timeline - cards, conversation, location, context |
+| `malten_session` | cookie | Session token for private server channels |
+
+#### `malten_state` Structure
+```javascript
+{
+    version: 2,              // Format version - change clears old data
+    lat: 51.5,               // Last known latitude
+    lon: -0.1,               // Last known longitude
+    context: "📍 ...",       // Last context string
+    contextTime: 1234567890, // When context was fetched
+    locationHistory: [...],  // Last 20 location points
+    lastBusStop: "...",      // Last bus stop shown
+    cards: [...],            // Timeline cards (24hr retention)
+    seenNewsUrls: [...],     // Dedup news (7 day retention)
+    conversation: {          // Active conversation (1hr expiry)
+        time: 1234567890,
+        messages: [{role: 'user', text: '...'}, ...]
+    }
+}
+```
+
+**IMPORTANT**: This is YOUR personal timeline. Independent of stream/geohash. Survives location changes.
+
+### Server-Side
+
+| Key | Purpose |
+|-----|----------|
+| Stream ID | Geohash (6 chars) from location, e.g., `gcpsxb` |
+| Channel | `@{session_token}` for private messages |
+| Message | `{stream, channel, text}` - public if channel empty |
+
+#### Channel Model
+- **Public**: `channel: ""` - visible to all on stream
+- **Private**: `channel: "@abc123"` - visible only to that session
+- Questions/responses go to private channel
+- Context updates are local (not stored on server)
+
+### Version Migration
+When `state.version` changes, old localStorage is cleared EXCEPT:
+- `lat`, `lon` (location preserved)
+- Everything else reset to defaults
+
+**BUG**: Conversation should also be preserved on version change.
+
+## Session Flow
+
+```
+Browser opens
+  → Check cookie for malten_session
+  → If none, server generates random token, sets cookie
+  → Cookie sent with all requests
+  → Server uses token for private channel: @{token}
+
+User sends message
+  → POST /commands with prompt, stream, lat, lon
+  → Server stores to stream's @{session} channel
+  → Response returned directly (HTTP)
+  → Also broadcast to user's WebSocket (channel filtered)
+  → Client saves to localStorage (cards/conversation)
+
+User moves location
+  → Geohash changes → new stream ID
+  → WebSocket reconnects silently
+  → localStorage unchanged (personal timeline continuous)
+  → Server messages are in new stream's channel
+```
