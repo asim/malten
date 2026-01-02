@@ -1,81 +1,64 @@
 # Malten
 
-A conversational AI assistant with real-time messaging
+Spatial AI for the real world. Your context-aware assistant that knows where you are.
 
-## Overview
+## What It Does
 
-Malten is an AI-powered assistant that combines ephemeral messaging with useful commands. Ask questions, get crypto prices, receive Islamic reminders, and more. Messages are organized into streams that expire after idle time.
+Open the app → instantly see:
+- 📍 Where you are (street, postcode)
+- ⛅ Weather + rain forecast
+- 🕌 Current prayer time, next prayer
+- 🚏 Live bus/train arrivals with countdown
+- ☕ Nearby cafes, restaurants, pharmacies, shops
 
-## Features
+Move → it updates automatically. No searching, no typing. Just awareness.
 
-- AI assistant powered by Fanar or OpenAI
-- Real-time messaging via WebSocket
-- Crypto price lookups (`price btc`, `eth price`)
-- Islamic reminders with Quran, Hadith, and Names of Allah (`reminder`)
-- Natural language queries (`what does islam say about patience`)
-- Ephemeral streams with 1024 message limit
-- PWA support for mobile
+## How It Works
 
-## Usage
+**Instant data**: When you arrive somewhere, Malten fetches what you need immediately - weather, transport, places. No waiting.
+
+**Smart caching**: Data is cached spatially. Move 500m? Get fresh local data. Stay put? Use cache.
+
+**Background agents**: After serving you instantly, agents continue indexing the area - more places, more detail. You never wait for them.
+
+## Try It
 
 ```bash
 go install github.com/asim/malten@latest
 malten
 ```
 
-Browse to `localhost:9090`
+Open `localhost:9090`, enable location.
 
-### AI Integration
-
-Set one of:
+### AI Integration (optional)
 
 ```bash
-# Fanar
-FANAR_API_KEY=xxx FANAR_API_URL=https://api.fanar.qa/v1 ./malten
-
-# OpenAI
+# For natural language queries
 OPENAI_API_KEY=xxx ./malten
+# or
+FANAR_API_KEY=xxx FANAR_API_URL=https://api.fanar.qa/v1 ./malten
 ```
 
-## Commands
+## Data Sources
 
-Commands work with or without the `/` prefix:
+- **Location**: OpenStreetMap Nominatim
+- **Weather**: Open-Meteo
+- **Prayer times**: Aladhan
+- **Transport**: TfL (London buses, tubes, trains)
+- **Places**: OpenStreetMap via Overpass
+- **Traffic**: TfL disruptions
 
-- `help` - Show available commands
-- `new` - Create a new stream
-- `goto <stream>` - Switch to a stream
-- `price <coin>` - Get crypto price (btc, eth, sol, etc.)
-- `reminder` - Daily Islamic reminder
-- `reminder <query>` - Search Quran and Hadith
-
-### Natural Language
-
-You can also ask naturally:
-
-- `btc price` or `price of eth`
-- `what does the quran say about patience`
-- `hadith about charity`
-
-## API
-
-### Messages
+## Architecture
 
 ```
-GET  /messages         - Get messages (stream=x, limit=25, direction=1/-1, last=timestamp)
-POST /messages         - Post message (stream=x, message=text)
+User at location
+  → Check cache (instant)
+  → Cache miss? Fetch now, cache, return
+  → Background: agent enriches area
+  → Next request: cache hit (instant)
 ```
 
-### Commands
-
-```
-POST /commands         - Send command (stream=x, prompt=text)
-```
-
-### Events (WebSocket)
-
-```
-WS /events?stream=x    - Real-time message stream
-```
+No waiting. Cache-first. Fetch on demand. Enrich in background.
 
 ## License
 

@@ -3,6 +3,7 @@ package spatial
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,7 @@ func Get() *DB {
 		var err error
 		db, err = New("spatial.json", "events.jsonl")
 		if err != nil {
+			log.Printf("[db] New() failed: %v, using memory store", err)
 			db = newMemory()
 		}
 		// Start agent loops - they handle live data
@@ -62,8 +64,9 @@ func New(spatialFile, eventFile string) (*DB, error) {
 		eventLog: eventLog,
 	}
 
+	log.Printf("[db] Starting load from store")
 	if err := d.loadFromStore(); err != nil {
-		fmt.Printf("[spatial] Error loading: %v\n", err)
+		log.Printf("[db] Error loading: %v", err)
 	}
 
 	return d, nil
@@ -89,6 +92,9 @@ func (d *DB) loadFromStore() error {
 		return err
 	}
 
+	log.Printf("[db] Loading %d points from store", len(points))
+	var loaded, skipped, failed int
+	
 	for id, point := range points {
 		data := point.Data()
 		if m, ok := data.(map[string]interface{}); ok {
@@ -96,19 +102,25 @@ func (d *DB) loadFromStore() error {
 			var entity Entity
 			if err := json.Unmarshal(b, &entity); err == nil {
 				if entity.ExpiresAt != nil && time.Now().After(*entity.ExpiresAt) {
+					skipped++
 					continue
 				}
 				newPoint := quadtree.NewPoint(entity.Lat, entity.Lon, &entity)
 				if d.tree.Insert(newPoint) {
 					d.entities[id] = newPoint
+					loaded++
+				} else {
+					failed++
 				}
 			}
 		} else if _, ok := data.(*Entity); ok {
 			d.tree.Insert(point)
 			d.entities[id] = point
+			loaded++
 		}
 	}
-
+	
+	log.Printf("[db] Loaded %d entities, skipped %d expired, %d failed to insert", loaded, skipped, failed)
 	return nil
 }
 
@@ -182,6 +194,7 @@ func (d *DB) Query(lat, lon, radiusMeters float64, entityType EntityType, limit 
 	}
 
 	points := d.tree.KNearest(boundary, limit, filter)
+	
 
 	var results []*Entity
 	for _, p := range points {

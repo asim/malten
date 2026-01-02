@@ -18,7 +18,7 @@ const (
 	prayerTimesURL = "https://api.aladhan.com/v1/timings"
 
 	liveUpdateInterval = 30 * time.Second
-	arrivalTTL         = 2 * time.Minute
+	arrivalTTL         = 5 * time.Minute
 	weatherTTL         = 10 * time.Minute
 	prayerTTL          = 1 * time.Hour
 )
@@ -437,32 +437,45 @@ func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 }
 
 // GetLiveContext queries the spatial index for live data near a location
-// This is instant - no API calls, just index lookup
+// Fetches on demand if cache is empty - user should never wait
 func GetLiveContext(lat, lon float64) string {
 	db := Get()
 	var parts []string
 	
-	// Where am I? Read from index (agent has already geocoded)
+	// Where am I? Fetch if not cached
 	locs := db.Query(lat, lon, 500, EntityLocation, 1)
 	if len(locs) > 0 {
 		parts = append(parts, "📍 "+locs[0].Name)
+	} else if loc := fetchLocation(lat, lon); loc != nil {
+		db.Insert(loc)
+		parts = append(parts, "📍 "+loc.Name)
 	}
 	
-	// Weather + Prayer on same line
+	// Weather + Prayer on same line - fetch if not cached
 	var header []string
 	var rainForecast string
 	weather := db.Query(lat, lon, 10000, EntityWeather, 1)
 	if len(weather) > 0 {
 		header = append(header, weather[0].Name)
-		// Extract rain forecast from data
 		if rf, ok := weather[0].Data["rain_forecast"].(string); ok && rf != "" {
 			rainForecast = rf
 		}
+	} else if w := fetchWeather(lat, lon); w != nil {
+		db.Insert(w)
+		header = append(header, w.Name)
+		if rf, ok := w.Data["rain_forecast"].(string); ok && rf != "" {
+			rainForecast = rf
+		}
 	}
+	
 	prayer := db.Query(lat, lon, 10000, EntityPrayer, 1)
 	if len(prayer) > 0 {
 		header = append(header, computePrayerDisplay(prayer[0]))
+	} else if p := fetchPrayerTimes(lat, lon); p != nil {
+		db.Insert(p)
+		header = append(header, computePrayerDisplay(p))
 	}
+	
 	if len(header) > 0 {
 		parts = append(parts, strings.Join(header, " · "))
 	}
@@ -475,14 +488,14 @@ func GetLiveContext(lat, lon float64) string {
 		parts = append(parts, disruption)
 	}
 	
-	// Nearest bus stop with arrivals - am I AT a stop?
+	// Nearest bus stop with arrivals - already fetches on demand
 	nearestStop := getNearestStopWithArrivals(lat, lon)
 	if nearestStop != "" {
 		parts = append(parts, nearestStop)
 	}
 	
-	// Places summary
-	placesSummary := getPlacesSummary(db, lat, lon)
+	// Places - fetch on demand if cache empty
+	placesSummary := getPlacesSummaryOrFetch(db, lat, lon)
 	if placesSummary != "" {
 		parts = append(parts, placesSummary)
 	}
@@ -603,17 +616,25 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 	}
 	
 	// Fallback: no cached data with arrivals, query TfL directly
-	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=500",
+	log.Printf("[context] No cached arrivals at %.4f,%.4f - querying TfL directly", lat, lon)
+	
+	stopUrl := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=500",
 		tflBaseURL, lat, lon)
 	
-	req, _ := http.NewRequest("GET", url, nil)
+	req, _ := http.NewRequest("GET", stopUrl, nil)
 	req.Header.Set("User-Agent", "Malten/1.0")
 	
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		log.Printf("[context] TfL StopPoint query failed: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()
+	
+	if resp.StatusCode != 200 {
+		log.Printf("[context] TfL StopPoint returned status %d", resp.StatusCode)
+		return ""
+	}
 	
 	var stops struct {
 		StopPoints []struct {
@@ -622,9 +643,16 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 			Distance   float64 `json:"distance"`
 		} `json:"stopPoints"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&stops); err != nil || len(stops.StopPoints) == 0 {
+	if err := json.NewDecoder(resp.Body).Decode(&stops); err != nil {
+		log.Printf("[context] TfL StopPoint decode failed: %v", err)
 		return ""
 	}
+	if len(stops.StopPoints) == 0 {
+		log.Printf("[context] TfL returned no stops near %.4f,%.4f", lat, lon)
+		return ""
+	}
+	
+	log.Printf("[context] TfL returned %d stops", len(stops.StopPoints))
 	
 	// Find first stop with arrivals
 	for _, stop := range stops.StopPoints {
@@ -632,6 +660,24 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		if len(fetchedArrivals) == 0 {
 			continue
 		}
+		
+		// Cache these arrivals so we don't hit TfL again
+		expiry := time.Now().Add(arrivalTTL)
+		arrEntity := &Entity{
+			ID:   GenerateID(EntityArrival, stop.Distance, stop.Distance, stop.NaptanID),
+			Type: EntityArrival,
+			Name: fmt.Sprintf("🚌 %s", stop.CommonName),
+			Lat:  lat + (stop.Distance/111000)*0.001, // Approximate stop location
+			Lon:  lon,
+			Data: map[string]interface{}{
+				"stop_id":    stop.NaptanID,
+				"stop_name":  stop.CommonName,
+				"stop_type":  "NaptanPublicBusCoachTram",
+				"arrivals":   fetchedArrivals,
+			},
+			ExpiresAt: &expiry,
+		}
+		db.Insert(arrEntity)
 		
 		// Format: "🚏 Whitton Station" then list next buses
 		var lines []string
@@ -656,6 +702,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 	}
 	
 	// No stops with arrivals found
+	log.Printf("[context] No stops with arrivals found")
 	return ""
 }
 
@@ -668,12 +715,10 @@ func getPlacesSummary(db *DB, lat, lon float64) string {
 		places := db.QueryPlaces(lat, lon, 500, cat, 10)
 		if len(places) > 0 {
 			icon := icons[cat]
-			// Embed all places data for client-side expansion
 			var placesData []string
 			for _, p := range places {
 				placesData = append(placesData, formatPlaceData(p))
 			}
-			// Format: icon {place1;;place2;;place3} or icon {singleplace}
 			summary = append(summary, fmt.Sprintf("%s {%s}", icon, strings.Join(placesData, ";;")))
 		}
 	}
@@ -682,6 +727,114 @@ func getPlacesSummary(db *DB, lat, lon float64) string {
 		return ""
 	}
 	return strings.Join(summary, " · ")
+}
+
+// getPlacesSummaryOrFetch returns cached places, fetching any missing categories
+func getPlacesSummaryOrFetch(db *DB, lat, lon float64) string {
+	categories := []struct {
+		osmTag   string
+		category string
+		icon     string
+	}{
+		{"amenity=cafe", "cafe", "☕"},
+		{"amenity=restaurant", "restaurant", "🍽️"},
+		{"amenity=pharmacy", "pharmacy", "💊"},
+		{"shop=supermarket", "supermarket", "🛒"},
+	}
+	
+	var results []string
+	for _, c := range categories {
+		// Check cache first
+		places := db.QueryPlaces(lat, lon, 500, c.category, 10)
+		
+		// If cache empty for this category, fetch on demand
+		if len(places) == 0 {
+			fetched := fetchPlacesNow(lat, lon, 500, c.osmTag, c.category, 5)
+			for _, p := range fetched {
+				db.Insert(p)
+			}
+			places = fetched
+		}
+		
+		if len(places) > 0 {
+			var placesData []string
+			for _, p := range places {
+				placesData = append(placesData, formatPlaceData(p))
+			}
+			results = append(results, fmt.Sprintf("%s {%s}", c.icon, strings.Join(placesData, ";;")))
+		}
+	}
+	
+	if len(results) == 0 {
+		return ""
+	}
+	return strings.Join(results, " · ")
+}
+
+// fetchPlacesNow fetches places immediately from Overpass
+func fetchPlacesNow(lat, lon, radius float64, osmTag, category string, limit int) []*Entity {
+	query := fmt.Sprintf(`[out:json][timeout:10];
+(
+  node[%s](around:%.0f,%f,%f);
+  way[%s](around:%.0f,%f,%f);
+);
+out center %d;`, osmTag, radius, lat, lon, osmTag, radius, lat, lon, limit)
+	
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.PostForm("https://overpass-api.de/api/interpreter", url.Values{"data": {query}})
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != 200 {
+		return nil
+	}
+	
+	var data struct {
+		Elements []struct {
+			ID     int64             `json:"id"`
+			Lat    float64           `json:"lat"`
+			Lon    float64           `json:"lon"`
+			Center *struct {
+				Lat float64 `json:"lat"`
+				Lon float64 `json:"lon"`
+			} `json:"center,omitempty"`
+			Tags map[string]string `json:"tags"`
+		} `json:"elements"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil
+	}
+	
+	var entities []*Entity
+	for _, el := range data.Elements {
+		elat, elon := el.Lat, el.Lon
+		if elat == 0 && el.Center != nil {
+			elat, elon = el.Center.Lat, el.Center.Lon
+		}
+		if elat == 0 || el.Tags["name"] == "" {
+			continue
+		}
+		
+		tags := make(map[string]interface{})
+		for k, v := range el.Tags {
+			tags[k] = v
+		}
+		
+		entities = append(entities, &Entity{
+			Type: EntityPlace,
+			Name: el.Tags["name"],
+			Lat:  elat,
+			Lon:  elon,
+			Data: map[string]interface{}{
+				"category": category,
+				"tags":     tags,
+				"osm_id":   el.ID,
+			},
+		})
+	}
+	return entities
 }
 
 // formatPlaceData creates a compact data string with all place info

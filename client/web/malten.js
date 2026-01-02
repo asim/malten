@@ -588,8 +588,12 @@ function startLocationWatch() {
 }
 
 function fetchContext() {
-    // Server knows our location from session - just ask for context
-    $.get(contextUrl).done(function(data) {
+    // Use cached location if available, otherwise server's stored location
+    var url = contextUrl;
+    if (state.hasLocation()) {
+        url = contextUrl + '?lat=' + state.lat + '&lon=' + state.lon;
+    }
+    $.get(url).done(function(data) {
         if (data.context && data.context.length > 0) {
             state.setContext(data.context);
             displayContext(data.context);
@@ -597,10 +601,22 @@ function fetchContext() {
     });
 }
 
-function displayContext(text) {
+function displayContext(text, forceUpdate) {
     contextDisplayed = true;
     // Render in persistent context div, not messages
     var ctx = document.getElementById('context');
+    
+    // Don't replace substantive cached context with empty/minimal response
+    // Unless forceUpdate is true (e.g. initial load from cache)
+    if (!forceUpdate && state.context && state.context.length > 50) {
+        // Only update if new context has substantive content
+        // Empty or minimal context (just welcome message) shouldn't replace bus times etc
+        if (!text || text.length < 30 || text.indexOf('enable_location') >= 0) {
+            console.log('Keeping cached context, new context too minimal:', text ? text.length : 0);
+            return;
+        }
+    }
+    
     var html = makeClickable(text).replace(/\n/g, '<br>');
     ctx.innerHTML = html;
     ctx.style.display = text ? 'block' : 'none';
@@ -842,7 +858,10 @@ function getLocationAndContext() {
 function refreshContextFromState() {
     if (state.hasLocation()) {
         fetchContext();
-    } else if (!state.context) {
+    } else if (state.context) {
+        // Keep showing cached context - don't overwrite with empty
+        console.log('No location, keeping cached context');
+    } else {
         showWelcome();
     }
 }
@@ -939,7 +958,7 @@ $(document).ready(function() {
 
 function showCachedContext() {
     if (state.context) {
-        displayContext(state.context);
+        displayContext(state.context, true); // Force update from cache
     } else {
         // Nothing cached - show welcome
         showWelcome();
@@ -957,5 +976,5 @@ function showWelcome() {
     welcome += '• Nearby cafes, shops, pharmacies\n\n';
     welcome += 'Ask me anything — "cafes nearby", "pharmacies", "reminder"';
     
-    displayContext(welcome);
+    displayContext(welcome, true); // Force update for welcome
 }

@@ -18,6 +18,9 @@ const (
 	NominatimURL   = "https://nominatim.openstreetmap.org"
 )
 
+// Global mutex to serialize POI indexing (avoid hammering Overpass)
+var indexMu sync.Mutex
+
 // FindAgent finds an agent covering the location
 func (d *DB) FindAgent(lat, lon, radius float64) *Entity {
 	agents := d.Query(lat, lon, radius, EntityAgent, 1)
@@ -187,7 +190,9 @@ func updateLiveData(agent *Entity) {
 		totalArrivals += len(railArrivals)
 	}
 	
-	log.Printf("[agent] %s live update: %d arrivals", agent.Name, totalArrivals)
+	if totalArrivals > 0 {
+		log.Printf("[agent] %s refreshed %d arrivals", agent.Name, totalArrivals)
+	}
 	
 	// Update agent timestamp
 	agent.Data["last_live"] = time.Now().Format(time.RFC3339)
@@ -207,6 +212,10 @@ func IndexAgent(agent *Entity) {
 	if agent == nil || agent.Type != EntityAgent {
 		return
 	}
+
+	// Serialize indexing to avoid hammering Overpass
+	indexMu.Lock()
+	defer indexMu.Unlock()
 
 	log.Printf("[spatial] Indexing %s", agent.Name)
 
@@ -268,11 +277,13 @@ out center 50;
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.PostForm(OverpassURL, url.Values{"data": {query}})
 	if err != nil {
+		log.Printf("[index] %s %s: request failed: %v", agent.Name, category, err)
 		return 0
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
+		log.Printf("[index] %s %s: status %d", agent.Name, category, resp.StatusCode)
 		return 0
 	}
 
