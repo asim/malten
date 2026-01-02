@@ -214,7 +214,7 @@ When `state.version` changes, old localStorage is cleared EXCEPT:
 - `lat`, `lon` (location preserved)
 - Everything else reset to defaults
 
-**BUG**: Conversation should also be preserved on version change.
+Conversation is now also preserved on version change.
 
 ## Session Flow
 
