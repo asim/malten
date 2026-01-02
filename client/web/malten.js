@@ -121,18 +121,27 @@ var state = {
         this.detectChanges(oldContext, ctx);
     },
     detectChanges: function(oldCtx, newCtx) {
-        if (!oldCtx || !newCtx) return;
+        if (!newCtx) return;
+        
+        // First context (arrival) - create full context card
+        if (!oldCtx) {
+            // Only if it has real content (not welcome message)
+            if (newCtx.indexOf('📍') >= 0 || newCtx.indexOf('⛅') >= 0) {
+                this.createCard(newCtx);
+                displaySystemMessage(newCtx);
+            }
+            return;
+        }
         
         // Extract location from context
         var oldLoc = this.extractLocation(oldCtx);
         var newLoc = this.extractLocation(newCtx);
         
-        // Location changed significantly (different street/area)
+        // Location changed significantly - create new context card
         if (newLoc && oldLoc && newLoc !== oldLoc) {
-            var cardText = '📍 ' + newLoc;
-            if (!this.hasRecentCard(cardText, 10)) {
-                this.createCard(cardText);
-            }
+            this.createCard(newCtx);
+            displaySystemMessage(newCtx);
+            return; // Full context card replaces individual changes
         }
         
         // Extract bus stop from context
@@ -145,6 +154,7 @@ var state = {
             if (!this.hasRecentCard(cardText, 5)) {
                 this.lastBusStop = newStop;
                 this.createCard(cardText);
+                displaySystemMessage(cardText);
             }
         }
         
@@ -153,6 +163,7 @@ var state = {
             var rainMatch = newCtx.match(/🌧️ Rain[^\n]+/);
             if (rainMatch && !this.hasRecentCard(rainMatch[0], 30)) {
                 this.createCard(rainMatch[0]);
+                displaySystemMessage(rainMatch[0]);
             }
         }
         
@@ -163,6 +174,7 @@ var state = {
             var prayerCard = '🕌 ' + newPrayer;
             if (!this.hasRecentCard(prayerCard, 30)) {
                 this.createCard(prayerCard);
+                displaySystemMessage(prayerCard);
             }
         }
     },
