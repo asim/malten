@@ -11,6 +11,8 @@ html, body {
   font-size: 14px;
   word-wrap: break-word;
   line-height: 1.5;
+  height: 100%;
+  overflow: hidden;
 }
 
 html a {
@@ -57,17 +59,41 @@ ul li {
   width: 80%;
 }
 
-#head {
-  position: sticky;
-  top: 0;
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 1024px;
+  margin: 0 auto;
+}
+
+#top-fixed {
+  flex-shrink: 0;
   background: #fff;
-  padding: 15px;
-  z-index: 10;
+  border-bottom: 1px solid #eee;
+}
+
+#head {
+  padding: 12px 15px;
 }
 
 #head a {
   color: #333;
   text-decoration: none;
+}
+
+#messages-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  padding-bottom: 20px;
+}
+
+#bottom-fixed {
+  flex-shrink: 0;
+  background: #fff;
+  border-top: 1px solid #eee;
+  padding: 10px 15px;
 }
 
 #present {
@@ -196,8 +222,8 @@ ul li {
 /* Context card - pinned at top */
 #context-card {
   background: #f8f9fa;
-  margin: 10px;
-  border-radius: 12px;
+  margin: 10px 15px;
+  border-radius: 8px;
   border: 1px solid #e8e8e8;
   font-size: 13px;
   cursor: pointer;

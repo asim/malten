@@ -683,7 +683,7 @@ function displayContext(text, forceUpdate) {
         div.id = 'context-card';
         div.innerHTML = cardHtml;
         div.onclick = function() { this.classList.toggle('expanded'); };
-        var container = document.getElementById('messages-container');
+        var container = document.getElementById('messages-area');
         container.parentNode.insertBefore(div, container);
     } else {
         var wasExpanded = contextCard.classList.contains('expanded');
@@ -830,7 +830,8 @@ function insertCardByTimestamp(card, timestamp, shouldScroll) {
 }
 
 function scrollToBottom() {
-    window.scrollTo(0, document.body.scrollHeight);
+    var area = document.getElementById('messages-area');
+    if (area) area.scrollTop = area.scrollHeight;
 }
 
 function showLoading() {
@@ -1179,11 +1180,14 @@ function toggleSpeech() {
 
 function loadListeners() {
     // Scroll to load more (scroll down = load older)
-    window.addEventListener('scroll', function() {
-        if (window.scrollY + window.innerHeight >= document.body.scrollHeight - 50) {
-            loadMore();
-        }
-    });
+    var area = document.getElementById('messages-area');
+    if (area) {
+        area.addEventListener('scroll', function() {
+            if (area.scrollTop + area.clientHeight >= area.scrollHeight - 50) {
+                loadMore();
+            }
+        });
+    }
 
     initSpeech();
 }
