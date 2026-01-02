@@ -749,7 +749,7 @@ func getPlacesSummaryOrFetch(db *DB, lat, lon float64) string {
 		
 		// If cache empty for this category, fetch on demand
 		if len(places) == 0 {
-			fetched := fetchPlacesNow(lat, lon, 500, c.osmTag, c.category, 5)
+			fetched := fetchPlacesNow(lat, lon, 500, c.osmTag, c.category, 10)
 			for _, p := range fetched {
 				db.Insert(p)
 			}
