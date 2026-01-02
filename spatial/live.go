@@ -161,6 +161,14 @@ func computePrayerDisplay(e *Entity) string {
 	}
 	
 	if current != "" {
+		// For Fajr, show when it ends (Sunrise)
+		if current == "Fajr" {
+			sunrise := timings["Sunrise"]
+			if len(sunrise) > 5 {
+				sunrise = sunrise[:5]
+			}
+			return fmt.Sprintf("🕌 %s ends %s · %s %s", current, sunrise, next, nextTime)
+		}
 		return fmt.Sprintf("🕌 %s now · %s %s", current, next, nextTime)
 	}
 	return fmt.Sprintf("🕌 %s %s", next, nextTime)
