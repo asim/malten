@@ -373,6 +373,7 @@ function loadMessages() {
         if (data && data.length > 0) {
             displayMessages(data, 1);
             clipMessages();
+            scrollToBottom();
         }
     });
 }
