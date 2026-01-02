@@ -382,18 +382,16 @@ function connectWebSocket() {
             // Check if this is a response to a pending command
             var pendingKey = Object.keys(pendingMessages)[0];
             if (pendingKey && pendingMessages[pendingKey]) {
-                // Skip echoed input (server echoes back the question)
-                if (ev.Text === pendingKey) {
-                    return;
-                }
-                // Show response as simple card
-                state.createCard(ev.Text);
+                // Skip echoed input
+                if (ev.Text === pendingKey) return;
+                // Show Q&A
+                displayQA(pendingKey, ev.Text);
                 delete pendingMessages[pendingKey];
                 clipMessages();
                 return;
             }
             
-            // No pending question - display as system card
+            // No pending question - just display
             state.createCard(ev.Text);
             clipMessages();
         }
@@ -709,6 +707,18 @@ function displaySystemMessage(text, timestamp) {
         html +
         '</div>';
     
+    var messages = document.getElementById('messages');
+    messages.insertBefore(card, messages.firstChild);
+}
+
+function displayQA(question, answer) {
+    var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var card = document.createElement('li');
+    card.innerHTML = '<div class="card">' +
+        '<span class="card-time">' + time + '</span>' +
+        '<div class="card-q">' + escapeHTML(question) + '</div>' +
+        '<div class="card-a">' + makeClickable(answer).replace(/\n/g, '<br>') + '</div>' +
+        '</div>';
     var messages = document.getElementById('messages');
     messages.insertBefore(card, messages.firstChild);
 }

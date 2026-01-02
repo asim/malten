@@ -350,3 +350,12 @@ ul li {
   text-transform: uppercase;
   letter-spacing: 1px;
 }
+
+.card-q {
+  color: #666;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.card-a {
+  color: #333;
+}
