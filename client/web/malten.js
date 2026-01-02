@@ -485,10 +485,10 @@ function submitCommand() {
         return false;
     }
 
-    // Handle new command locally (with or without slash)
+    // "new" command disabled - streams are geo-based now
     if (prompt.match(/^\/?new(\s|$)/i)) {
         form.elements["prompt"].value = '';
-        createNewStream();
+        displaySystemMessage('Stream creation disabled - location determines your stream');
         return false;
     }
     
@@ -650,8 +650,6 @@ function fetchContext() {
 }
 
 function displayContext(text, forceUpdate) {
-    contextDisplayed = true;
-    
     // Don't replace substantive cached context with empty/minimal response
     if (!forceUpdate && state.context && state.context.length > 50) {
         if (!text || text.length < 30 || text.indexOf('enable_location') >= 0) {
