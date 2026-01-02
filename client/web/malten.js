@@ -89,10 +89,7 @@ var state = {
                 // Prune old news URLs (keep last 7 days)
                 var newsCutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
                 this.seenNewsUrls = this.seenNewsUrls.filter(function(n) { return n.time > newsCutoff; });
-                // Clear conversation if older than 1 hour
-                if (this.conversation && Date.now() - this.conversation.time > 3600000) {
-                    this.conversation = null;
-                }
+                // Conversations persist until explicitly cleared or new one starts
             }
         } catch(e) {}
     },
