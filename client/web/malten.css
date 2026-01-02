@@ -364,3 +364,10 @@ ul li {
   background: #e3f2fd;
   border-left-color: #2196f3;
 }
+
+#loading {
+  text-align: center;
+  padding: 10px;
+  color: #999;
+  display: none;
+}

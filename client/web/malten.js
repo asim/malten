@@ -375,24 +375,20 @@ function connectWebSocket() {
         if (ev.Stream !== currentStream) return;
         
         if (ev.Type === "message") {
-            // Dedupe by ID
+            // Dedupe
             if (ev.Id in seen) return;
             seen[ev.Id] = ev;
             
-            // Check if this is a response to a pending command
-            var pendingKey = Object.keys(pendingMessages)[0];
-            if (pendingKey && pendingMessages[pendingKey]) {
-                // Skip echoed input
-                if (ev.Text === pendingKey) return;
-                // Show Q&A
-                displayQA(pendingKey, ev.Text);
-                delete pendingMessages[pendingKey];
-                clipMessages();
+            // Skip if it's our own message (already shown)
+            if (pendingMessages[ev.Text]) {
+                delete pendingMessages[ev.Text];
+                hideLoading();
                 return;
             }
             
-            // No pending question - just display
-            state.createCard(ev.Text);
+            // Show response
+            hideLoading();
+            displaySystemMessage(ev.Text);
             clipMessages();
         }
     };
@@ -492,10 +488,11 @@ function submitCommand() {
         data.lon = state.lon;
     }
     
-    // Show user's message immediately
+    // Show user's message and loading indicator
     displayUserMessage(prompt);
+    showLoading();
     
-    // Track pending so we can match response
+    // Track pending to dedupe echo
     pendingMessages[prompt] = true;
     
     $.post(commandUrl, data);
@@ -714,6 +711,22 @@ function displaySystemMessage(text, timestamp) {
     messages.insertBefore(card, messages.firstChild);
 }
 
+function showLoading() {
+    var el = document.getElementById('loading');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'loading';
+        el.textContent = '...';
+        document.getElementById('messages').parentNode.insertBefore(el, document.getElementById('messages'));
+    }
+    el.style.display = 'block';
+}
+
+function hideLoading() {
+    var el = document.getElementById('loading');
+    if (el) el.style.display = 'none';
+}
+
 function displayUserMessage(text) {
     var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     var card = document.createElement('li');
@@ -726,19 +739,7 @@ function displayUserMessage(text) {
     messages.insertBefore(card, messages.firstChild);
 }
 
-function displayQA(question, answer) {
-    // Answer only - question already shown by displayUserMessage
-    var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-    var card = document.createElement('li');
-    card.innerHTML = '<div class="card">' +
-        '<span class="card-time">' + time + '</span>' +
-        makeClickable(answer).replace(/\n/g, '<br>') +
-        '</div>';
-    var messages = document.getElementById('messages');
-    messages.insertBefore(card, messages.firstChild);
-}
-
-// Display a pending card for a question (awaiting answer)
+// Unused pending card functions kept for compatibility
 function displayPendingCard(question) {
     var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     var card = document.createElement('li');
