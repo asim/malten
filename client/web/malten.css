@@ -341,3 +341,12 @@ ul li {
   color: #999;
   font-style: italic;
 }
+
+.date-separator {
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+  padding: 10px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}

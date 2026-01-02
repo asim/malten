@@ -144,17 +144,12 @@ var state = {
             return; // Full context card replaces individual changes
         }
         
-        // Extract bus stop from context
-        var oldStop = this.extractBusStop(oldCtx);
+        // Bus stop - only log if changed and not recent
         var newStop = this.extractBusStop(newCtx);
-        
-        // New bus stop approached (and not recently logged)
-        if (newStop && newStop !== this.lastBusStop) {
-            var cardText = '🚏 Arrived at ' + newStop;
-            if (!this.hasRecentCard(cardText, 5)) {
-                this.lastBusStop = newStop;
+        if (newStop) {
+            var cardText = '🚏 ' + newStop;
+            if (!this.hasRecentCard(cardText, 60)) {
                 this.createCard(cardText);
-                displaySystemMessage(cardText);
             }
         }
         
@@ -800,16 +795,42 @@ function displayQACardAtEnd(question, answer, timestamp) {
 }
 
 function loadPersistedCards() {
-    console.log('Loading', state.cards ? state.cards.length : 0, 'cards from localStorage');
-    if (state.cards && state.cards.length > 0) {
-        state.cards.forEach(function(c) {
-            if (c.question && c.answer) {
-                displayQACardAtEnd(c.question, c.answer, c.time);
-            } else if (c.text) {
-                displayCardAtEnd(c.text, c.time);
-            }
-        });
+    if (!state.cards || state.cards.length === 0) return;
+    
+    var lastDateStr = '';
+    state.cards.forEach(function(c) {
+        var dateStr = formatDateSeparator(c.time);
+        if (dateStr && dateStr !== lastDateStr) {
+            displayDateSeparator(dateStr);
+            lastDateStr = dateStr;
+        }
+        if (c.question && c.answer) {
+            displayQACardAtEnd(c.question, c.answer, c.time);
+        } else if (c.text) {
+            displayCardAtEnd(c.text, c.time);
+        }
+    });
+}
+
+function formatDateSeparator(timestamp) {
+    var date = new Date(timestamp);
+    var today = new Date();
+    var yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+        return ''; // Today - no separator needed
+    } else if (date.toDateString() === yesterday.toDateString()) {
+        return 'Yesterday';
+    } else {
+        return date.toLocaleDateString([], { weekday: 'long' });
     }
+}
+
+function displayDateSeparator(text) {
+    var li = document.createElement('li');
+    li.innerHTML = '<div class="date-separator">' + text + '</div>';
+    document.getElementById('messages').appendChild(li);
 }
 
 function getCardType(text) {
