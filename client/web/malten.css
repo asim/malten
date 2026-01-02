@@ -293,20 +293,15 @@ ul li {
 /* Action links */
 .article-link,
 .map-link {
-  display: inline-block;
-  margin-top: 10px;
-  padding: 6px 12px;
-  background: #1a73e8;
-  color: #fff !important;
+  color: #1a73e8 !important;
   font-weight: 500;
-  border-radius: 6px;
-  font-size: 13px;
+  font-size: 12px;
+  text-decoration: none;
 }
 
 .article-link:hover,
 .map-link:hover {
-  background: #1557b0;
-  text-decoration: none !important;
+  text-decoration: underline !important;
 }
 
 /* Enable location button */

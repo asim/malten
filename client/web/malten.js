@@ -704,7 +704,7 @@ function makeClickable(text) {
         if (newsPatterns.test(url)) {
             return '<a href="' + url + '" target="_blank" class="article-link">Read article →</a>';
         }
-        return '<a href="' + url + '" target="_blank" class="map-link">Open in Maps →</a>';
+        return '<a href="' + url + '" target="_blank" class="map-link">Map</a>';
     });
     
     return html;
@@ -749,7 +749,7 @@ function showPlacesCard(data) {
             }
         }
         if (mapUrl) {
-            placeLine += '\n   <a href="' + mapUrl + '" target="_blank" class="map-link">Open in Maps</a>';
+            placeLine += '\n   <a href="' + mapUrl + '" target="_blank" class="map-link">Map</a>';
         }
         lines.push(placeLine);
     });
