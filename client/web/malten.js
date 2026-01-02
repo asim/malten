@@ -751,8 +751,7 @@ function updateCardWithAnswer(card, question, answer) {
     }
 }
 
-function displayCardAtEnd(text, timestamp) {
-    // Append card at end (for loading history in order)
+function displayCard(text, timestamp) {
     var time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     var cardType = getCardType(text);
     var card = document.createElement('li');
@@ -761,13 +760,10 @@ function displayCardAtEnd(text, timestamp) {
         '<span class="card-time">' + time + '</span>' +
         html +
         '</div>';
-    
-    var messages = document.getElementById('messages');
-    messages.appendChild(card);
+    document.getElementById('messages').appendChild(card);
 }
 
-function displayQACardAtEnd(question, answer, timestamp) {
-    // Append Q+A card at end (for loading history)
+function displayQACard(question, answer, timestamp) {
     var time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     var cardType = getCardType(answer);
     var card = document.createElement('li');
@@ -776,26 +772,24 @@ function displayQACardAtEnd(question, answer, timestamp) {
         '<div class="card-question">' + escapeHTML(question) + '</div>' +
         '<div class="card-answer">' + makeClickable(answer).replace(/\n/g, '<br>') + '</div>' +
         '</div>';
-    
-    var messages = document.getElementById('messages');
-    messages.appendChild(card);
+    document.getElementById('messages').appendChild(card);
 }
 
 function loadPersistedCards() {
-    console.log('loadPersistedCards:', state.cards ? state.cards.length : 0);
     if (!state.cards || state.cards.length === 0) return;
     
+    // Sort newest first
+    var sorted = state.cards.slice().sort(function(a, b) { return b.time - a.time; });
     var lastDateStr = '';
-    state.cards.forEach(function(c) {
+    
+    sorted.forEach(function(c) {
         var dateStr = formatDateSeparator(c.time);
-        if (dateStr && dateStr !== lastDateStr) {
-            displayDateSeparator(dateStr);
+        if (dateStr !== lastDateStr) {
+            if (dateStr) displayDateSeparator(dateStr);
             lastDateStr = dateStr;
         }
-        if (c.question && c.answer) {
-            displayQACardAtEnd(c.question, c.answer, c.time);
-        } else if (c.text) {
-            displayCardAtEnd(c.text, c.time);
+        if (c.text) {
+            displayCard(c.text, c.time);
         }
     });
 }
