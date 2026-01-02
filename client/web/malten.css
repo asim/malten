@@ -130,30 +130,24 @@ ul li {
   padding: 10px 0;
 }
 
-#prompt-line {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: #fff;
-  padding: 10px;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
-  z-index: 100;
-  max-width: 1024px;
-  margin: 0 auto;
-}
-
-#prompt-line form {
+#bottom-fixed form {
   display: flex;
   align-items: center;
 }
 
-#prompt-line input {
+#bottom-fixed input,
+#prompt {
   flex: 1;
   font-size: 16px;
   color: rgba(0,0,0,.87);
+  background: #f5f5f5;
   border: none;
-  padding: 8px 5px;
+  border-radius: 20px;
+  padding: 12px 16px;
+}
+
+#prompt::placeholder {
+  color: #999;
 }
 
 #private {
