@@ -1,63 +1,51 @@
-# Malten Session - Jan 2 2026
+# Session Notes - Jan 2, 2026
 
-## What We Fixed
+## Bugs to Fix
 
-### Bus times disappearing
-- Root cause: corrupted spatial.json (truncated mid-write)
-- Fixed: atomic file writes (write to .tmp, then rename)
-- Fixed: client won't replace good cached context with empty response
+### 1. Context card not showing
+- The `displayContext` function creates `#context-card` div but it may not be appearing
+- Check if it's being inserted correctly before `#messages-container`
+- May be a CSS issue or the element isn't being created
 
-### Fetch on demand
-- User never waits for agents - data fetched immediately if not cached
-- Each category (cafe, restaurant, pharmacy, supermarket) checked individually
-- Agents enrich in background after user is served
+### 2. No response to messages
+- WebSocket might not be connecting to correct stream
+- Check `connectWebSocket()` - needs to connect to geohash stream based on location
+- The stream changes when location changes but WS may not reconnect
 
-### Stream/Cards
-- Stream TTL now 24 hours (was 17 min)
-- Cards persist in localStorage, load on refresh
-- Reverse chronological order (newest first)
-- Date separators: "Yesterday", "Tuesday" etc
-- Removed noisy bus stop "arrived at" cards
+### 3. Location changes not reflected
+- User is driving, location changing
+- `sendLocation()` should reconnect WS when stream changes
+- `getLocationAndContext()` should also reconnect
+- Context should update when location changes
 
-### News
-- BBC UK headline as separate card in stream
-- Includes link to article
-- Cached 30 min on server, shown once per 30 min to user
+## Key Files
+- `/home/exedev/malten/client/web/malten.js` - main client code
+- `/home/exedev/malten/client/web/malten.css` - styles  
+- `/home/exedev/malten/client/web/index.html` - layout
 
-### Prayer times
-- Shows "Fajr ends 08:07" (sunrise time)
-- Shows "Fajr ending 08:07" when within 15 min of sunrise
+## Recent Changes Made
+1. Moved prompt to bottom of screen (chat-style layout)
+2. Context card now created outside messages list, before `#messages-container`
+3. Chat flows chronologically (oldest at top)
+4. Removed mic button
+5. Changed to "What's happening?" placeholder
+6. Auto-scroll to bottom on new messages
 
-### Commands/Messages
-- User message shows immediately (blue background)
-- "..." loading indicator while waiting
-- Response appears as new message
-- Dedupes echoed input from WebSocket
+## Debug Steps
+1. Check browser console for errors
+2. Check WebSocket connection - should connect to geohash stream
+3. Check if `#context-card` element exists in DOM
+4. Check if context is being fetched from `/ping` endpoint
+5. Check server logs: `journalctl -u malten -f`
 
-### UI fixes
-- Card padding so text doesn't overlap timestamp
-- URLs in nearby results now clickable ("Open in Maps")
-- Debug command: type "debug" to see stream ID, location, cache info
+## Code Locations
+- `displayContext()` - line ~649 in malten.js
+- `connectWebSocket()` - line ~394
+- `sendLocation()` - line ~930
+- `getLocationAndContext()` - line ~954
+- `insertCardByTimestamp()` - inserts new messages
 
-## Quadtree changes
-- Reverted KNearest optimization (was breaking queries)
-- Atomic file writes to prevent corruption
-
-## Files changed
-- spatial/live.go - fetch on demand, news, prayer display
-- spatial/entity.go - EntityNews type
-- spatial/db.go - load logging
-- spatial/agent.go - serialize indexing, logging
-- server/location.go - news in ping response
-- server/server.go - 24hr TTL
-- client/web/malten.js - cards, loading, user messages
-- client/web/malten.css - card styling, date separators, loading
-- quadtree/store.go - atomic writes
-- README.md - updated for spatial AI focus
-
-## Open issues
-- None critical
-
-## To continue
-- All changes committed and pushed
-- Server running on port 9090
+## Server
+- Running on port 9090
+- Service: `sudo systemctl restart malten`
+- Logs: `journalctl -u malten -f`

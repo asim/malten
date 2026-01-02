@@ -78,9 +78,13 @@ var state = {
                 this.locationHistory = s.locationHistory || [];
                 this.lastBusStop = s.lastBusStop || null;
                 this.cards = s.cards || [];
+                this.seenNewsUrls = s.seenNewsUrls || [];
                 // Prune old cards on load
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
+                // Prune old news URLs (keep last 7 days)
+                var newsCutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+                this.seenNewsUrls = this.seenNewsUrls.filter(function(n) { return n.time > newsCutoff; });
             }
         } catch(e) {}
     },
@@ -93,8 +97,30 @@ var state = {
             contextTime: this.contextTime,
             locationHistory: this.locationHistory.slice(-20),
             lastBusStop: this.lastBusStop,
-            cards: this.cards
+            cards: this.cards,
+            seenNewsUrls: this.seenNewsUrls
         }));
+    },
+    hasSeenNews: function(newsText) {
+        // Extract URL from news text
+        var urlMatch = newsText.match(/https?:\/\/[^\s]+/);
+        if (!urlMatch) return false;
+        var url = urlMatch[0];
+        for (var i = 0; i < this.seenNewsUrls.length; i++) {
+            if (this.seenNewsUrls[i].url === url) return true;
+        }
+        return false;
+    },
+    markNewsSeen: function(newsText) {
+        var urlMatch = newsText.match(/https?:\/\/[^\s]+/);
+        if (!urlMatch) return;
+        var url = urlMatch[0];
+        this.seenNewsUrls.push({ url: url, time: Date.now() });
+        // Keep only last 50 URLs
+        if (this.seenNewsUrls.length > 50) {
+            this.seenNewsUrls = this.seenNewsUrls.slice(-50);
+        }
+        this.save();
     },
     setLocation: function(lat, lon) {
         var prevLat = this.lat;
@@ -123,19 +149,16 @@ var state = {
     detectChanges: function(oldCtx, newCtx) {
         if (!newCtx) return;
         
-        // First context (arrival) - create full context card
+        // First context - no card needed, context card handles it
         if (!oldCtx) {
-            if (newCtx.indexOf('📍') >= 0 || newCtx.indexOf('⛅') >= 0) {
-                this.createCard(newCtx);
-            }
             return;
         }
         
-        // Location changed - create new context card
+        // Location changed - create a brief "arrived at" card
         var oldLoc = this.extractLocation(oldCtx);
         var newLoc = this.extractLocation(newCtx);
         if (newLoc && oldLoc && newLoc !== oldLoc) {
-            this.createCard(newCtx);
+            this.createCard('📍 Arrived at ' + newLoc);
             return;
         }
         
@@ -232,7 +255,8 @@ var state = {
     contextTime: 0,
     locationHistory: [],
     lastBusStop: null,
-    cards: []
+    cards: [],
+    seenNewsUrls: []
 };
 state.load();
 
@@ -260,6 +284,28 @@ function timeAgo() {
 function parseDate(tdate) {
     var system_date = new Date(tdate / 1e6);
     return system_date.toLocaleTimeString();
+}
+
+// Timeago format - converts timestamp to "2 min ago", "1 hour ago", etc.
+function formatTimeAgo(timestamp) {
+    var now = Date.now();
+    var diff = now - timestamp;
+    
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) {
+        var mins = Math.floor(diff / 60000);
+        return mins + ' min' + (mins > 1 ? 's' : '') + ' ago';
+    }
+    if (diff < 86400000) {
+        var hours = Math.floor(diff / 3600000);
+        return hours + ' hour' + (hours > 1 ? 's' : '') + ' ago';
+    }
+    if (diff < 604800000) {
+        var days = Math.floor(diff / 86400000);
+        return days + ' day' + (days > 1 ? 's' : '') + ' ago';
+    }
+    // Older than a week - show date
+    return new Date(timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 function getStream() {
@@ -382,11 +428,10 @@ function connectWebSocket() {
             // Skip if it's our own message (already shown)
             if (pendingMessages[ev.Text]) {
                 delete pendingMessages[ev.Text];
-                hideLoading();
                 return;
             }
             
-            // Show response
+            // Show response and hide loading
             hideLoading();
             displaySystemMessage(ev.Text);
             clipMessages();
@@ -600,23 +645,29 @@ function fetchContext() {
 
 function displayContext(text, forceUpdate) {
     contextDisplayed = true;
-    // Render in persistent context div, not messages
-    var ctx = document.getElementById('context');
     
     // Don't replace substantive cached context with empty/minimal response
-    // Unless forceUpdate is true (e.g. initial load from cache)
     if (!forceUpdate && state.context && state.context.length > 50) {
-        // Only update if new context has substantive content
-        // Empty or minimal context (just welcome message) shouldn't replace bus times etc
         if (!text || text.length < 30 || text.indexOf('enable_location') >= 0) {
             console.log('Keeping cached context, new context too minimal:', text ? text.length : 0);
             return;
         }
     }
     
+    // Update the pinned context card (outside messages list)
+    var contextCard = document.getElementById('context-card');
     var html = makeClickable(text).replace(/\n/g, '<br>');
-    ctx.innerHTML = html;
-    ctx.style.display = text ? 'block' : 'none';
+    
+    if (!contextCard) {
+        // Create context card before messages container
+        var div = document.createElement('div');
+        div.id = 'context-card';
+        div.innerHTML = html;
+        var container = document.getElementById('messages-container');
+        container.parentNode.insertBefore(div, container);
+    } else {
+        contextCard.innerHTML = html;
+    }
 }
 
 // Make place names and counts clickable
@@ -636,9 +687,14 @@ function makeClickable(text) {
         return '<a href="#" class="place-link" data-type="places" data-details="' + encodeURIComponent(data) + '">' + label + '</a>';
     });
     
-    // Convert URLs to clickable links (for nearby results, etc)
+    // Convert URLs to clickable links - detect news vs maps
     html = html.replace(/(https?:\/\/[A-Za-z0-9-_.]+\.[A-Za-z0-9-_:%&~\?\/.=#,@+]+)/g, function(url) {
-        return '<a href="' + url + '" target="_blank">Open in Maps</a>';
+        // News domains
+        var newsPatterns = /bbc\.com|bbc\.co\.uk|theguardian\.com|news\.|cnn\.com|reuters\.|nytimes\.|sky\.com|independent\.co\.uk|telegraph\.co\.uk|mirror\.co\.uk|dailymail\.co\.uk|metro\.co\.uk|huffpost|washingtonpost|apnews|aljazeera/i;
+        if (newsPatterns.test(url)) {
+            return '<a href="' + url + '" target="_blank" class="article-link">Read article →</a>';
+        }
+        return '<a href="' + url + '" target="_blank" class="map-link">Open in Maps →</a>';
     });
     
     return html;
@@ -691,24 +747,43 @@ function showPlacesCard(data) {
     displaySystemMessage(lines.join('\n\n'));
 }
 
+var displayedCards = {}; // Track displayed card text to prevent duplicates
+
 function displaySystemMessage(text, timestamp) {
-    // Create a card in the messages area
-    var time;
-    if (timestamp) {
-        time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-    } else {
-        time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    // Dedupe - don't show same card text twice
+    var textKey = text.substring(0, 100); // Use first 100 chars as key
+    if (displayedCards[textKey]) {
+        return;
     }
+    displayedCards[textKey] = true;
+    
+    // Create a card in the messages area
+    var ts = timestamp || Date.now();
+    var timeStr = formatTimeAgo(ts);
     var cardType = getCardType(text);
     var card = document.createElement('li');
     var html = makeClickable(text).replace(/\n/g, '<br>');
-    card.innerHTML = '<div class="card ' + cardType + '">' +
-        '<span class="card-time">' + time + '</span>' +
+    card.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + ts + '">' +
+        '<span class="card-time">' + timeStr + '</span>' +
         html +
         '</div>';
     
+    insertCardByTimestamp(card, ts);
+}
+
+// Insert card in chronological order (oldest at top, newest at bottom)
+function insertCardByTimestamp(card, timestamp) {
     var messages = document.getElementById('messages');
-    messages.insertBefore(card, messages.firstChild);
+    
+    // Always append new cards at the end (bottom) for chat-like flow
+    messages.appendChild(card);
+    
+    // Scroll to bottom to show new message
+    scrollToBottom();
+}
+
+function scrollToBottom() {
+    window.scrollTo(0, document.body.scrollHeight);
 }
 
 function showLoading() {
@@ -728,29 +803,27 @@ function hideLoading() {
 }
 
 function displayUserMessage(text) {
-    var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var ts = Date.now();
     var card = document.createElement('li');
     card.className = 'user-msg';
-    card.innerHTML = '<div class="card card-user">' +
-        '<span class="card-time">' + time + '</span>' +
+    card.innerHTML = '<div class="card card-user" data-timestamp="' + ts + '">' +
+        '<span class="card-time">' + formatTimeAgo(ts) + '</span>' +
         escapeHTML(text) +
         '</div>';
-    var messages = document.getElementById('messages');
-    messages.insertBefore(card, messages.firstChild);
+    insertCardByTimestamp(card, ts);
 }
 
 // Unused pending card functions kept for compatibility
 function displayPendingCard(question) {
-    var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var ts = Date.now();
     var card = document.createElement('li');
-    card.innerHTML = '<div class="card card-qa">' +
-        '<span class="card-time">' + time + '</span>' +
+    card.innerHTML = '<div class="card card-qa" data-timestamp="' + ts + '">' +
+        '<span class="card-time">' + formatTimeAgo(ts) + '</span>' +
         '<div class="card-question">' + escapeHTML(question) + '</div>' +
         '<div class="card-answer card-loading">...</div>' +
         '</div>';
     
-    var messages = document.getElementById('messages');
-    messages.insertBefore(card, messages.firstChild);
+    insertCardByTimestamp(card, ts);
     return card;
 }
 
@@ -770,42 +843,41 @@ function updateCardWithAnswer(card, question, answer) {
 }
 
 function displayCard(text, timestamp) {
-    var time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    // Dedupe - don't show same card text twice
+    var textKey = text.substring(0, 100);
+    if (displayedCards[textKey]) {
+        return;
+    }
+    displayedCards[textKey] = true;
+    
     var cardType = getCardType(text);
     var card = document.createElement('li');
     var html = makeClickable(text).replace(/\n/g, '<br>');
-    card.innerHTML = '<div class="card ' + cardType + '">' +
-        '<span class="card-time">' + time + '</span>' +
+    card.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + timestamp + '">' +
+        '<span class="card-time">' + formatTimeAgo(timestamp) + '</span>' +
         html +
         '</div>';
-    document.getElementById('messages').appendChild(card);
+    insertCardByTimestamp(card, timestamp);
 }
 
 function displayQACard(question, answer, timestamp) {
-    var time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     var cardType = getCardType(answer);
     var card = document.createElement('li');
-    card.innerHTML = '<div class="card card-qa ' + cardType + '">' +
-        '<span class="card-time">' + time + '</span>' +
+    card.innerHTML = '<div class="card card-qa ' + cardType + '" data-timestamp="' + timestamp + '">' +
+        '<span class="card-time">' + formatTimeAgo(timestamp) + '</span>' +
         '<div class="card-question">' + escapeHTML(question) + '</div>' +
         '<div class="card-answer">' + makeClickable(answer).replace(/\n/g, '<br>') + '</div>' +
         '</div>';
-    document.getElementById('messages').appendChild(card);
+    insertCardByTimestamp(card, timestamp);
 }
 
 function loadPersistedCards() {
     if (!state.cards || state.cards.length === 0) return;
     
-    // Sort newest first
-    var sorted = state.cards.slice().sort(function(a, b) { return b.time - a.time; });
-    var lastDateStr = '';
+    // Sort oldest first for chronological display
+    var sorted = state.cards.slice().sort(function(a, b) { return a.time - b.time; });
     
     sorted.forEach(function(c) {
-        var dateStr = formatDateSeparator(c.time);
-        if (dateStr !== lastDateStr) {
-            if (dateStr) displayDateSeparator(dateStr);
-            lastDateStr = dateStr;
-        }
         if (c.text) {
             displayCard(c.text, c.time);
         }
@@ -874,7 +946,8 @@ function sendLocation(lat, lon) {
             state.setContext(data.context);
             displayContext(data.context);
         }
-        if (data.news && !state.hasRecentCard(data.news, 30)) {
+        if (data.news && !state.hasSeenNews(data.news)) {
+            state.markNewsSeen(data.news);
             state.createCard(data.news);
         }
     });
@@ -889,14 +962,23 @@ function getLocationAndContext() {
     
     navigator.geolocation.getCurrentPosition(
         function(pos) {
+            var oldStream = currentStream;
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
+            
+            // Reconnect WebSocket if stream changed
+            var newStream = getStream();
+            if (newStream !== oldStream) {
+                connectWebSocket();
+            }
+            
             // Ping returns context and news
             $.post(pingUrl, { lat: state.lat, lon: state.lon }).done(function(data) {
                 if (data.context) {
                     state.setContext(data.context);
                     displayContext(data.context);
                 }
-                if (data.news && !state.hasRecentCard(data.news, 30)) {
+                if (data.news && !state.hasSeenNews(data.news)) {
+                    state.markNewsSeen(data.news);
                     state.createCard(data.news);
                 }
             });
@@ -996,6 +1078,18 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.log('SW registration failed:', err));
 }
 
+// Update all card timestamps periodically
+function updateTimestamps() {
+    var cards = document.querySelectorAll('.card[data-timestamp]');
+    cards.forEach(function(card) {
+        var ts = parseInt(card.getAttribute('data-timestamp'), 10);
+        var timeEl = card.querySelector('.card-time');
+        if (timeEl && ts) {
+            timeEl.textContent = formatTimeAgo(ts);
+        }
+    });
+}
+
 // Initialize
 $(document).ready(function() {
     loadListeners();
@@ -1009,6 +1103,16 @@ $(document).ready(function() {
     
     // Then try to get fresh location/context
     getLocationAndContext();
+    
+    // Update timestamps every minute
+    setInterval(updateTimestamps, 60000);
+    
+    // Update timestamps when page becomes visible (PWA reopen)
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            updateTimestamps();
+        }
+    });
 });
 
 function showCachedContext() {

@@ -3,18 +3,49 @@ package main
 import (
 	"embed"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 
-	"github.com/asim/malten/agent"
-	"github.com/asim/malten/server"
+	"malten.ai/agent"
+	"malten.ai/server"
 )
 
 //go:embed client/web/*
 var html embed.FS
 
 var webDir = flag.String("web", "", "Serve static files from this directory (dev mode)")
+
+const goGetTemplate = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="go-import" content="malten.ai%s git https://github.com/asim/malten%s">
+<meta name="go-source" content="malten.ai%s https://github.com/asim/malten%s https://github.com/asim/malten%s/tree/main{/dir} https://github.com/asim/malten%s/blob/main{/dir}/{file}#L{line}">
+</head>
+<body>go get malten.ai%s</body>
+</html>`
+
+func handleGoGet(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	
+	// Determine the subpackage path
+	var subPkg, repoSuffix string
+	if path == "/" || path == "" {
+		subPkg = ""
+		repoSuffix = ""
+	} else {
+		subPkg = path
+		// For subpackages, the repo is still the root
+		if strings.HasPrefix(path, "/") {
+			repoSuffix = ""
+		}
+	}
+	
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintf(w, goGetTemplate, subPkg, repoSuffix, subPkg, repoSuffix, repoSuffix, repoSuffix, subPkg)
+}
 
 func main() {
 	flag.Parse()
@@ -40,8 +71,15 @@ func main() {
 		log.Println("AI initialized")
 	}
 
-	// serve static files
-	http.Handle("/", http.FileServer(staticFS))
+	// serve static files with go-get support
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Handle go-get vanity imports for malten.ai
+		if r.URL.Query().Get("go-get") == "1" {
+			handleGoGet(w, r)
+			return
+		}
+		http.FileServer(staticFS).ServeHTTP(w, r)
+	})
 
 	http.HandleFunc("/events", server.GetEvents)
 

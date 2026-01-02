@@ -6,10 +6,11 @@ html, body {
   color: #4d5156;
   padding: 0;
   margin: 0;
-  font-family: Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-weight: 400;
   font-size: 14px;
   word-wrap: break-word;
+  line-height: 1.5;
 }
 
 html a {
@@ -81,6 +82,7 @@ ul li {
 
 #messages-container {
   padding: 10px;
+  padding-bottom: 80px; /* Space for fixed prompt */
 }
 
 #messages {
@@ -103,11 +105,16 @@ ul li {
 }
 
 #prompt-line {
-  position: sticky;
-  top: 50px;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   background: #fff;
   padding: 10px;
-  z-index: 10;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+  z-index: 100;
+  max-width: 1024px;
+  margin: 0 auto;
 }
 
 #prompt-line form {
@@ -121,30 +128,6 @@ ul li {
   color: rgba(0,0,0,.87);
   border: none;
   padding: 8px 5px;
-}
-
-#mic {
-  background: none;
-  border: none;
-  font-size: 16px;
-  cursor: pointer;
-  padding: 8px;
-  opacity: 0.5;
-}
-
-#mic:hover {
-  opacity: 0.8;
-}
-
-#mic.listening {
-  opacity: 1;
-  color: #c00;
-  animation: pulse 1s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 #private {
@@ -205,60 +188,64 @@ ul li {
   }
 }
 
-/* Context - persistent spatial view */
+/* Context - persistent spatial view (legacy, hidden) */
 #context {
-  display: none;
+  display: none !important;
+}
+
+/* Context card - pinned at top */
+#context-card {
   background: #f8f9fa;
-  padding: 12px 15px;
-  margin: 0 10px 10px 10px;
-  border-radius: 8px;
-  border-left: 3px solid #4a9eff;
+  padding: 14px 16px;
+  margin: 10px;
+  border-radius: 12px;
+  border: 1px solid #e8e8e8;
   line-height: 1.8;
   font-size: 13px;
 }
 
-#context a {
-  color: #4a9eff;
+#context-card a {
+  color: #1a73e8;
+  font-weight: 600;
   text-decoration: none;
-  border-bottom: 1px dotted #4a9eff;
 }
 
-#context a:hover {
-  border-bottom-style: solid;
+#context-card a:hover {
+  text-decoration: underline;
 }
 
 /* Cards - timeline events */
 .card {
   background: #f8f9fa;
-  padding: 10px 60px 10px 15px;
-  margin: 8px 0;
-  border-radius: 8px;
-  border-left: 3px solid #ccc;
+  padding: 14px 16px;
+  margin: 10px 0;
+  border-radius: 12px;
+  border: 1px solid #e8e8e8;
   position: relative;
 }
 
 .card .card-time {
-  position: absolute;
-  top: 8px;
-  right: 12px;
+  display: block;
   font-size: 11px;
-  color: #999;
+  color: #888;
+  margin-bottom: 8px;
 }
 
-.card.card-location {
-  border-left-color: #e74c3c;
+.card a {
+  color: #1a73e8;
+  font-weight: 600;
+  text-decoration: none;
 }
 
-.card.card-transport {
-  border-left-color: #3498db;
+.card a:hover {
+  text-decoration: underline;
 }
 
-.card.card-weather {
-  border-left-color: #f39c12;
-}
-
+.card.card-location,
+.card.card-transport,
+.card.card-weather,
 .card.card-prayer {
-  border-left-color: #27ae60;
+  /* No special styling - clean uniform look */
 }
 
 /* Status indicator */
@@ -300,9 +287,23 @@ ul li {
   color: #4a9eff;
 }
 
-/* Map links */
+/* Action links */
+.article-link,
 .map-link {
-  text-decoration: underline;
+  display: inline-block;
+  margin-top: 10px;
+  padding: 6px 12px;
+  background: #1a73e8;
+  color: #fff !important;
+  font-weight: 500;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.article-link:hover,
+.map-link:hover {
+  background: #1557b0;
+  text-decoration: none !important;
 }
 
 /* Enable location button */
@@ -322,7 +323,7 @@ ul li {
 
 /* Q+A Cards - question with answer */
 .card.card-qa {
-  border-left-color: #9b59b6;
+  /* Clean style - no accent border */
 }
 
 .card-question {
@@ -362,7 +363,6 @@ ul li {
 
 .card-user {
   background: #e3f2fd;
-  border-left-color: #2196f3;
 }
 
 #loading {

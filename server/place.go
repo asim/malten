@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/asim/malten/spatial"
+	"malten.ai/spatial"
 )
 
 // PlaceHandler returns details for a specific place by ID

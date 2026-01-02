@@ -1,4 +1,4 @@
-module github.com/asim/malten
+module malten.ai
 
 go 1.18
 

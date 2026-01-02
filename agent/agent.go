@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/asim/malten/command"
+	"malten.ai/command"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -21,24 +21,30 @@ var (
 )
 
 var (
-	DefaultPrompt = `You are a helpful assistant with access to tools/services.
+	DefaultPrompt = `You are a spatial assistant for the Malten app. Never identify yourself as anything else.
 
-Available tools:
-- price: Get cryptocurrency prices (e.g., btc, eth, sol)
-- reminder: Get Islamic reminders (Quran, Hadith, Names of Allah) or search Islamic texts
-- news: Get latest news headlines or search news
-- video: Search for videos
-- blog: Get latest blog posts
-- chat: Ask questions with real-time news/video context
+Malten is a location-aware app that shows users what's around them in real-time. When they ask "what is this" or "what is this app", explain: "Malten shows you what's happening around you - weather, buses, nearby places, prayer times. Just ask me anything about your surroundings."
 
-Use tools when appropriate. For general questions, answer directly.
+You have the user's LIVE LOCATION CONTEXT below. USE IT to answer questions:
+- "Where am I" → Give their exact address from the context
+- "What's the weather" → Read the temperature from context  
+- "When's the next bus" → Give the bus times from context
+- "What's nearby" → List places from context
+- "Cafes?" → List the cafes from context
 
-Output rules:
-- Be concise and direct
-- Max 1024 chars
+Rules:
+- ALWAYS use the context data to answer location questions
+- Be concise (1-3 sentences)
+- Don't say "based on the context" - just answer naturally
+- Never say you're an AI or language model
 
-CRISIS EXCEPTION: If someone expresses self-harm, suicide, or severe distress, reply ONLY:
-"samaritans.org - call 116 123 (UK) or find your local branch"`
+Tools (use ONLY when context doesn't have the answer):
+- price: Crypto prices
+- reminder: Islamic reminders
+- news: News search
+- video: Video search
+
+CRISIS: Self-harm/suicide → reply ONLY: "samaritans.org - 116 123 (UK)"`
 
 	MaxTokens = 1024
 )
@@ -287,26 +293,48 @@ type ToolDecision struct {
 	Args map[string]interface{} `json:"args"`
 }
 
+// isContextQuestion returns true if the question should be answered from location context
+func isContextQuestion(prompt string) bool {
+	lower := strings.ToLower(prompt)
+	contextKeywords := []string{
+		"where am i", "my location", "what is this", "what's this",
+		"next bus", "bus time", "when is the bus", "train time",
+		"weather", "temperature", "cold", "hot", "rain",
+		"prayer", "fajr", "dhuhr", "asr", "maghrib", "isha",
+		"nearby", "around me", "near me", "close by",
+		"cafe", "coffee", "restaurant", "pharmacy", "shop", "supermarket",
+		"what's around", "what is around", "what's happening",
+	}
+	for _, kw := range contextKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 func selectTool(userPrompt string) (*ToolDecision, error) {
+	// If it's a location/context question, use direct response (none tool)
+	if isContextQuestion(userPrompt) {
+		return &ToolDecision{Tool: "none", Args: map[string]interface{}{}}, nil
+	}
+
 	// Build tool selection prompt as user message (Fanar ignores system prompts for this)
 	selectionPrompt := `Which tool should I use for this question: "` + userPrompt + `"
 
 Available tools:
 - price: cryptocurrency prices (btc, eth, etc)
 - reminder: Islamic content (Quran, Hadith, daily reminder)
-- news: news headlines or search
+- news: news headlines or search news
 - video: search videos
-- blog: blog posts
-- nearby: find nearby places (cafes, restaurants, pharmacies, etc)
-- chat: questions needing real-time current info
-- none: general questions, math, coding, definitions
+- none: general questions, conversation, anything else
 
 Respond ONLY with JSON: {"tool": "name", "args": {"key": "value"}}
 Examples:
 - btc price -> {"tool": "price", "args": {"coin": "btc"}}
 - news about AI -> {"tool": "news", "args": {"query": "AI"}}
-- cafes nearby -> {"tool": "nearby", "args": {"type": "cafe"}}
-- restaurants near me -> {"tool": "nearby", "args": {"type": "restaurant"}}
+- search hadith about patience -> {"tool": "reminder", "args": {"query": "patience"}}
+- hello -> {"tool": "none", "args": {}}
 - what is 2+2 -> {"tool": "none", "args": {}}`
 
 	resp, err := Client.CreateChatCompletion(

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asim/malten/spatial"
+	"malten.ai/spatial"
 )
 
 const overpassURL = "https://overpass-api.de/api/interpreter"

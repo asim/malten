@@ -3,13 +3,14 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/asim/malten/agent"
-	"github.com/asim/malten/command"
+	"malten.ai/agent"
+	"malten.ai/command"
 )
 
 var (
@@ -204,7 +205,16 @@ func handleAI(prompt, stream, token string) {
 		}
 	}
 
-	reply, err := agent.Prompt(agent.DefaultPrompt, ctx, prompt)
+	// Build system prompt with user's location context
+	systemPrompt := agent.DefaultPrompt
+	if userCtx := command.GetUserContext(token); userCtx != "" {
+		systemPrompt += "\n\nUser's current location context:\n" + userCtx
+		log.Printf("[AI] Context for %s: %d chars", token, len(userCtx))
+	} else {
+		log.Printf("[AI] No context for token %s", token)
+	}
+
+	reply, err := agent.Prompt(systemPrompt, ctx, prompt)
 	if err != nil {
 		fmt.Println("AI error:", err)
 		return

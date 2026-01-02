@@ -24,7 +24,7 @@ Move → it updates automatically. No searching, no typing. Just awareness.
 ## Try It
 
 ```bash
-go install github.com/asim/malten@latest
+go install malten.ai@latest
 malten
 ```
 
@@ -62,4 +62,4 @@ No waiting. Cache-first. Fetch on demand. Enrich in background.
 
 ## License
 
-MIT
+AGPL-3.0

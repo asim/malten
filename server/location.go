@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asim/malten/command"
-	"github.com/asim/malten/spatial"
+	"malten.ai/command"
+	"malten.ai/spatial"
 )
 
 const sessionCookieName = "malten_session"
