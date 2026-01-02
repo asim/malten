@@ -23,6 +23,7 @@ const (
 	weatherTTL         = 10 * time.Minute
 	prayerTTL          = 1 * time.Hour
 	newsTTL            = 30 * time.Minute
+	disruptionTTL      = 10 * time.Minute // Cache traffic disruptions
 	
 	bbcUKRSS           = "https://feeds.bbci.co.uk/news/uk/rss.xml"
 )
@@ -107,7 +108,8 @@ func computePrayerDisplay(e *Entity) string {
 	
 	timingsRaw, ok := e.Data["timings"]
 	if !ok {
-		return e.Name // fallback to stored name
+		// No timings stored - return cached name (may be stale)
+		return e.Name
 	}
 	
 	// Convert timings to map[string]string
@@ -190,6 +192,7 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 		return nil // Already have fresh data nearby
 	}
 	
+	log.Printf("[prayer] Fetching prayer times for %.4f,%.4f", lat, lon)
 	now := time.Now()
 	url := fmt.Sprintf("%s/%s?latitude=%.2f&longitude=%.2f&method=2",
 		prayerTimesURL, now.Format("02-01-2006"), lat, lon)
@@ -202,6 +205,10 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 		return nil
 	}
 	defer resp.Body.Close()
+	
+	if resp.StatusCode != 200 {
+		return nil
+	}
 	
 	var data struct {
 		Data struct {
@@ -488,7 +495,8 @@ func GetLiveContext(lat, lon float64) string {
 		}
 	}
 	
-	prayer := db.Query(lat, lon, 10000, EntityPrayer, 1)
+	// Prayer times - use 50km radius since prayer times are city-wide
+	prayer := db.Query(lat, lon, 50000, EntityPrayer, 1)
 	if len(prayer) > 0 {
 		header = append(header, computePrayerDisplay(prayer[0]))
 	} else if p := fetchPrayerTimes(lat, lon); p != nil {
@@ -503,8 +511,8 @@ func GetLiveContext(lat, lon float64) string {
 		parts = append(parts, rainForecast)
 	}
 	
-	// Traffic disruptions nearby
-	if disruption := fetchTrafficDisruptions(lat, lon); disruption != "" {
+	// Traffic disruptions nearby (cached)
+	if disruption := getTrafficDisruptions(lat, lon); disruption != "" {
 		parts = append(parts, disruption)
 	}
 	
@@ -596,8 +604,18 @@ func fetchLocation(lat, lon float64) *Entity {
 func getNearestStopWithArrivals(lat, lon float64) string {
 	db := Get()
 	
-	// Query quadtree for arrivals indexed by agent (300m radius to catch nearby stops)
-	arrivals := db.Query(lat, lon, 500, EntityArrival, 5)
+	// Query quadtree for arrivals - allow stale data up to 10 minutes past expiry
+	// This ensures buses don't disappear just because a refresh failed
+	arrivals := db.QueryWithMaxAge(lat, lon, 500, EntityArrival, 5, 600)
+	
+	// Check if any are actually fresh (not stale)
+	hasFresh := false
+	for _, arr := range arrivals {
+		if arr.ExpiresAt != nil && time.Now().Before(*arr.ExpiresAt) {
+			hasFresh = true
+			break
+		}
+	}
 	
 	// Find first stop with actual arrivals
 	for _, arr := range arrivals {
@@ -608,13 +626,22 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 			continue // Skip stops with no arrivals
 		}
 		
+		// Check if this particular record is stale
+		isStale := arr.ExpiresAt != nil && time.Now().After(*arr.ExpiresAt)
+		
 		// Format arrivals from cached data
 		var lines []string
 		dist := haversine(lat, lon, arr.Lat, arr.Lon) * 1000 // km to m
-		if dist < 30 {
+		stopLabel := stopName
+		if dist >= 30 {
+			stopLabel = fmt.Sprintf("%s (%.0fm)", stopName, dist)
+		}
+		if isStale {
+			lines = append(lines, fmt.Sprintf("🚏 %s ⏳", stopLabel)) // Clock shows data may be stale
+		} else if dist < 30 {
 			lines = append(lines, fmt.Sprintf("🚏 At %s", stopName))
 		} else {
-			lines = append(lines, fmt.Sprintf("🚏 %s (%.0fm)", stopName, dist))
+			lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
 		}
 		
 		for i, a := range arrData {
@@ -632,6 +659,26 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 				}
 			}
 		}
+		
+		// If we used stale data, try to refresh in background
+		if isStale && !hasFresh {
+			go func(stopID string) {
+				if arrs := fetchStopArrivals(stopID); len(arrs) > 0 {
+					expiry := time.Now().Add(arrivalTTL)
+					db.Insert(&Entity{
+						ID:        GenerateID(EntityArrival, lat, lon, stopID),
+						Type:      EntityArrival,
+						Name:      fmt.Sprintf("🚌 %s", stopName),
+						Lat:       arr.Lat,
+						Lon:       arr.Lon,
+						Data:      map[string]interface{}{"stop_id": stopID, "stop_name": stopName, "arrivals": arrs},
+						ExpiresAt: &expiry,
+					})
+					log.Printf("[arrivals] Background refresh for %s complete", stopName)
+				}
+			}(arr.Data["stop_id"].(string))
+		}
+		
 		return strings.Join(lines, "\n")
 	}
 	
@@ -895,8 +942,25 @@ func formatPlaceData(e *Entity) string {
 	return strings.Join(parts, "|")
 }
 
-// fetchTrafficDisruptions gets nearby road disruptions from TfL
+// getTrafficDisruptions returns cached disruptions or fetches new ones
+func getTrafficDisruptions(lat, lon float64) string {
+	db := Get()
+	
+	// Check cache first - 10km radius for disruptions
+	cached := db.Query(lat, lon, 10000, EntityDisruption, 1)
+	for _, d := range cached {
+		if d.ExpiresAt != nil && time.Now().Before(*d.ExpiresAt) {
+			return d.Name
+		}
+	}
+	
+	// Fetch fresh disruptions
+	return fetchTrafficDisruptions(lat, lon)
+}
+
+// fetchTrafficDisruptions gets nearby road disruptions from TfL and caches them
 func fetchTrafficDisruptions(lat, lon float64) string {
+	db := Get()
 	url := "https://api.tfl.gov.uk/Road/all/Disruption"
 	
 	req, _ := http.NewRequest("GET", url, nil)
@@ -904,9 +968,15 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 	
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		log.Printf("[disruption] TfL API error: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()
+	
+	if resp.StatusCode != 200 {
+		log.Printf("[disruption] TfL API returned status %d", resp.StatusCode)
+		return ""
+	}
 	
 	var disruptions []struct {
 		Severity  string `json:"severity"`
@@ -920,6 +990,7 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 	}
 	
 	if err := json.NewDecoder(resp.Body).Decode(&disruptions); err != nil {
+		log.Printf("[disruption] Decode error: %v", err)
 		return ""
 	}
 	
@@ -928,6 +999,8 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 		dist     float64
 		severity string
 		text     string
+		lat      float64
+		lon      float64
 	}
 	var found []nearby
 	
@@ -945,7 +1018,7 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 				if len(text) > 80 {
 					text = text[:80] + "..."
 				}
-				found = append(found, nearby{dist: dist, severity: d.Severity, text: text})
+				found = append(found, nearby{dist: dist, severity: d.Severity, text: text, lat: dlat, lon: dlon})
 			}
 		}
 	}
@@ -967,7 +1040,28 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 		icon = "🚨"
 	}
 	
-	return fmt.Sprintf("%s %.1fkm: %s", icon, best.dist, best.text)
+	result := fmt.Sprintf("%s %.1fkm: %s", icon, best.dist, best.text)
+	
+	// Cache this disruption
+	expiry := time.Now().Add(disruptionTTL)
+	db.Insert(&Entity{
+		ID:        GenerateID(EntityDisruption, best.lat, best.lon, best.text[:min(20, len(best.text))]),
+		Type:      EntityDisruption,
+		Name:      result,
+		Lat:       best.lat,
+		Lon:       best.lon,
+		Data:      map[string]interface{}{"severity": best.severity, "text": best.text},
+		ExpiresAt: &expiry,
+	})
+	
+	return result
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // fetchBreakingNews gets top UK headline from BBC RSS

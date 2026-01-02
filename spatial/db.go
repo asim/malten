@@ -175,6 +175,12 @@ func (d *DB) Insert(entity *Entity) error {
 
 // Query finds entities near a location
 func (d *DB) Query(lat, lon, radiusMeters float64, entityType EntityType, limit int) []*Entity {
+	return d.QueryWithMaxAge(lat, lon, radiusMeters, entityType, limit, 0)
+}
+
+// QueryWithMaxAge is like Query but accepts stale data up to maxAge seconds old
+// Use maxAge=0 for no stale tolerance (strict expiry)
+func (d *DB) QueryWithMaxAge(lat, lon, radiusMeters float64, entityType EntityType, limit int, maxAgeSecs int) []*Entity {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -182,13 +188,21 @@ func (d *DB) Query(lat, lon, radiusMeters float64, entityType EntityType, limit 
 	half := center.HalfPoint(radiusMeters)
 	boundary := quadtree.NewAABB(center, half)
 
+	now := time.Now()
 	filter := func(p *quadtree.Point) bool {
 		entity, ok := p.Data().(*Entity)
 		if !ok {
 			return false
 		}
-		if entity.ExpiresAt != nil && time.Now().After(*entity.ExpiresAt) {
-			return false
+		if entity.ExpiresAt != nil {
+			expiry := *entity.ExpiresAt
+			if maxAgeSecs > 0 {
+				// Allow stale data up to maxAge seconds past expiry
+				expiry = expiry.Add(time.Duration(maxAgeSecs) * time.Second)
+			}
+			if now.After(expiry) {
+				return false
+			}
 		}
 		return entity.Type == entityType
 	}
