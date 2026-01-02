@@ -125,42 +125,35 @@ var state = {
         
         // First context (arrival) - create full context card
         if (!oldCtx) {
-            // Only if it has real content (not welcome message)
             if (newCtx.indexOf('📍') >= 0 || newCtx.indexOf('⛅') >= 0) {
                 this.createCard(newCtx);
-                displaySystemMessage(newCtx);
             }
             return;
         }
         
-        // Extract location from context
+        // Location changed - create new context card
         var oldLoc = this.extractLocation(oldCtx);
         var newLoc = this.extractLocation(newCtx);
-        
-        // Location changed significantly - create new context card
         if (newLoc && oldLoc && newLoc !== oldLoc) {
             this.createCard(newCtx);
-            displaySystemMessage(newCtx);
-            return; // Full context card replaces individual changes
+            return;
         }
         
-        // Rain warning (and not recently logged)
+        // Rain warning
         if (newCtx.indexOf('🌧️ Rain') >= 0 && oldCtx.indexOf('🌧️ Rain') < 0) {
             var rainMatch = newCtx.match(/🌧️ Rain[^\n]+/);
             if (rainMatch && !this.hasRecentCard(rainMatch[0], 30)) {
                 this.createCard(rainMatch[0]);
-                displaySystemMessage(rainMatch[0]);
             }
         }
         
-        // Prayer time change (and not recently logged)
+        // Prayer time change
         var oldPrayer = this.extractPrayer(oldCtx);
         var newPrayer = this.extractPrayer(newCtx);
         if (newPrayer && oldPrayer && newPrayer !== oldPrayer) {
             var prayerCard = '🕌 ' + newPrayer;
             if (!this.hasRecentCard(prayerCard, 30)) {
                 this.createCard(prayerCard);
-                displaySystemMessage(prayerCard);
             }
         }
     },
@@ -394,7 +387,6 @@ function connectWebSocket() {
                     return;
                 }
                 // Show response as simple card
-                displaySystemMessage(ev.Text);
                 state.createCard(ev.Text);
                 delete pendingMessages[pendingKey];
                 clipMessages();
