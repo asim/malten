@@ -800,14 +800,12 @@ function displayQACardAtEnd(question, answer, timestamp) {
 }
 
 function loadPersistedCards() {
-    // Load cards from localStorage, oldest first
+    console.log('Loading', state.cards ? state.cards.length : 0, 'cards from localStorage');
     if (state.cards && state.cards.length > 0) {
         state.cards.forEach(function(c) {
             if (c.question && c.answer) {
-                // Q+A card
                 displayQACardAtEnd(c.question, c.answer, c.time);
             } else if (c.text) {
-                // Simple card
                 displayCardAtEnd(c.text, c.time);
             }
         });

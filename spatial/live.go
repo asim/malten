@@ -167,6 +167,14 @@ func computePrayerDisplay(e *Entity) string {
 			if len(sunrise) > 5 {
 				sunrise = sunrise[:5]
 			}
+			// Check if ending soon (within 15 min)
+			if sunriseTime, err := time.Parse("15:04", sunrise); err == nil {
+				now := time.Now()
+				sunriseToday := time.Date(now.Year(), now.Month(), now.Day(), sunriseTime.Hour(), sunriseTime.Minute(), 0, 0, now.Location())
+				if sunriseToday.Sub(now) <= 15*time.Minute {
+					return fmt.Sprintf("🕌 %s ending %s · %s %s", current, sunrise, next, nextTime)
+				}
+			}
 			return fmt.Sprintf("🕌 %s ends %s · %s %s", current, sunrise, next, nextTime)
 		}
 		return fmt.Sprintf("🕌 %s now · %s %s", current, next, nextTime)
