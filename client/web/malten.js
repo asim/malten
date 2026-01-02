@@ -492,6 +492,9 @@ function submitCommand() {
         data.lon = state.lon;
     }
     
+    // Show user's message immediately
+    displayUserMessage(prompt);
+    
     // Track pending so we can match response
     pendingMessages[prompt] = true;
     
@@ -711,13 +714,25 @@ function displaySystemMessage(text, timestamp) {
     messages.insertBefore(card, messages.firstChild);
 }
 
+function displayUserMessage(text) {
+    var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    var card = document.createElement('li');
+    card.className = 'user-msg';
+    card.innerHTML = '<div class="card card-user">' +
+        '<span class="card-time">' + time + '</span>' +
+        escapeHTML(text) +
+        '</div>';
+    var messages = document.getElementById('messages');
+    messages.insertBefore(card, messages.firstChild);
+}
+
 function displayQA(question, answer) {
+    // Answer only - question already shown by displayUserMessage
     var time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     var card = document.createElement('li');
     card.innerHTML = '<div class="card">' +
         '<span class="card-time">' + time + '</span>' +
-        '<div class="card-q">' + escapeHTML(question) + '</div>' +
-        '<div class="card-a">' + makeClickable(answer).replace(/\n/g, '<br>') + '</div>' +
+        makeClickable(answer).replace(/\n/g, '<br>') +
         '</div>';
     var messages = document.getElementById('messages');
     messages.insertBefore(card, messages.firstChild);

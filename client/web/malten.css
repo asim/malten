@@ -359,3 +359,8 @@ ul li {
 .card-a {
   color: #333;
 }
+
+.card-user {
+  background: #e3f2fd;
+  border-left-color: #2196f3;
+}
