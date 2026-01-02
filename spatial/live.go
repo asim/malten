@@ -2,6 +2,7 @@ package spatial
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"log"
 	"math"
@@ -21,6 +22,9 @@ const (
 	arrivalTTL         = 5 * time.Minute
 	weatherTTL         = 10 * time.Minute
 	prayerTTL          = 1 * time.Hour
+	newsTTL            = 30 * time.Minute
+	
+	bbcUKRSS           = "https://feeds.bbci.co.uk/news/uk/rss.xml"
 )
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
@@ -481,6 +485,12 @@ func GetLiveContext(lat, lon float64) string {
 	}
 	if rainForecast != "" {
 		parts = append(parts, rainForecast)
+	}
+	
+	// Top UK headline
+	if news := fetchBreakingNews(); news != nil {
+		db.Insert(news)
+		parts = append(parts, news.Name)
 	}
 	
 	// Traffic disruptions nearby
@@ -948,4 +958,55 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 	}
 	
 	return fmt.Sprintf("%s %.1fkm: %s", icon, best.dist, best.text)
+}
+
+// fetchBreakingNews gets top UK headline from BBC RSS
+func fetchBreakingNews() *Entity {
+	// Check cache first (global, not location-based)
+	db := Get()
+	news := db.Query(0, 0, 1000000, EntityNews, 1) // Global query
+	for _, n := range news {
+		if n.ExpiresAt != nil && time.Now().Before(*n.ExpiresAt) {
+			return n
+		}
+	}
+	
+	req, _ := http.NewRequest("GET", bbcUKRSS, nil)
+	req.Header.Set("User-Agent", "Malten/1.0")
+	
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	
+	var rss struct {
+		Channel struct {
+			Items []struct {
+				Title   string `xml:"title"`
+				PubDate string `xml:"pubDate"`
+			} `xml:"item"`
+		} `xml:"channel"`
+	}
+	
+	if err := xml.NewDecoder(resp.Body).Decode(&rss); err != nil {
+		return nil
+	}
+	
+	if len(rss.Channel.Items) == 0 {
+		return nil
+	}
+	
+	top := rss.Channel.Items[0]
+	expiry := time.Now().Add(newsTTL)
+	
+	return &Entity{
+		ID:        "news-uk-headline",
+		Type:      EntityNews,
+		Name:      "📰 " + top.Title,
+		Lat:       0, // Global
+		Lon:       0,
+		Data:      map[string]interface{}{"source": "BBC UK", "pubDate": top.PubDate},
+		ExpiresAt: &expiry,
+	}
 }

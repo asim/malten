@@ -392,16 +392,16 @@ function connectWebSocket() {
             if (ev.Id in seen) return;
             seen[ev.Id] = ev;
             
-            // Check if this is a response to a pending question
+            // Check if this is a response to a pending command
             var pendingKey = Object.keys(pendingMessages)[0];
             if (pendingKey && pendingMessages[pendingKey]) {
                 // Skip echoed input (server echoes back the question)
                 if (ev.Text === pendingKey) {
                     return;
                 }
-                // This is the answer - update the pending card
-                updateCardWithAnswer(pendingMessages[pendingKey], pendingKey, ev.Text);
-                state.createQACard(pendingKey, ev.Text);
+                // Show response as simple card
+                displaySystemMessage(ev.Text);
+                state.createCard(ev.Text);
                 delete pendingMessages[pendingKey];
                 clipMessages();
                 return;
@@ -466,6 +466,19 @@ function submitCommand() {
         createNewStream();
         return false;
     }
+    
+    // Handle debug command locally
+    if (prompt.match(/^\/?debug$/i)) {
+        form.elements["prompt"].value = '';
+        var info = '🔧 DEBUG\n';
+        info += 'Stream: ' + getStream() + '\n';
+        info += 'Location: ' + (state.hasLocation() ? state.lat.toFixed(4) + ', ' + state.lon.toFixed(4) : 'none') + '\n';
+        info += 'Context cached: ' + (state.context ? state.context.length + ' chars' : 'none') + '\n';
+        info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
+        info += 'Version: ' + (state.version || 'unknown');
+        displaySystemMessage(info);
+        return false;
+    }
 
     // Handle ping on/off - enable location tracking client-side
     var pingMatch = prompt.match(/^\/?ping\s+(on|off)$/i);
@@ -485,10 +498,6 @@ function submitCommand() {
         sendFreshLocation();
     }
 
-    // Create pending card showing question (will update with answer from WebSocket)
-    var pendingCard = displayPendingCard(prompt);
-    pendingMessages[prompt] = pendingCard;
-
     // Post to /commands with location - response comes via WebSocket
     var data = {
         prompt: prompt,
@@ -498,6 +507,10 @@ function submitCommand() {
         data.lat = state.lat;
         data.lon = state.lon;
     }
+    
+    // Track pending so we can match response
+    pendingMessages[prompt] = true;
+    
     $.post(commandUrl, data);
 
     form.elements["prompt"].value = '';
