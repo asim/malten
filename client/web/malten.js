@@ -639,6 +639,11 @@ function makeClickable(text) {
         return '<a href="#" class="place-link" data-type="places" data-details="' + encodeURIComponent(data) + '">' + label + '</a>';
     });
     
+    // Convert URLs to clickable links (for nearby results, etc)
+    html = html.replace(/(https?:\/\/[A-Za-z0-9-_.]+\.[A-Za-z0-9-_:%&~\?\/.=#,@+]+)/g, function(url) {
+        return '<a href="' + url + '" target="_blank">Open in Maps</a>';
+    });
+    
     return html;
 }
 
