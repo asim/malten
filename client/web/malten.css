@@ -251,6 +251,11 @@ ul li {
   display: none;
 }
 
+#context-card .stale {
+  color: #d93025;
+  font-size: 0.85em;
+}
+
 #context-card.expanded .context-full {
   display: block;
   padding-top: 14px;

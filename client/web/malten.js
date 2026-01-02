@@ -700,6 +700,14 @@ function displayContext(text, forceUpdate) {
     
     // Build summary line (first line of each type)
     var summary = buildContextSummary(text);
+    
+    // Add staleness indicator if context is old
+    var age = Date.now() - state.contextTime;
+    var staleMinutes = Math.floor(age / 60000);
+    if (staleMinutes >= 5) {
+        summary += ' · <span class="stale">' + staleMinutes + 'm ago</span>';
+    }
+    
     var fullHtml = makeClickable(text).replace(/\n/g, '<br>');
     
     // Update the context card (outside messages list)
