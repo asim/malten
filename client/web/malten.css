@@ -16,9 +16,12 @@ html, body {
 }
 
 html a {
-  color: #5f6368;
-  font-weight: bold;
+  color: #1a73e8;
   text-decoration: none;
+}
+
+html a:hover {
+  text-decoration: underline;
 }
 
 iframe {

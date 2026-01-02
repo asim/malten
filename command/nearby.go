@@ -560,33 +560,64 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 			name = "(unnamed)"
 		}
 
-		// Links: Map and Website (if available)
-		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(name), e.Lat, e.Lon)
-		if website, ok := e.Data["website"].(string); ok && website != "" {
-			result.WriteString(fmt.Sprintf("• %s · %s · %s\n", name, mapLink, website))
-		} else {
-			result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
+		// Extract website/phone - try direct (Foursquare) then tags (OSM)
+		var website, phone string
+		if w, ok := e.Data["website"].(string); ok {
+			website = w
 		}
-
-		// Extract address - try direct address first (Foursquare), then tags (OSM)
-		if addr, ok := e.Data["address"].(string); ok && addr != "" {
-			result.WriteString(fmt.Sprintf("  %s\n", addr))
-		} else if tagsData, ok := e.Data["tags"].(map[string]interface{}); ok {
-			tags := make(map[string]string)
+		if p, ok := e.Data["phone"].(string); ok {
+			phone = p
+		}
+		
+		// Check OSM tags
+		var tags map[string]string
+		if tagsData, ok := e.Data["tags"].(map[string]interface{}); ok {
+			tags = make(map[string]string)
 			for k, v := range tagsData {
 				if s, ok := v.(string); ok {
 					tags[k] = s
 				}
 			}
+			if website == "" {
+				website = tags["website"]
+				if website == "" {
+					website = tags["contact:website"]
+				}
+			}
+			if phone == "" {
+				phone = tags["phone"]
+				if phone == "" {
+					phone = tags["contact:phone"]
+				}
+			}
+		}
+
+		// Links: Map and Website (if available)
+		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(name), e.Lat, e.Lon)
+		if website != "" {
+			result.WriteString(fmt.Sprintf("• %s · %s · %s\n", name, mapLink, website))
+		} else {
+			result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
+		}
+
+		// Address
+		if addr, ok := e.Data["address"].(string); ok && addr != "" {
+			result.WriteString(fmt.Sprintf("  %s\n", addr))
+		} else if tags != nil {
 			if addr := formatAddress(tags); addr != "" {
 				result.WriteString(fmt.Sprintf("  %s\n", addr))
 			}
+		}
+		
+		// Hours
+		if tags != nil {
 			if hours := tags["opening_hours"]; hours != "" {
 				result.WriteString(fmt.Sprintf("  🕐 %s\n", hours))
 			}
 		}
-		// Phone if available
-		if phone, ok := e.Data["phone"].(string); ok && phone != "" {
+		
+		// Phone
+		if phone != "" {
 			result.WriteString(fmt.Sprintf("  📞 %s\n", phone))
 		}
 		result.WriteString("\n")

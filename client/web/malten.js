@@ -826,13 +826,15 @@ function showPlacesCard(data) {
                 placeLine += '\n   ' + part;
             }
         }
+        // Just add URL - makeClickable will convert to link
         if (mapUrl) {
-            placeLine += '\n   <a href="' + mapUrl + '" target="_blank" class="map-link">Map</a>';
+            placeLine += '\n   ' + mapUrl;
         }
         lines.push(placeLine);
     });
     
     displaySystemMessage(lines.join('\n\n'));
+    scrollToBottom();
 }
 
 var displayedCards = {}; // Track displayed card text to prevent duplicates
