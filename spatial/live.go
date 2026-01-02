@@ -995,6 +995,7 @@ func fetchBreakingNews() *Entity {
 		Channel struct {
 			Items []struct {
 				Title   string `xml:"title"`
+				Link    string `xml:"link"`
 				PubDate string `xml:"pubDate"`
 			} `xml:"item"`
 		} `xml:"channel"`
@@ -1011,13 +1012,19 @@ func fetchBreakingNews() *Entity {
 	top := rss.Channel.Items[0]
 	expiry := time.Now().Add(newsTTL)
 	
+	// Clean up the link (remove tracking params)
+	link := top.Link
+	if idx := strings.Index(link, "?"); idx > 0 {
+		link = link[:idx]
+	}
+	
 	return &Entity{
 		ID:        "news-uk-headline",
 		Type:      EntityNews,
-		Name:      "📰 " + top.Title,
+		Name:      "📰 " + top.Title + "\n" + link,
 		Lat:       0, // Global
 		Lon:       0,
-		Data:      map[string]interface{}{"source": "BBC UK", "pubDate": top.PubDate},
+		Data:      map[string]interface{}{"source": "BBC UK", "pubDate": top.PubDate, "link": link},
 		ExpiresAt: &expiry,
 	}
 }

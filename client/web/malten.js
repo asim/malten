@@ -857,7 +857,6 @@ function sendLocation(lat, lon) {
         }
         if (data.news && !state.hasRecentCard(data.news, 30)) {
             state.createCard(data.news);
-            displaySystemMessage(data.news);
         }
     });
 }
@@ -880,7 +879,6 @@ function getLocationAndContext() {
                 }
                 if (data.news && !state.hasRecentCard(data.news, 30)) {
                     state.createCard(data.news);
-                    displaySystemMessage(data.news);
                 }
             });
             startLocationWatch();

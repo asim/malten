@@ -230,7 +230,7 @@ ul li {
 /* Cards - timeline events */
 .card {
   background: #f8f9fa;
-  padding: 10px 15px;
+  padding: 10px 60px 10px 15px;
   margin: 8px 0;
   border-radius: 8px;
   border-left: 3px solid #ccc;
