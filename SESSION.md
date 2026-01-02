@@ -1,96 +1,63 @@
-## QUICK START
+# Malten Session - Jan 2 2026
 
-```bash
-systemctl status malten  # running on :9090
-curl -s "http://localhost:9090/ping" -X POST -d "lat=51.417&lon=-0.362" | jq .
-```
+## What We Fixed
 
-## Architecture
+### Bus times disappearing
+- Root cause: corrupted spatial.json (truncated mid-write)
+- Fixed: atomic file writes (write to .tmp, then rename)
+- Fixed: client won't replace good cached context with empty response
 
-### Primitives
-- **Streams** - text representation of geo space, consciousness, where messages flow
-- **Agents** - background processes that index/maintain world (weather, TfL, places)  
-- **Commands** - interface to query agents (nearby, place, reminder)
-- **Database** - quadtree spatial index (spatial.json)
-- **Events** - replayable log (events.jsonl)
+### Fetch on demand
+- User never waits for agents - data fetched immediately if not cached
+- Each category (cafe, restaurant, pharmacy, supermarket) checked individually
+- Agents enrich in background after user is served
 
-### Spatial Context
-What you see based on where you are:
-- 📍 Location (street, postcode)
-- Weather, temperature
-- 🕌 Prayer times
-- 🚧 Traffic disruptions (TfL API - within 5km)
-- 🚏 Bus/train arrivals (nearest stop with actual arrivals)
-- ☕🍽️💊 Nearby places
+### Stream/Cards
+- Stream TTL now 24 hours (was 17 min)
+- Cards persist in localStorage, load on refresh
+- Reverse chronological order (newest first)
+- Date separators: "Yesterday", "Tuesday" etc
+- Removed noisy bus stop "arrived at" cards
 
-### Commands
-- **nearby** - "cafes nearby", spatial search
-- **place** - "what time does X close", specific place info  
-- **reminder** - Islamic content (Quran/Hadith)
+### News
+- BBC UK headline as separate card in stream
+- Includes link to article
+- Cached 30 min on server, shown once per 30 min to user
 
-## UI Layout
+### Prayer times
+- Shows "Fajr ends 08:07" (sunrise time)
+- Shows "Fajr ending 08:07" when within 15 min of sunrise
 
-```
-[Context box]     <- ALWAYS at top, live view of NOW
-[Messages area]   <- Cards below, reverse chronological (newest top)
-  - newest card
-  - older card
-```
+### Commands/Messages
+- User message shows immediately (blue background)
+- "..." loading indicator while waiting
+- Response appears as new message
+- Dedupes echoed input from WebSocket
 
-### Q+A Cards
-Question and answer combined into single card:
-```
-[Card]
-  cafes nearby           <- question at top
-  ─────────────────
-  📍 NEARBY CAFES        <- answer below
-  • Sun Deck Cafe...
-```
+### UI fixes
+- Card padding so text doesn't overlap timestamp
+- URLs in nearby results now clickable ("Open in Maps")
+- Debug command: type "debug" to see stream ID, location, cache info
 
-## Recent Fixes (This Session)
+## Quadtree changes
+- Reverted KNearest optimization (was breaking queries)
+- Atomic file writes to prevent corruption
 
-### ✅ Q+A Cards
-- Question and answer now combined into single card
-- Shows "..." while waiting for response
-- Purple left border for Q+A cards
+## Files changed
+- spatial/live.go - fetch on demand, news, prayer display
+- spatial/entity.go - EntityNews type
+- spatial/db.go - load logging
+- spatial/agent.go - serialize indexing, logging
+- server/location.go - news in ping response
+- server/server.go - 24hr TTL
+- client/web/malten.js - cards, loading, user messages
+- client/web/malten.css - card styling, date separators, loading
+- quadtree/store.go - atomic writes
+- README.md - updated for spatial AI focus
 
-### ✅ Bus Data Reliability
-- Fixed TTL extension when cache exists (was extending stale data)
-- Check both directions of bus stops (N/S)
-- Increased search radius to 500m
-- Skip stops with no arrivals, find next with actual arrivals
-- Fallback to TfL API when cache empty
+## Open issues
+- None critical
 
-### ✅ Traffic Disruptions
-- Added TfL Road Disruption API
-- Shows serious/moderate disruptions within 5km
-- 🚧 for roadworks, 🚨 for accidents
-
-### ✅ Quadtree Optimization
-- KNearest now collects all candidates first
-- Deduplicates via map, sorts once at end
-- Much faster for spatial queries
-
-## Recent Commits
-```
-5b48075 Add traffic disruptions to spatial context (TfL API)
-7b9fa12 Remove price command - not spatial
-a17c392 Fix: increase bus search radius to 500m for both cache and fallback
-c9ef222 Fix: check both directions of bus stops
-e536d8c Fix: increase fallback bus stop search radius
-abd838e Fix: skip stops with no arrivals
-5d35394 Fix: don't extend TTL when skipping fetch
-2f32f56 Q+A combined into single card
-```
-
-## Key Files
-- `spatial/` - quadtree, agents, live data fetching
-- `command/` - nearby.go, reminder.go
-- `server/` - HTTP/WebSocket, streams, channels
-- `client/web/` - PWA
-
-## Quadtree
-Separate repo: `/home/exedev/quadtree`
-- Uses Haversine for distance
-- WGS-84 ellipsoid for Earth radius
-- Optimized KNearest (94c8fa7)
+## To continue
+- All changes committed and pushed
+- Server running on port 9090
