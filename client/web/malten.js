@@ -81,7 +81,6 @@ var state = {
                 this.lastBusStop = s.lastBusStop || null;
                 this.cards = s.cards || [];
                 this.seenNewsUrls = s.seenNewsUrls || [];
-                this.conversation = s.conversation || null;
                 // Prune old cards on load
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
@@ -105,8 +104,7 @@ var state = {
             locationHistory: this.locationHistory.slice(-20),
             lastBusStop: this.lastBusStop,
             cards: this.cards,
-            seenNewsUrls: this.seenNewsUrls,
-            conversation: this.conversation
+            seenNewsUrls: this.seenNewsUrls
         }));
     },
     hasSeenNews: function(newsText) {
@@ -264,8 +262,7 @@ var state = {
     locationHistory: [],
     lastBusStop: null,
     cards: [],
-    seenNewsUrls: [],
-    conversation: null
+    seenNewsUrls: []
 };
 state.load();
 
@@ -698,32 +695,24 @@ function displayContext(text, forceUpdate) {
 // Build one-line summary from context
 function buildContextSummary(text) {
     var parts = [];
-    var lines = text.split('\n');
     
-    // Extract key info
-    lines.forEach(function(line) {
-        if (line.indexOf('📍') === 0) {
-            // Location - just area name
-            var loc = line.replace('📍 ', '').split(',')[0];
-            parts.push('📍 ' + loc);
-        } else if (line.indexOf('☀️') === 0 || line.indexOf('🌧️') === 0 || line.indexOf('⛅') === 0 || line.indexOf('🌤️') === 0) {
-            // Weather - just temp
-            var temp = line.match(/\d+°C/);
-            if (temp) parts.push(temp[0]);
-        } else if (line.indexOf('🕌') === 0) {
-            // Prayer - just current
-            var prayer = line.match(/([A-Z][a-z]+) (now|in \d+m)/);
-            if (prayer) parts.push('🕌 ' + prayer[0]);
-        } else if (line.match(/^\d+ →/)) {
-            // Bus - first one only
-            if (!parts.some(function(p) { return p.indexOf('🚌') >= 0; })) {
-                var bus = line.match(/^(\d+) → .+ in (\d+m)/);
-                if (bus) parts.push('🚌 ' + bus[1] + ' ' + bus[2]);
-            }
-        }
-    });
+    // Location
+    var locMatch = text.match(/📍 ([^,\n]+)/);
+    if (locMatch) parts.push('📍 ' + locMatch[1]);
     
-    return parts.join(' · ') || 'Tap to expand';
+    // Weather temp
+    var tempMatch = text.match(/(\d+)°C/);
+    if (tempMatch) parts.push(tempMatch[0]);
+    
+    // Prayer - current one
+    var prayerMatch = text.match(/🕌 ([A-Z][a-z]+) (now|in \d+m?)/);
+    if (prayerMatch) parts.push('🕌 ' + prayerMatch[1] + ' ' + prayerMatch[2]);
+    
+    // Bus - first one
+    var busMatch = text.match(/(\d+) → [^\n]+ in (\d+m)/);
+    if (busMatch) parts.push('🚌 ' + busMatch[1] + ' ' + busMatch[2]);
+    
+    return parts.length > 0 ? parts.join(' · ') : 'Tap to expand';
 }
 
 // Make place names and counts clickable
@@ -888,11 +877,6 @@ function createConversationCard(text) {
     scrollToBottom();
     
     activeConversation = card;
-    
-    // Save conversation to state
-    state.conversation = { time: ts, messages: [{ role: 'user', text: text }] };
-    state.save();
-    
     resetConversationTimeout();
 }
 
@@ -924,12 +908,6 @@ function appendToConversation(role, text) {
         thread.appendChild(loadingDiv);
     }
     
-    // Save to state
-    if (state.conversation) {
-        state.conversation.messages.push({ role: role, text: text });
-        state.save();
-    }
-    
     scrollToBottom();
     resetConversationTimeout();
 }
@@ -951,8 +929,6 @@ function endConversation() {
         if (loading) loading.remove();
     }
     activeConversation = null;
-    state.conversation = null;
-    state.save();
     if (conversationTimeout) {
         clearTimeout(conversationTimeout);
         conversationTimeout = null;
@@ -960,29 +936,6 @@ function endConversation() {
 }
 
 // Restore conversation from state on load
-function restoreConversation() {
-    if (!state.conversation || !state.conversation.messages) return;
-    
-    var ts = state.conversation.time;
-    var card = document.createElement('li');
-    card.className = 'conversation-item';
-    
-    var threadHtml = '';
-    state.conversation.messages.forEach(function(msg) {
-        var msgClass = msg.role === 'user' ? 'convo-user' : 'convo-ai';
-        var html = msg.role === 'user' ? escapeHTML(msg.text) : makeClickable(msg.text).replace(/\n/g, '<br>');
-        threadHtml += '<div class="convo-msg ' + msgClass + '">' + html + '</div>';
-    });
-    
-    card.innerHTML = '<div class="card conversation-card" data-timestamp="' + ts + '">' +
-        '<div class="convo-thread">' + threadHtml + '</div>' +
-        '</div>';
-    
-    var messages = document.getElementById('messages');
-    messages.appendChild(card);
-    scrollToBottom();
-}
-
 // Unused pending card functions kept for compatibility
 function displayPendingCard(question) {
     var ts = Date.now();
@@ -1260,9 +1213,6 @@ $(document).ready(function() {
     
     // Load persisted cards from localStorage
     loadPersistedCards();
-    
-    // Restore any active conversation
-    restoreConversation();
     
     // Show cached context immediately
     showCachedContext();
