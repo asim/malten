@@ -1051,7 +1051,8 @@ function initSpeech() {
         document.getElementById('mic').classList.remove('listening');
     };
     
-    document.getElementById('mic').addEventListener('click', toggleSpeech);
+    var mic = document.getElementById('mic');
+    if (mic) mic.addEventListener('click', toggleSpeech);
 }
 
 function toggleSpeech() {
