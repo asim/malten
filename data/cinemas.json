@@ -1,0 +1,22 @@
+{
+  "source": "curzon",
+  "updated": "2026-01-02",
+  "cinemas": [
+    {"name": "Curzon Aldgate", "lat": 51.5139, "lon": -0.069, "address": "2 Canter Way, London E1 8PS", "website": "https://www.curzon.com/venues/aldgate"},
+    {"name": "Curzon Bloomsbury", "lat": 51.5247, "lon": -0.123, "address": "The Brunswick Centre, London WC1N 1AW", "website": "https://www.curzon.com/venues/bloomsbury"},
+    {"name": "Curzon Camden", "lat": 51.5423, "lon": -0.1434, "address": "Dockray Place, London NW1 8QD", "website": "https://www.curzon.com/venues/camden"},
+    {"name": "Curzon Canterbury Westgate", "lat": 51.2816, "lon": 1.0774, "address": "Westgate Hall Road, Canterbury CT1 2BT", "website": "https://www.curzon.com/venues/canterbury-westgate"},
+    {"name": "Curzon Canterbury Riverside", "lat": 51.327, "lon": 1.0791, "address": "Unit 9, The Riverside, Canterbury CT1 1BN", "website": "https://www.curzon.com/venues/canterbury-riverside"},
+    {"name": "Curzon Colchester", "lat": 51.9201, "lon": 0.9183, "address": "19 Queen Street, Colchester CO1 2PH", "website": "https://www.curzon.com/venues/colchester"},
+    {"name": "Curzon Hoxton", "lat": 51.529, "lon": -0.0837, "address": "55 Pitfield Street, London N1 6BU", "website": "https://www.curzon.com/venues/hoxton"},
+    {"name": "Curzon Kingston", "lat": 51.412, "lon": -0.3046, "address": "The Bentall Centre, Kingston KT1 1TP", "website": "https://www.curzon.com/venues/kingston"},
+    {"name": "Curzon Knutsford", "lat": 53.302, "lon": -2.3727, "address": "Toft Road, Knutsford WA16 0PE", "website": "https://www.curzon.com/venues/knutsford"},
+    {"name": "Curzon Mayfair", "lat": 51.5066, "lon": -0.1479, "address": "38 Curzon Street, London W1J 7TY", "website": "https://www.curzon.com/venues/mayfair"},
+    {"name": "Curzon Oxford", "lat": 51.7898, "lon": -1.271, "address": "Westgate Centre, Oxford OX1 1NZ", "website": "https://www.curzon.com/venues/oxford"},
+    {"name": "Curzon Richmond", "lat": 51.4593, "lon": -0.307, "address": "Water Lane, Richmond TW9 1TJ", "website": "https://www.curzon.com/venues/richmond"},
+    {"name": "Curzon Sheffield", "lat": 53.4953, "lon": -1.4726, "address": "16 George Street, Sheffield S1 2PF", "website": "https://www.curzon.com/venues/sheffield"},
+    {"name": "Curzon Soho", "lat": 51.5128, "lon": -0.1305, "address": "99 Shaftesbury Avenue, London W1D 5DY", "website": "https://www.curzon.com/venues/soho"},
+    {"name": "Curzon Victoria", "lat": 51.4976, "lon": -0.1368, "address": "58 Victoria Street, London SW1E 6QW", "website": "https://www.curzon.com/venues/victoria"},
+    {"name": "Curzon Wimbledon", "lat": 51.4204, "lon": -0.2055, "address": "23 The Broadway, London SW19 1RE", "website": "https://www.curzon.com/venues/wimbledon"}
+  ]
+}

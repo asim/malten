@@ -310,3 +310,35 @@ Flow:
 - `command/nearby.go` - Added Foursquare fallback, fixed geocoding bugs, 5km radius for sparse POIs
 - `agent/agent.go` - Added nearby tool to selection prompt
 - `server/handler.go` - Store location on POST for AI tool usage
+
+## CRITICAL: Data Preservation
+
+### NEVER DELETE
+- `spatial.json` - The spatial index. Contains all cached POIs, agents, weather, prayer times, transport data
+- `events.jsonl` - Event log for replay
+- `data/*.json` - Supplementary data
+
+### Why This Matters
+1. Agents constantly index in background - POIs, transport, weather
+2. API calls are rate-limited and costly (OSM Overpass, TfL, weather APIs)
+3. Deleting spatial.json loses hours/days of indexed data
+4. Recovery requires replaying event log or re-indexing everything
+
+### Backup Strategy (TODO)
+- Daily backup of spatial.json
+- Event log should allow replay to rebuild state
+
+### Query Strategy
+- **Cache first** - always check spatial DB before external APIs
+- **Agents index async** - user queries should never wait for indexing
+- **Supplementary data** - static chain data (cinemas etc) merges with cached OSM
+- Cinema logic was wrong: should merge supplementary with CACHED data, not force OSM query every time
+
+### The Pattern
+```
+User query → Check cache → Return if found
+                        → If not found, query API → Cache result → Return
+Agent loop  → Periodically refresh cache in background
+```
+
+User queries are instant from cache. Agents keep cache fresh.

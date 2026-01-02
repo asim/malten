@@ -418,11 +418,10 @@ func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 	radius := getSearchRadius(placeType)
 	cached := db.QueryPlaces(lat, lon, radius, category, 20)
 	
-	// For cinemas, also check supplementary data (chain cinemas not in OSM)
+	// For cinemas, merge supplementary data with cache
 	if category == "cinema" {
 		supplementary := spatial.GetSupplementaryCinemas(lat, lon, radius)
 		if len(supplementary) > 0 {
-			// Merge, avoiding duplicates by name
 			existing := make(map[string]bool)
 			for _, e := range cached {
 				existing[strings.ToLower(e.Name)] = true
@@ -434,7 +433,7 @@ func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 			}
 		}
 	}
-
+	
 	if len(cached) > 0 {
 		return formatCachedEntities(cached, placeType), nil
 	}
@@ -485,6 +484,34 @@ out center 10;
 	// Cache the results in background
 	go cacheOSMResults(data.Elements, category)
 
+	// For cinemas, merge with supplementary data before formatting
+	if category == "cinema" {
+		supplementary := spatial.GetSupplementaryCinemas(lat, lon, radius)
+		if len(supplementary) > 0 {
+			// Convert OSM elements to entities for merge
+			var allCinemas []*spatial.Entity
+			existing := make(map[string]bool)
+			for _, el := range data.Elements {
+				eLat, eLon := el.GetCoords()
+				e := &spatial.Entity{
+					Type: spatial.EntityPlace,
+					Name: el.Tags["name"],
+					Lat:  eLat,
+					Lon:  eLon,
+					Data: map[string]interface{}{"tags": el.Tags},
+				}
+				allCinemas = append(allCinemas, e)
+				existing[strings.ToLower(el.Tags["name"])] = true
+			}
+			for _, s := range supplementary {
+				if !existing[strings.ToLower(s.Name)] {
+					allCinemas = append(allCinemas, s)
+				}
+			}
+			return formatCachedEntities(allCinemas, placeType), nil
+		}
+	}
+
 	return formatOSMResults(data.Elements, placeType, lat, lon), nil
 }
 
@@ -503,6 +530,7 @@ func normalizeType(placeType string) string {
 		"shops": "shop", "store": "shop",
 		"petrol": "fuel", "gas": "fuel", "station": "fuel",
 		"hotels": "hotel",
+		"cinemas": "cinema", "theatres": "theatre", "theaters": "theatre",
 	}
 	if canonical, ok := aliases[placeType]; ok {
 		return canonical

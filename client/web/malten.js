@@ -15,8 +15,6 @@ var ws = null;
 var currentStream = null;
 var reconnectTimer = null;
 var pendingMessages = {};
-var activeConversation = null; // Currently active conversation card
-var conversationTimeout = null;
 
 // Geohash for stream ID from location
 function geohash(lat, lon, precision) {
@@ -466,10 +464,10 @@ function connectWebSocket() {
                 return;
             }
             
-            // Show response - append to conversation if active
+            // Show response as a card
             hideLoading();
-            if (activeConversation) {
-                appendToConversation('ai', ev.Text);
+            if (pendingCommand) {
+                displayResponse(ev.Text);
             } else {
                 displaySystemMessage(ev.Text);
             }
@@ -701,11 +699,13 @@ function displayContext(text, forceUpdate) {
     // Build summary line (first line of each type)
     var summary = buildContextSummary(text);
     
-    // Add staleness indicator if context is old
-    var age = Date.now() - state.contextTime;
-    var staleMinutes = Math.floor(age / 60000);
-    if (staleMinutes >= 5) {
-        summary += ' · <span class="stale">' + staleMinutes + 'm ago</span>';
+    // Add staleness indicator if context is old (only if we have a valid contextTime)
+    if (state.contextTime > 0) {
+        var age = Date.now() - state.contextTime;
+        var staleMinutes = Math.floor(age / 60000);
+        if (staleMinutes >= 5) {
+            summary += ' · <span class="stale">' + staleMinutes + 'm ago</span>';
+        }
     }
     
     var fullHtml = makeClickable(text).replace(/\n/g, '<br>');
@@ -898,101 +898,59 @@ function hideLoading() {
     if (el) el.style.display = 'none';
 }
 
+// Display user command as a terminal-style line (not a card)
 function displayUserMessage(text) {
-    // If we have an active conversation, append to it
-    if (activeConversation) {
-        appendToConversation('user', text);
-        return;
-    }
-    
-    // Otherwise create a new conversation card
-    createConversationCard(text);
-}
-
-// Create a new conversation card with the user's message
-function createConversationCard(text) {
     var ts = Date.now();
-    var card = document.createElement('li');
-    card.className = 'conversation-item';
-    card.innerHTML = '<div class="card conversation-card active" data-timestamp="' + ts + '">' +
-        '<div class="convo-thread">' +
-        '<div class="convo-msg convo-user">' + escapeHTML(text) + '</div>' +
-        '<div class="convo-msg convo-ai convo-loading">...</div>' +
-        '</div>' +
+    var li = document.createElement('li');
+    li.className = 'command-item';
+    li.innerHTML = '<div class="command-line" data-timestamp="' + ts + '">' +
+        '<span class="command-prompt">❯</span> ' + escapeHTML(text) +
         '</div>';
     
     var messages = document.getElementById('messages');
-    messages.appendChild(card);
+    messages.appendChild(li);
     scrollToBottom();
     
-    activeConversation = card;
+    // Track pending command for response matching
+    pendingCommand = { element: li, text: text, ts: ts };
     
-    // Save conversation to state
-    state.conversation = { time: ts, messages: [{ role: 'user', text: text }] };
+    // Save to conversation state
+    if (!state.conversation) {
+        state.conversation = { time: ts, messages: [] };
+    }
+    state.conversation.messages.push({ role: 'user', text: text });
     state.save();
-    
-    resetConversationTimeout();
 }
 
-// Append a message to the active conversation
-function appendToConversation(role, text) {
-    if (!activeConversation) return;
+var pendingCommand = null;
+
+// Display AI response as a card below the command
+function displayResponse(text) {
+    var ts = Date.now();
+    var html = makeClickable(text).replace(/\n/g, '<br>');
+    var cardType = getCardType(text);
     
-    var thread = activeConversation.querySelector('.convo-thread');
-    if (!thread) return;
+    var li = document.createElement('li');
+    li.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + ts + '">' +
+        html + '</div>';
     
-    // Remove loading indicator if present
-    var loading = thread.querySelector('.convo-loading');
-    if (loading) loading.remove();
+    var messages = document.getElementById('messages');
+    messages.appendChild(li);
+    scrollToBottom();
     
-    // Add the message
-    var msgClass = role === 'user' ? 'convo-user' : 'convo-ai';
-    var html = role === 'user' ? escapeHTML(text) : makeClickable(text).replace(/\n/g, '<br>');
-    
-    var msg = document.createElement('div');
-    msg.className = 'convo-msg ' + msgClass;
-    msg.innerHTML = html;
-    thread.appendChild(msg);
-    
-    // Add loading indicator if this was a user message
-    if (role === 'user') {
-        var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'convo-msg convo-ai convo-loading';
-        loadingDiv.textContent = '...';
-        thread.appendChild(loadingDiv);
-    }
-    
-    // Save to state
+    // Save to conversation state
     if (state.conversation) {
-        state.conversation.messages.push({ role: role, text: text });
+        state.conversation.messages.push({ role: 'assistant', text: text });
         state.save();
     }
     
-    scrollToBottom();
-    resetConversationTimeout();
+    pendingCommand = null;
 }
 
-// Reset the conversation timeout (ends conversation after inactivity)
-function resetConversationTimeout() {
-    if (conversationTimeout) clearTimeout(conversationTimeout);
-    conversationTimeout = setTimeout(endConversation, 60000); // 1 minute timeout
-}
-
-// End the active conversation
+// No longer need conversation timeout with new format
+function resetConversationTimeout() {}
 function endConversation() {
-    if (activeConversation) {
-        var cardDiv = activeConversation.querySelector('.conversation-card');
-        if (cardDiv) cardDiv.classList.remove('active');
-        
-        // Remove any lingering loading indicator
-        var loading = activeConversation.querySelector('.convo-loading');
-        if (loading) loading.remove();
-    }
-    activeConversation = null;
-    if (conversationTimeout) {
-        clearTimeout(conversationTimeout);
-        conversationTimeout = null;
-    }
+    pendingCommand = null;
 }
 
 // Restore conversation from state on load
@@ -1070,26 +1028,23 @@ function loadPersistedCards() {
 function restoreConversation() {
     if (!state.conversation || !state.conversation.messages) return;
     
-    // Don't restore if already have a conversation card
-    if (document.querySelector('.conversation-card')) return;
-    
     var ts = state.conversation.time;
-    var card = document.createElement('li');
-    card.className = 'conversation-item';
-    
-    var threadHtml = '';
-    state.conversation.messages.forEach(function(msg) {
-        var msgClass = msg.role === 'user' ? 'convo-user' : 'convo-ai';
-        var html = msg.role === 'user' ? escapeHTML(msg.text) : makeClickable(msg.text).replace(/\n/g, '<br>');
-        threadHtml += '<div class="convo-msg ' + msgClass + '">' + html + '</div>';
-    });
-    
-    card.innerHTML = '<div class="card conversation-card" data-timestamp="' + ts + '">' +
-        '<div class="convo-thread">' + threadHtml + '</div>' +
-        '</div>';
-    
     var messages = document.getElementById('messages');
-    messages.appendChild(card);
+    
+    // Restore each message in the new format
+    state.conversation.messages.forEach(function(msg) {
+        var li = document.createElement('li');
+        if (msg.role === 'user') {
+            li.className = 'command-item';
+            li.innerHTML = '<div class="command-line" data-timestamp="' + ts + '">' +
+                '<span class="command-prompt">❯</span> ' + escapeHTML(msg.text) + '</div>';
+        } else {
+            var html = makeClickable(msg.text).replace(/\n/g, '<br>');
+            var cardType = getCardType(msg.text);
+            li.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + ts + '">' + html + '</div>';
+        }
+        messages.appendChild(li);
+    });
     scrollToBottom();
 }
 
