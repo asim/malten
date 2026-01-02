@@ -1054,6 +1054,9 @@ function loadPersistedCards() {
 function restoreConversation() {
     if (!state.conversation || !state.conversation.messages) return;
     
+    // Don't restore if already have a conversation card
+    if (document.querySelector('.conversation-card')) return;
+    
     var ts = state.conversation.time;
     var card = document.createElement('li');
     card.className = 'conversation-item';
