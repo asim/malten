@@ -104,7 +104,8 @@ var state = {
             locationHistory: this.locationHistory.slice(-20),
             lastBusStop: this.lastBusStop,
             cards: this.cards,
-            seenNewsUrls: this.seenNewsUrls
+            seenNewsUrls: this.seenNewsUrls,
+            conversation: this.conversation
         }));
     },
     hasSeenNews: function(newsText) {
@@ -155,17 +156,24 @@ var state = {
     detectChanges: function(oldCtx, newCtx) {
         if (!newCtx) return;
         
-        // First context - no card needed, context card handles it
+        // First context - show initial location
         if (!oldCtx) {
+            var loc = this.extractLocation(newCtx);
+            if (loc) {
+                this.createCard('📍 ' + loc);
+            }
             return;
         }
         
-        // Location changed - create a brief "arrived at" card
+        // Location/street changed
         var oldLoc = this.extractLocation(oldCtx);
         var newLoc = this.extractLocation(newCtx);
         if (newLoc && oldLoc && newLoc !== oldLoc) {
-            this.createCard('📍 Arrived at ' + newLoc);
-            return;
+            var oldStreet = oldLoc.split(',')[0];
+            var newStreet = newLoc.split(',')[0];
+            if (newStreet !== oldStreet) {
+                this.createCard('📍 ' + newStreet);
+            }
         }
         
         // Rain warning
@@ -183,6 +191,27 @@ var state = {
             var prayerCard = '🕌 ' + newPrayer;
             if (!this.hasRecentCard(prayerCard, 30)) {
                 this.createCard(prayerCard);
+            }
+        }
+        
+        // Bus arriving soon (< 3 mins)
+        var busMatch = newCtx.match(/(\d+) → ([^\n]+) in (\d+)m/);
+        if (busMatch) {
+            var mins = parseInt(busMatch[3]);
+            if (mins <= 3) {
+                var busCard = '🚌 ' + busMatch[1] + ' → ' + busMatch[2] + ' in ' + mins + 'm';
+                if (!this.hasRecentCard(busCard, 5)) {
+                    this.createCard(busCard);
+                }
+            }
+        }
+        
+        // Traffic disruption - new incident
+        var oldDisrupt = oldCtx.match(/🚧[^\n]+/);
+        var newDisrupt = newCtx.match(/🚧[^\n]+/);
+        if (newDisrupt && (!oldDisrupt || oldDisrupt[0] !== newDisrupt[0])) {
+            if (!this.hasRecentCard(newDisrupt[0], 60)) {
+                this.createCard(newDisrupt[0]);
             }
         }
     },
@@ -879,6 +908,11 @@ function createConversationCard(text) {
     scrollToBottom();
     
     activeConversation = card;
+    
+    // Save conversation to state
+    state.conversation = { time: ts, messages: [{ role: 'user', text: text }] };
+    state.save();
+    
     resetConversationTimeout();
 }
 
@@ -908,6 +942,12 @@ function appendToConversation(role, text) {
         loadingDiv.className = 'convo-msg convo-ai convo-loading';
         loadingDiv.textContent = '...';
         thread.appendChild(loadingDiv);
+    }
+    
+    // Save to state
+    if (state.conversation) {
+        state.conversation.messages.push({ role: role, text: text });
+        state.save();
     }
     
     scrollToBottom();
@@ -1007,6 +1047,29 @@ function loadPersistedCards() {
             displayCard(c.text, c.time);
         }
     });
+}
+
+function restoreConversation() {
+    if (!state.conversation || !state.conversation.messages) return;
+    
+    var ts = state.conversation.time;
+    var card = document.createElement('li');
+    card.className = 'conversation-item';
+    
+    var threadHtml = '';
+    state.conversation.messages.forEach(function(msg) {
+        var msgClass = msg.role === 'user' ? 'convo-user' : 'convo-ai';
+        var html = msg.role === 'user' ? escapeHTML(msg.text) : makeClickable(msg.text).replace(/\n/g, '<br>');
+        threadHtml += '<div class="convo-msg ' + msgClass + '">' + html + '</div>';
+    });
+    
+    card.innerHTML = '<div class="card conversation-card" data-timestamp="' + ts + '">' +
+        '<div class="convo-thread">' + threadHtml + '</div>' +
+        '</div>';
+    
+    var messages = document.getElementById('messages');
+    messages.appendChild(card);
+    scrollToBottom();
 }
 
 function formatDateSeparator(timestamp) {
@@ -1216,8 +1279,9 @@ $(document).ready(function() {
     loadListeners();
     initialLoad();
     
-    // Load persisted cards from localStorage
+    // Load persisted cards and conversation from localStorage
     loadPersistedCards();
+    restoreConversation();
     
     // Show cached context immediately
     showCachedContext();
