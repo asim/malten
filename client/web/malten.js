@@ -843,6 +843,10 @@ function sendLocation(lat, lon) {
             state.setContext(data.context);
             displayContext(data.context);
         }
+        if (data.news && !state.hasRecentCard(data.news, 30)) {
+            state.createCard(data.news);
+            displaySystemMessage(data.news);
+        }
     });
 }
 
@@ -856,11 +860,15 @@ function getLocationAndContext() {
     navigator.geolocation.getCurrentPosition(
         function(pos) {
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
-            // Ping returns context - no separate fetch needed
+            // Ping returns context and news
             $.post(pingUrl, { lat: state.lat, lon: state.lon }).done(function(data) {
                 if (data.context) {
                     state.setContext(data.context);
                     displayContext(data.context);
+                }
+                if (data.news && !state.hasRecentCard(data.news, 30)) {
+                    state.createCard(data.news);
+                    displaySystemMessage(data.news);
                 }
             });
             startLocationWatch();

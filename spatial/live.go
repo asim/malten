@@ -487,12 +487,6 @@ func GetLiveContext(lat, lon float64) string {
 		parts = append(parts, rainForecast)
 	}
 	
-	// Top UK headline
-	if news := fetchBreakingNews(); news != nil {
-		db.Insert(news)
-		parts = append(parts, news.Name)
-	}
-	
 	// Traffic disruptions nearby
 	if disruption := fetchTrafficDisruptions(lat, lon); disruption != "" {
 		parts = append(parts, disruption)
@@ -961,6 +955,15 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 }
 
 // fetchBreakingNews gets top UK headline from BBC RSS
+// GetBreakingNews returns the top UK headline (cached 30min)
+func GetBreakingNews() string {
+	if news := fetchBreakingNews(); news != nil {
+		Get().Insert(news)
+		return news.Name
+	}
+	return ""
+}
+
 func fetchBreakingNews() *Entity {
 	// Check cache first (global, not location-based)
 	db := Get()
