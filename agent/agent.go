@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"strings"
 
@@ -149,13 +150,13 @@ var tools = []openai.Tool{
 		Type: openai.ToolTypeFunction,
 		Function: &openai.FunctionDefinition{
 			Name:        "nearby",
-			Description: "Find nearby places like cafes, restaurants, pharmacies, etc. Requires user location to be enabled.",
+			Description: "Find nearby places. Use for any 'X near me' or 'find X' query where X is a place type.",
 			Parameters: json.RawMessage(`{
 				"type": "object",
 				"properties": {
 					"type": {
 						"type": "string",
-						"description": "Type of place (cafe, restaurant, pharmacy, hospital, bank, atm, supermarket, shop, gas, parking, gym, mosque, church, hotel)"
+						"description": "What to search for (bowling, cinema, gym, hotel, arcade, spa, or any place type)"
 					}
 				},
 				"required": ["type"]
@@ -293,31 +294,66 @@ type ToolDecision struct {
 	Args map[string]interface{} `json:"args"`
 }
 
+// Types we show in context (and can answer from context)
+var contextPlaceTypes = map[string]bool{
+	"cafe": true, "cafes": true, "coffee": true,
+	"restaurant": true, "restaurants": true,
+	"pharmacy": true, "pharmacies": true,
+	"supermarket": true, "supermarkets": true, "grocery": true,
+	"shop": true, "shops": true,
+}
+
 // isContextQuestion returns true if the question should be answered from location context
 func isContextQuestion(prompt string) bool {
 	lower := strings.ToLower(prompt)
-	contextKeywords := []string{
+	
+	// Always-in-context: location, weather, buses, prayer
+	alwaysContext := []string{
 		"where am i", "my location", "what is this", "what's this",
 		"next bus", "bus time", "when is the bus", "train time",
 		"weather", "temperature", "cold", "hot", "rain",
 		"prayer", "fajr", "dhuhr", "asr", "maghrib", "isha",
-		"nearby", "around me", "near me", "close by",
-		"cafe", "coffee", "restaurant", "pharmacy", "shop", "supermarket",
 		"what's around", "what is around", "what's happening",
 	}
-	for _, kw := range contextKeywords {
+	for _, kw := range alwaysContext {
 		if strings.Contains(lower, kw) {
 			return true
 		}
 	}
+	
+	// For "near me"/"nearby" queries, only match if it's a type we have in context
+	// "cafes near me" → context, "bowling near me" → tool
+	if strings.Contains(lower, "near me") || strings.Contains(lower, "nearby") || 
+	   strings.Contains(lower, "around me") || strings.Contains(lower, "close by") {
+		words := strings.Fields(lower)
+		for _, w := range words {
+			if contextPlaceTypes[w] {
+				return true
+			}
+		}
+		// Has "near me" but no recognized context type → needs tool
+		return false
+	}
+	
+	// Direct place type mention without "near me" (e.g., just "cafes?")
+	words := strings.Fields(lower)
+	for _, w := range words {
+		w = strings.Trim(w, "?!.,")
+		if contextPlaceTypes[w] {
+			return true
+		}
+	}
+	
 	return false
 }
 
 func selectTool(userPrompt string) (*ToolDecision, error) {
 	// If it's a location/context question, use direct response (none tool)
 	if isContextQuestion(userPrompt) {
+		log.Printf("[tool] isContextQuestion=true for %q", userPrompt)
 		return &ToolDecision{Tool: "none", Args: map[string]interface{}{}}, nil
 	}
+	log.Printf("[tool] isContextQuestion=false for %q - will ask LLM", userPrompt)
 
 	// Build tool selection prompt as user message (Fanar ignores system prompts for this)
 	selectionPrompt := `Which tool should I use for this question: "` + userPrompt + `"
@@ -327,13 +363,17 @@ Available tools:
 - reminder: Islamic content (Quran, Hadith, daily reminder)
 - news: news headlines or search news
 - video: search videos
-- none: general questions, conversation, anything else
+- nearby: find places near user (bowling, cinema, gym, hotel, any place type)
+- none: general questions, math, coding, conversation
 
 Respond ONLY with JSON: {"tool": "name", "args": {"key": "value"}}
 Examples:
 - btc price -> {"tool": "price", "args": {"coin": "btc"}}
 - news about AI -> {"tool": "news", "args": {"query": "AI"}}
 - search hadith about patience -> {"tool": "reminder", "args": {"query": "patience"}}
+- bowling near me -> {"tool": "nearby", "args": {"type": "bowling"}}
+- find a cinema -> {"tool": "nearby", "args": {"type": "cinema"}}
+- gyms nearby -> {"tool": "nearby", "args": {"type": "gym"}}
 - hello -> {"tool": "none", "args": {}}
 - what is 2+2 -> {"tool": "none", "args": {}}`
 
@@ -356,6 +396,7 @@ Examples:
 	}
 
 	content := resp.Choices[0].Message.Content
+	log.Printf("[tool] LLM response: %s", content)
 	
 	// Parse JSON from response
 	var decision ToolDecision
@@ -367,6 +408,7 @@ Examples:
 			json.Unmarshal([]byte(content[start:end+1]), &decision)
 		}
 	}
+	log.Printf("[tool] Parsed decision: tool=%s args=%v", decision.Tool, decision.Args)
 
 	return &decision, nil
 }
