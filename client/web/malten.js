@@ -782,14 +782,16 @@ function displaySystemMessage(text, timestamp) {
 }
 
 // Insert card in chronological order (oldest at top, newest at bottom)
-function insertCardByTimestamp(card, timestamp) {
+function insertCardByTimestamp(card, timestamp, shouldScroll) {
     var messages = document.getElementById('messages');
     
     // Always append new cards at the end (bottom) for chat-like flow
     messages.appendChild(card);
     
-    // Scroll to bottom to show new message
-    scrollToBottom();
+    // Only scroll if explicitly requested (user-initiated)
+    if (shouldScroll) {
+        scrollToBottom();
+    }
 }
 
 function scrollToBottom() {
