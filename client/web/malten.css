@@ -371,3 +371,50 @@ ul li {
   color: #999;
   display: none;
 }
+
+/* Conversation cards */
+.conversation-card {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.conversation-card.active {
+  border-left: 3px solid #4a90d9;
+}
+
+.convo-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.convo-msg {
+  padding: 8px 12px;
+  border-radius: 12px;
+  max-width: 85%;
+}
+
+.convo-user {
+  background: #4a90d9;
+  color: #fff;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  font-weight: 500;
+}
+
+.convo-ai {
+  background: #fff;
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+  border: 1px solid #eee;
+}
+
+.convo-loading {
+  color: #999;
+  font-style: italic;
+}
+
+.conversation-item {
+  margin-bottom: 15px;
+}

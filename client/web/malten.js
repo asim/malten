@@ -15,6 +15,8 @@ var ws = null;
 var currentStream = null;
 var reconnectTimer = null;
 var pendingMessages = {};
+var activeConversation = null; // Currently active conversation card
+var conversationTimeout = null;
 
 // Geohash for stream ID from location
 function geohash(lat, lon, precision) {
@@ -431,9 +433,13 @@ function connectWebSocket() {
                 return;
             }
             
-            // Show response and hide loading
+            // Show response - append to conversation if active
             hideLoading();
-            displaySystemMessage(ev.Text);
+            if (activeConversation) {
+                appendToConversation('ai', ev.Text);
+            } else {
+                displaySystemMessage(ev.Text);
+            }
             clipMessages();
         }
     };
@@ -807,14 +813,89 @@ function hideLoading() {
 }
 
 function displayUserMessage(text) {
+    // If we have an active conversation, append to it
+    if (activeConversation) {
+        appendToConversation('user', text);
+        return;
+    }
+    
+    // Otherwise create a new conversation card
+    createConversationCard(text);
+}
+
+// Create a new conversation card with the user's message
+function createConversationCard(text) {
     var ts = Date.now();
     var card = document.createElement('li');
-    card.className = 'user-msg';
-    card.innerHTML = '<div class="card card-user" data-timestamp="' + ts + '">' +
-        '<span class="card-time">' + formatTimeAgo(ts) + '</span>' +
-        escapeHTML(text) +
+    card.className = 'conversation-item';
+    card.innerHTML = '<div class="card conversation-card active" data-timestamp="' + ts + '">' +
+        '<div class="convo-thread">' +
+        '<div class="convo-msg convo-user">' + escapeHTML(text) + '</div>' +
+        '<div class="convo-msg convo-ai convo-loading">...</div>' +
+        '</div>' +
         '</div>';
-    insertCardByTimestamp(card, ts);
+    
+    var messages = document.getElementById('messages');
+    messages.appendChild(card);
+    scrollToBottom();
+    
+    activeConversation = card;
+    resetConversationTimeout();
+}
+
+// Append a message to the active conversation
+function appendToConversation(role, text) {
+    if (!activeConversation) return;
+    
+    var thread = activeConversation.querySelector('.convo-thread');
+    if (!thread) return;
+    
+    // Remove loading indicator if present
+    var loading = thread.querySelector('.convo-loading');
+    if (loading) loading.remove();
+    
+    // Add the message
+    var msgClass = role === 'user' ? 'convo-user' : 'convo-ai';
+    var html = role === 'user' ? escapeHTML(text) : makeClickable(text).replace(/\n/g, '<br>');
+    
+    var msg = document.createElement('div');
+    msg.className = 'convo-msg ' + msgClass;
+    msg.innerHTML = html;
+    thread.appendChild(msg);
+    
+    // Add loading indicator if this was a user message
+    if (role === 'user') {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'convo-msg convo-ai convo-loading';
+        loadingDiv.textContent = '...';
+        thread.appendChild(loadingDiv);
+    }
+    
+    scrollToBottom();
+    resetConversationTimeout();
+}
+
+// Reset the conversation timeout (ends conversation after inactivity)
+function resetConversationTimeout() {
+    if (conversationTimeout) clearTimeout(conversationTimeout);
+    conversationTimeout = setTimeout(endConversation, 60000); // 1 minute timeout
+}
+
+// End the active conversation
+function endConversation() {
+    if (activeConversation) {
+        var cardDiv = activeConversation.querySelector('.conversation-card');
+        if (cardDiv) cardDiv.classList.remove('active');
+        
+        // Remove any lingering loading indicator
+        var loading = activeConversation.querySelector('.convo-loading');
+        if (loading) loading.remove();
+    }
+    activeConversation = null;
+    if (conversationTimeout) {
+        clearTimeout(conversationTimeout);
+        conversationTimeout = null;
+    }
 }
 
 // Unused pending card functions kept for compatibility
