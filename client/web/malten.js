@@ -81,6 +81,7 @@ var state = {
                 this.lastBusStop = s.lastBusStop || null;
                 this.cards = s.cards || [];
                 this.seenNewsUrls = s.seenNewsUrls || [];
+                this.conversation = s.conversation || null;
                 // Prune old cards on load
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
