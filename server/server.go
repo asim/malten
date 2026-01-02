@@ -15,7 +15,7 @@ import (
 const (
 	MaxMessageSize = 1024
 	MaxMessages    = 1024
-	StreamTTL      = time.Duration(1024) * time.Second
+	StreamTTL      = 24 * time.Hour
 )
 
 type Metadata struct {
