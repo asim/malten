@@ -809,7 +809,7 @@ function submitCommand() {
         info += 'Context cached: ' + (state.context ? state.context.length + ' chars' : 'none') + '\n';
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 68';
+        info += 'JS version: 69';
         displaySystemMessage(info);
         return false;
     }
@@ -1205,6 +1205,53 @@ function buildContextHtml(ctx) {
     return html.replace(/\n/g, '<br>');
 }
 
+// Augment check-in prompt with saved places
+function augmentCheckInPrompt(text) {
+    var savedPlaces = state.savedPlaces || {};
+    var names = Object.keys(savedPlaces);
+    if (names.length === 0 || !state.hasLocation()) return text;
+    
+    // Find where POIs end (before the "Reply with..." line)
+    var lines = text.split('\n');
+    var insertIdx = lines.length - 2; // Before blank line and "Reply with..."
+    
+    // Add saved places
+    var userLoc = { lat: state.lat, lon: state.lon };
+    names.forEach(function(name) {
+        var place = savedPlaces[name];
+        if (place && place.lat && place.lon) {
+            var dist = state.distance(userLoc, place) * 1000; // km to m
+            lines.splice(insertIdx, 0, '• ' + name + ' (' + Math.round(dist) + 'm) ⭐');
+            insertIdx++;
+        }
+    });
+    
+    return lines.join('\n');
+}
+
+// Make check-in options clickable buttons
+function makeCheckInClickable(text) {
+    if (text.indexOf('Where are you?') < 0) {
+        return makeClickable(text);
+    }
+    
+    var html = text;
+    
+    // Convert "• Place (123m)" lines to clickable buttons
+    html = html.replace(/• ([^(]+) \((\d+)m\)( ⭐)?/g, function(match, name, dist, star) {
+        var isSaved = star ? ' saved' : '';
+        return '<button class="checkin-option' + isSaved + '" data-name="' + escapeHTML(name.trim()) + '">' +
+            name.trim() + ' <span class="dist">(' + dist + 'm)</span>' +
+            (star ? ' ⭐' : '') + '</button>';
+    });
+    
+    // Remove the "Reply with..." instruction since we have buttons
+    html = html.replace(/Reply with the name to check in, or ignore\.?/g, 
+        '<button class="checkin-dismiss">Not here</button>');
+    
+    return html;
+}
+
 // Make place names and counts clickable
 function makeClickable(text) {
     var html = text;
@@ -1368,6 +1415,11 @@ function showPlacesInTimeline(data) {
 var displayedCards = {}; // Track displayed card text to prevent duplicates
 
 function displaySystemMessage(text, timestamp, skipScroll) {
+    // Augment check-in prompts with saved places
+    if (text.indexOf('Where are you?') >= 0) {
+        text = augmentCheckInPrompt(text);
+    }
+    
     // Dedupe - don't show same card text twice
     var textKey = text.substring(0, 100); // Use first 100 chars as key
     if (displayedCards[textKey]) {
@@ -1380,7 +1432,7 @@ function displaySystemMessage(text, timestamp, skipScroll) {
     var timeStr = formatTimeAgo(ts);
     var cardType = getCardType(text);
     var card = document.createElement('li');
-    var html = makeClickable(text).replace(/\n/g, '<br>');
+    var html = makeCheckInClickable(text).replace(/\n/g, '<br>');
     card.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + ts + '">' +
         '<span class="card-time">' + timeStr + '</span>' +
         html +
