@@ -1,3 +1,18 @@
+// Package server implements the Malten stream server.
+//
+// ARCHITECTURE (read ARCHITECTURE.md and claude.md "The Spacetime Model"):
+//
+// Streams are spacetime - events propagate through them to observers.
+// Channels filter conversations (like radio frequencies in same space).
+//
+// PRIVACY RULE:
+//   channel = ""        -> public broadcast (can persist to events.jsonl)
+//   channel = "@session" -> private to user (NEVER persist, belongs in localStorage)
+//   channel = "#group"   -> shared group (future)
+//
+// User messages are stored in-memory for real-time delivery but NOT persisted.
+// The user's localStorage is their source of truth for conversation history.
+//
 package server
 
 import (
@@ -469,6 +484,9 @@ func (s *Server) Run() {
 			if message.Type == "message" {
 				s.Store(message)
 				go s.Metadata(message)
+				// Note: User messages are NOT persisted to events.jsonl
+				// Per spacetime model: user conversations belong in localStorage (their worldline)
+				// events.jsonl is for facts about the world, not private experiences
 			}
 			go s.Broadcast(message)
 		case <-t1.C:

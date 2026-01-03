@@ -1,10 +1,25 @@
+/*
+ * ARCHITECTURE (read ARCHITECTURE.md and claude.md "The Spacetime Model"):
+ *
+ * localStorage = your worldline (YOUR private timeline through spacetime)
+ * WebSocket    = real-time events from the stream (public spatial updates)
+ * 
+ * YOUR timeline (cards, conversations) lives in localStorage.
+ * Server streams are for real-time spatial events, not persistence.
+ * On refresh, localStorage is YOUR source of truth.
+ */
+
 var commandUrl = "/commands";
 var messageUrl = "/messages";
 var streamUrl = "/streams";
 var eventUrl = "/events";
-var pingUrl = "/ping";
-var contextUrl = "/context";
 var limit = 25;
+
+// Enable credentials for all jQuery AJAX requests (needed for session cookies)
+$.ajaxSetup({
+    xhrFields: { withCredentials: true },
+    crossDomain: true
+});
 var locationWatchId = null;
 var last = timeAgo();
 var maxChars = 1024;
@@ -15,6 +30,7 @@ var ws = null;
 var currentStream = null;
 var reconnectTimer = null;
 var pendingMessages = {};
+var isAcquiringLocation = false;
 
 // Geohash for stream ID from location
 function geohash(lat, lon, precision) {
@@ -57,18 +73,20 @@ function geohash(lat, lon, precision) {
 
 // Consolidated state management
 var state = {
-    version: 2, // Increment to clear old state on format change
+    version: 3, // Increment to clear old state on format change (v3: JSON context)
     load: function() {
         try {
             var saved = localStorage.getItem('malten_state');
             if (saved) {
                 var s = JSON.parse(saved);
-                // Clear cards if version mismatch, keep location and conversation
+                // Clear cards if version mismatch, keep important data
                 if (s.version !== this.version) {
                     this.lat = s.lat || null;
                     this.lon = s.lon || null;
                     this.cards = [];
                     this.conversation = s.conversation || null;
+                    this.savedPlaces = s.savedPlaces || {};  // Preserve saved places
+                    this.steps = s.steps || { count: 0, date: null };  // Preserve steps
                     this.save();
                     return;
                 }
@@ -76,18 +94,27 @@ var state = {
                 this.lon = s.lon || null;
                 this.context = s.context || null;
                 this.contextTime = s.contextTime || 0;
+                this.contextExpanded = s.contextExpanded || false;
                 this.locationHistory = s.locationHistory || [];
                 this.lastBusStop = s.lastBusStop || null;
                 this.cards = s.cards || [];
                 this.seenNewsUrls = s.seenNewsUrls || [];
                 this.conversation = s.conversation || null;
-                // Prune old cards on load
+                this.checkedIn = s.checkedIn || null;
+                this.savedPlaces = s.savedPlaces || {};
+                this.steps = s.steps || { count: 0, date: null };
+                // Prune old cards on load (24 hour retention)
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
-                // Prune old news URLs (keep last 7 days)
+                // Prune old news URLs (7 day retention)
                 var newsCutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
                 this.seenNewsUrls = this.seenNewsUrls.filter(function(n) { return n.time > newsCutoff; });
-                // Conversations persist until explicitly cleared or new one starts
+                // Prune old conversations (24 hour retention)
+                if (this.conversation && this.conversation.time) {
+                    if (this.conversation.time < cutoff) {
+                        this.conversation = null;
+                    }
+                }
             }
         } catch(e) {}
     },
@@ -98,11 +125,15 @@ var state = {
             lon: this.lon,
             context: this.context,
             contextTime: this.contextTime,
+            contextExpanded: this.contextExpanded,
             locationHistory: this.locationHistory.slice(-20),
             lastBusStop: this.lastBusStop,
             cards: this.cards,
             seenNewsUrls: this.seenNewsUrls,
-            conversation: this.conversation
+            conversation: this.conversation,
+            checkedIn: this.checkedIn,
+            savedPlaces: this.savedPlaces,
+            steps: this.steps
         }));
     },
     hasSeenNews: function(newsText) {
@@ -142,13 +173,24 @@ var state = {
         this.save();
     },
     setContext: function(ctx) {
-        var oldContext = this.context;
+        var oldHtml = this.context ? this.context.html : null;
+        
+        // ctx can be JSON string or object
+        if (typeof ctx === 'string') {
+            try {
+                ctx = JSON.parse(ctx);
+            } catch(e) {
+                // Legacy text format - wrap it
+                ctx = { html: ctx, places: {} };
+            }
+        }
+        
         this.context = ctx;
         this.contextTime = Date.now();
         this.save();
         
         // Detect significant changes and create cards
-        this.detectChanges(oldContext, ctx);
+        this.detectChanges(oldHtml, ctx.html);
     },
     detectChanges: function(oldCtx, newCtx) {
         if (!newCtx) return;
@@ -223,11 +265,20 @@ var state = {
         return false;
     },
     extractLocation: function(ctx) {
-        var match = ctx.match(/📍 ([^\n]+)/);
+        // Handle both structured and legacy format
+        if (ctx && ctx.location && ctx.location.name) {
+            return ctx.location.name;
+        }
+        var html = (typeof ctx === 'string') ? ctx : (ctx && ctx.html) || '';
+        var match = html.match(/📍 ([^\n]+)/);
         return match ? match[1].trim() : null;
     },
     extractPrayer: function(ctx) {
-        var match = ctx.match(/🕌 ([^\n]+)/);
+        if (ctx && ctx.prayer && ctx.prayer.display) {
+            return ctx.prayer.display;
+        }
+        var html = (typeof ctx === 'string') ? ctx : (ctx && ctx.html) || '';
+        var match = html.match(/🕌 ([^\n]+)/);
         return match ? match[1] : null;
     },
     createCard: function(text) {
@@ -285,10 +336,68 @@ var state = {
     lon: null,
     context: null,
     contextTime: 0,
+    contextExpanded: false,
     locationHistory: [],
     lastBusStop: null,
     cards: [],
-    seenNewsUrls: []
+    seenNewsUrls: [],
+    checkedIn: null,  // {name, lat, lon, time} - manual location override
+    savedPlaces: {},  // Private named places: { "Home": {lat, lon}, "Work": {lat, lon} }
+    steps: { count: 0, date: null },  // Daily step counter
+    motionDetected: false,  // Movement detected via accelerometer while GPS stuck
+    
+    // Check if user has manually checked in to a location
+    isCheckedIn: function() {
+        if (!this.checkedIn) return false;
+        // Check-in expires after 2 hours
+        if (Date.now() - this.checkedIn.time > 2 * 60 * 60 * 1000) {
+            this.checkedIn = null;
+            this.save();
+            return false;
+        }
+        return true;
+    },
+    
+    // Check in to a specific location
+    checkIn: function(name, lat, lon) {
+        this.checkedIn = {
+            name: name,
+            lat: lat,
+            lon: lon,
+            time: Date.now()
+        };
+        this.save();
+        this.createCard('📍 Checked in: ' + name);
+    },
+    
+    // Clear check-in (when GPS moves significantly)
+    clearCheckIn: function() {
+        if (this.checkedIn) {
+            this.checkedIn = null;
+            this.save();
+        }
+    },
+    
+    // Check if GPS appears stuck (same position for 5+ min)
+    // Haversine distance in meters
+    haversine: function(lat1, lon1, lat2, lon2) {
+        var R = 6371000;
+        var dLat = (lat2 - lat1) * Math.PI / 180;
+        var dLon = (lon2 - lon1) * Math.PI / 180;
+        var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+        var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    },
+    
+    // Get effective location (checked-in or GPS)
+    getEffectiveLocation: function() {
+        if (this.isCheckedIn()) {
+            return { lat: this.checkedIn.lat, lon: this.checkedIn.lon, name: this.checkedIn.name, isCheckedIn: true };
+        }
+        return { lat: this.lat, lon: this.lon, name: null, isCheckedIn: false };
+    }
 };
 state.load();
 
@@ -501,8 +610,9 @@ function loadStream() {
 
 function initialLoad() {
     clearMessages();
-    // Skip loadMessages() - personal timeline comes from localStorage
-    // Server messages are stream-based, but user's view is personal
+    // User's timeline comes from localStorage (their worldline)
+    // Server messages are for real-time stream events, not persistence
+    // Per spacetime model: private experiences belong in localStorage
     connectWebSocket();
     
     var form = document.getElementById('form');
@@ -511,6 +621,8 @@ function initialLoad() {
 }
 
 function submitCommand() {
+    hideCommandPalette();
+    
     var form = document.getElementById('form');
     var prompt = form.elements["prompt"].value.trim();
     
@@ -530,6 +642,164 @@ function submitCommand() {
         return false;
     }
     
+    // Handle refresh command - force reload latest version
+    if (prompt.match(/^\/?refresh$/i)) {
+        form.elements["prompt"].value = '';
+        // Unregister service worker to force fresh fetch
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                registrations.forEach(function(r) { r.unregister(); });
+            });
+        }
+        displaySystemMessage('🔄 Refreshing...');
+        setTimeout(function() { location.reload(true); }, 500);
+        return false;
+    }
+    
+    // Handle clear command - reset all local state
+    if (prompt.match(/^\/?clear$/i)) {
+        form.elements["prompt"].value = '';
+        localStorage.clear();
+        // Unregister service worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                registrations.forEach(function(r) { r.unregister(); });
+            });
+        }
+        // Show feedback then reload
+        displaySystemMessage('🗑️ Cleared all local data. Reloading...');
+        setTimeout(function() { location.reload(); }, 1000);
+        return false;
+    }
+    
+    // Handle save command - save current location as named place
+    var saveMatch = prompt.match(/^\/?save\s+(.+)$/i);
+    if (saveMatch) {
+        form.elements["prompt"].value = '';
+        var placeName = saveMatch[1].trim();
+        if (!state.hasLocation()) {
+            displaySystemMessage('❌ Need location to save a place');
+            return false;
+        }
+        state.savedPlaces[placeName] = { lat: state.lat, lon: state.lon };
+        state.save();
+        state.createCard('📍 Saved "' + placeName + '"');
+        return false;
+    }
+    
+    // Handle places command - list saved places
+    if (prompt.match(/^\/?places$/i)) {
+        form.elements["prompt"].value = '';
+        var names = Object.keys(state.savedPlaces || {});
+        if (names.length === 0) {
+            displaySystemMessage('📍 No saved places.\nUse /save Home to save current location.');
+        } else {
+            var msg = '📍 Saved places:\n';
+            names.forEach(function(name) {
+                msg += '• ' + name + '\n';
+            });
+            msg += '\nUse /checkin [name] or /delete [name]';
+            displaySystemMessage(msg);
+        }
+        return false;
+    }
+    
+    // Handle delete place command
+    var deleteMatch = prompt.match(/^\/?delete\s+(.+)$/i);
+    if (deleteMatch) {
+        form.elements["prompt"].value = '';
+        var placeName = deleteMatch[1].trim();
+        if (state.savedPlaces[placeName]) {
+            delete state.savedPlaces[placeName];
+            state.save();
+            state.createCard('🗑️ Deleted "' + placeName + '"');
+        } else {
+            displaySystemMessage('❌ No saved place named "' + placeName + '"');
+        }
+        return false;
+    }
+    
+    // Handle checkin command - check into saved place or current location with name
+    var checkinMatch = prompt.match(/^\/?checkin\s+(.+)$/i);
+    if (checkinMatch) {
+        form.elements["prompt"].value = '';
+        var placeName = checkinMatch[1].trim();
+        
+        // Check if it's a saved place
+        if (state.savedPlaces[placeName]) {
+            var place = state.savedPlaces[placeName];
+            state.checkIn(placeName, place.lat, place.lon);
+            state.createCard('📍 Checked in to ' + placeName);
+        } else if (state.hasLocation()) {
+            // Use current location with this name
+            state.checkIn(placeName, state.lat, state.lon);
+            state.createCard('📍 Checked in to ' + placeName);
+        } else {
+            displaySystemMessage('❌ Need location to check in');
+        }
+        return false;
+    }
+    
+    // Handle export command - download state as JSON
+    if (prompt.match(/^\/?export$/i)) {
+        form.elements["prompt"].value = '';
+        var data = localStorage.getItem('malten_state');
+        if (!data) {
+            displaySystemMessage('❌ Nothing to export');
+            return false;
+        }
+        var blob = new Blob([data], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'malten-backup-' + new Date().toISOString().split('T')[0] + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        displaySystemMessage('💾 Exported backup to Downloads');
+        return false;
+    }
+    
+    // Handle import command - show file picker
+    if (prompt.match(/^\/?import$/i)) {
+        form.elements["prompt"].value = '';
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    var data = JSON.parse(e.target.result);
+                    if (!data.version) throw new Error('Invalid backup file');
+                    localStorage.setItem('malten_state', e.target.result);
+                    displaySystemMessage('✅ Imported backup. Reloading...');
+                    setTimeout(function() { location.reload(); }, 1000);
+                } catch(err) {
+                    displaySystemMessage('❌ Invalid backup file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+        return false;
+    }
+    
+    // Handle checkout command
+    if (prompt.match(/^\/?checkout$/i)) {
+        form.elements["prompt"].value = '';
+        if (state.checkedIn) {
+            var name = state.checkedIn.name;
+            state.checkedIn = null;
+            state.save();
+            state.createCard('📍 Checked out from ' + name);
+        } else {
+            displaySystemMessage('📍 Not checked in anywhere');
+        }
+        return false;
+    }
+    
     // Handle debug command locally
     if (prompt.match(/^\/?debug$/i)) {
         form.elements["prompt"].value = '';
@@ -538,21 +808,34 @@ function submitCommand() {
         info += 'Location: ' + (state.hasLocation() ? state.lat.toFixed(4) + ', ' + state.lon.toFixed(4) : 'none') + '\n';
         info += 'Context cached: ' + (state.context ? state.context.length + ' chars' : 'none') + '\n';
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
-        info += 'Version: ' + (state.version || 'unknown');
+        info += 'State version: ' + (state.version || 'unknown') + '\n';
+        info += 'JS version: 68';
         displaySystemMessage(info);
         return false;
     }
 
+    // Handle /ping silently - just refresh context, don't show in timeline
+    if (prompt.match(/^\/?ping$/i)) {
+        form.elements["prompt"].value = '';
+        if (state.hasLocation()) {
+            fetchContext();
+        }
+        return false;
+    }
+    
     // Handle ping on/off - enable location tracking client-side
     var pingMatch = prompt.match(/^\/?ping\s+(on|off)$/i);
     if (pingMatch) {
+        form.elements["prompt"].value = '';
         var action = pingMatch[1].toLowerCase();
         if (action === 'on') {
             enableLocation();
+            displaySystemMessage('📍 Location tracking enabled');
         } else {
             disableLocation();
+            displaySystemMessage('📍 Location tracking disabled');
         }
-        // Still send to server so it can respond
+        return false;
     }
 
     // Handle nearby - send fresh location before query
@@ -584,7 +867,17 @@ function submitCommand() {
     // Track pending to dedupe echo
     pendingMessages[prompt] = true;
     
-    $.post(commandUrl, data);
+    $.post(commandUrl, data).done(function(response) {
+        // If we got a direct response, show it immediately
+        if (response && response.length > 0 && !response.startsWith('{')) {
+            hideLoading();
+            delete pendingMessages[prompt];
+            displayResponse(response);
+            scrollToBottom();
+        }
+        // JSON responses (like /ping) are handled elsewhere
+        // Empty responses mean async (AI) - wait for WebSocket
+    });
 
     form.elements["prompt"].value = '';
     return false;
@@ -593,7 +886,7 @@ function submitCommand() {
 // Location functions
 function enableLocation() {
     if (!navigator.geolocation) {
-        displaySystemMessage("📍 Geolocation not supported in this browser");
+        showLocationNeeded('unavailable');
         return;
     }
 
@@ -601,7 +894,7 @@ function enableLocation() {
     if (navigator.permissions) {
         navigator.permissions.query({ name: 'geolocation' }).then(function(result) {
             if (result.state === 'denied') {
-                displaySystemMessage("📍 Location permission denied. Please enable in browser settings.");
+                showLocationNeeded('denied');
                 return;
             }
             // prompt or granted - proceed to request
@@ -620,23 +913,73 @@ function requestLocation() {
     navigator.geolocation.getCurrentPosition(
         function(pos) {
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
-            $.post(pingUrl, { lat: state.lat, lon: state.lon }).done(function(data) {
-                if (data.context) {
-                    state.setContext(data.context);
-                    displayContext(data.context);
+            $.post(commandUrl, {
+                prompt: '/ping',
+                stream: getStream(),
+                lat: state.lat,
+                lon: state.lon
+            }).done(function(data) {
+                if (data && data.length > 0) {
+                    state.setContext(data);
+                    displayContext(data);
                 }
             });
             startLocationWatch();
         },
         function(err) {
-            console.log("Location error:", err.message);
+            console.log("Location error:", err.code, err.message);
+            handleLocationError(err);
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
 }
 
+function handleLocationError(err) {
+    // err.code: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+    if (err.code === 1) {
+        showLocationNeeded('denied');
+    } else if (err.code === 2) {
+        showLocationNeeded('unavailable');
+    } else if (err.code === 3) {
+        showLocationNeeded('timeout');
+    } else {
+        showLocationNeeded();
+    }
+}
+
 var lastPingSent = 0;
-var pingInterval = 15000; // Update every 15 seconds when moving
+var lastPingLat = 0;
+var lastPingLon = 0;
+var lastPingTime = 0;
+
+// Adaptive ping interval based on speed
+// Driving (>10 m/s): 5s, Walking (2-10 m/s): 10s, Stationary: 30s
+function getPingInterval() {
+    if (!lastPingTime || !lastPingLat) return 15000;
+    
+    var now = Date.now();
+    var elapsed = (now - lastPingTime) / 1000; // seconds
+    if (elapsed < 2) return 15000; // need time to measure
+    
+    var distance = haversineDistance(lastPingLat, lastPingLon, state.lat, state.lon);
+    var speed = distance / elapsed; // m/s
+    
+    if (speed > 10) return 5000;  // Driving: every 5s
+    if (speed > 2) return 10000;  // Walking: every 10s  
+    return 30000;                 // Stationary: every 30s
+}
+
+// Haversine formula for distance in meters
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    var R = 6371000; // Earth's radius in meters
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
 
 // Send fresh location immediately (bypasses throttle)
 function sendFreshLocation() {
@@ -661,7 +1004,12 @@ function startLocationWatch() {
     locationWatchId = navigator.geolocation.watchPosition(
         function(pos) {
             var now = Date.now();
-            if (now - lastPingSent >= pingInterval) {
+            var interval = getPingInterval();
+            if (now - lastPingSent >= interval) {
+                // Track for speed calculation
+                lastPingLat = state.lat;
+                lastPingLon = state.lon;
+                lastPingTime = now;
                 lastPingSent = now;
                 sendLocation(pos.coords.latitude, pos.coords.longitude);
             }
@@ -674,41 +1022,65 @@ function startLocationWatch() {
 }
 
 function fetchContext() {
-    // Use cached location if available, otherwise server's stored location
-    var url = contextUrl;
-    if (state.hasLocation()) {
-        url = contextUrl + '?lat=' + state.lat + '&lon=' + state.lon;
-    }
-    $.get(url).done(function(data) {
-        if (data.context && data.context.length > 0) {
-            state.setContext(data.context);
-            displayContext(data.context);
+    if (!state.hasLocation()) return;
+    $.post(commandUrl, {
+        prompt: '/ping',
+        stream: getStream(),
+        lat: state.lat,
+        lon: state.lon
+    }).done(function(response) {
+        if (response && response.length > 0) {
+            state.setContext(response);
+            displayContext(response);
         }
     });
 }
 
-function displayContext(text, forceUpdate) {
+function displayContext(ctx, forceUpdate, needsAction) {
+    // Handle both JSON object and string
+    if (typeof ctx === 'string') {
+        try {
+            ctx = JSON.parse(ctx);
+        } catch(e) {
+            // Legacy text format
+            ctx = { html: ctx, places: {} };
+        }
+    }
+    
     // Don't replace substantive cached context with empty/minimal response
-    if (!forceUpdate && state.context && state.context.length > 50) {
-        if (!text || text.length < 30 || text.indexOf('enable_location') >= 0) {
-            console.log('Keeping cached context, new context too minimal:', text ? text.length : 0);
+    var html = ctx.html || '';
+    if (!forceUpdate && state.context && state.context.html && state.context.html.length > 50) {
+        if (!html || html.length < 30 || html.indexOf('enable_location') >= 0) {
+            console.log('Keeping cached context, new context too minimal:', html.length);
             return;
         }
     }
     
-    // Build summary line (first line of each type)
-    var summary = buildContextSummary(text);
+    // Build summary line from structured data or HTML
+    var summary = buildContextSummary(ctx, needsAction);
     
-    // Add staleness indicator if context is old (only if we have a valid contextTime)
-    if (state.contextTime > 0) {
+    // Always show when context was updated (but not for welcome/action-needed)
+    if (state.contextTime > 0 && !needsAction) {
         var age = Date.now() - state.contextTime;
-        var staleMinutes = Math.floor(age / 60000);
-        if (staleMinutes >= 5) {
-            summary += ' · <span class="stale">' + staleMinutes + 'm ago</span>';
+        var ageSecs = Math.floor(age / 1000);
+        var ageStr;
+        if (ageSecs < 60) {
+            ageStr = 'now';
+        } else if (ageSecs < 3600) {
+            ageStr = Math.floor(ageSecs / 60) + 'm';
+        } else {
+            ageStr = Math.floor(ageSecs / 3600) + 'h';
+        }
+        var staleClass = ageSecs > 300 ? 'stale' : 'fresh';
+        if (isAcquiringLocation) {
+            summary += ' · <span class="acquiring">📡</span>';
+        } else {
+            summary += ' · <span class="' + staleClass + '">' + ageStr + '</span>';
         }
     }
     
-    var fullHtml = makeClickable(text).replace(/\n/g, '<br>');
+    // Build full HTML with clickable place links
+    var fullHtml = buildContextHtml(ctx);
     
     // Update the context card (outside messages list)
     var contextCard = document.getElementById('context-card');
@@ -720,37 +1092,117 @@ function displayContext(text, forceUpdate) {
         var div = document.createElement('div');
         div.id = 'context-card';
         div.innerHTML = cardHtml;
-        div.onclick = function() { this.classList.toggle('expanded'); };
+        div.onclick = function(e) {
+            // Don't toggle if clicking a link inside the card
+            var target = e.target;
+            if (target.tagName === 'A') return;
+            // Check parent chain for links
+            while (target && target !== this) {
+                if (target.tagName === 'A') return;
+                target = target.parentElement;
+            }
+            this.classList.toggle('expanded');
+            state.contextExpanded = this.classList.contains('expanded');
+            state.save();
+        };
         var container = document.getElementById('messages-area');
         container.parentNode.insertBefore(div, container);
+        contextCard = div;
     } else {
         var wasExpanded = contextCard.classList.contains('expanded');
         contextCard.innerHTML = cardHtml;
         if (wasExpanded) contextCard.classList.add('expanded');
     }
+    
+    // Expand by default when action is needed (first load, location needed)
+    if (needsAction) {
+        contextCard.classList.add('expanded');
+    }
+    
+    // Restore expanded state from localStorage
+    if (state.contextExpanded && !needsAction) {
+        contextCard.classList.add('expanded');
+    }
 }
 
 // Build one-line summary from context
-function buildContextSummary(text) {
+function buildContextSummary(ctx, needsAction) {
+    var html = ctx.html || '';
+    
+    // If action is needed (welcome, location needed), show that
+    if (needsAction) {
+        if (html.indexOf('enable_location') >= 0) {
+            return '📍 Enable location for live updates';
+        }
+        if (html.indexOf('Location needed') >= 0) {
+            return '📍 Location needed - tap for details';
+        }
+        return 'Tap for details';
+    }
+    
     var parts = [];
     
-    // Location
-    var locMatch = text.match(/📍 ([^,\n]+)/);
-    if (locMatch) parts.push('📍 ' + locMatch[1]);
+    // Location from structured data or HTML
+    if (ctx.location && ctx.location.name) {
+        var locName = ctx.location.name.split(',')[0];
+        parts.push('📍 ' + locName);
+    }
     
-    // Weather temp
-    var tempMatch = text.match(/(\d+)°C/);
-    if (tempMatch) parts.push(tempMatch[0]);
+    // Weather
+    if (ctx.weather && ctx.weather.temp) {
+        parts.push(ctx.weather.temp + '°C');
+    }
     
-    // Prayer - current one
-    var prayerMatch = text.match(/🕌 ([A-Z][a-z]+) (now|in \d+m?)/);
-    if (prayerMatch) parts.push('🕌 ' + prayerMatch[1] + ' ' + prayerMatch[2]);
+    // Prayer
+    if (ctx.prayer && ctx.prayer.display) {
+        parts.push(ctx.prayer.display);
+    }
     
-    // Bus - first one
-    var busMatch = text.match(/(\d+) → [^\n]+ in (\d+m)/);
-    if (busMatch) parts.push('🚌 ' + busMatch[1] + ' ' + busMatch[2]);
+    // Fallback to parsing HTML if no structured data
+    if (parts.length === 0) {
+        var locMatch = html.match(/📍 ([^,\n]+)/);
+        if (locMatch) parts.push('📍 ' + locMatch[1]);
+        
+        var tempMatch = html.match(/(\d+)°C/);
+        if (tempMatch) parts.push(tempMatch[0]);
+    }
     
     return parts.length > 0 ? parts.join(' · ') : 'Tap to expand';
+}
+
+// Build full context HTML with clickable place links
+function buildContextHtml(ctx) {
+    var html = ctx.html || '';
+    
+    // Enable location button
+    html = html.replace(/\{enable_location\}/g, 
+        '<a href="javascript:void(0)" class="enable-location-btn">📍 Enable location</a>');
+    
+    // Replace place counts with clickable links
+    var categoryIcons = {
+        'cafe': '☕',
+        'restaurant': '🍽️',
+        'pharmacy': '💊',
+        'supermarket': '🛒'
+    };
+    
+    for (var category in ctx.places) {
+        if (!ctx.places.hasOwnProperty(category)) continue;
+        var places = ctx.places[category];
+        if (!places || places.length === 0) continue;
+        
+        var icon = categoryIcons[category] || '📍';
+        var label = places.length === 1 ? places[0].name : places.length + ' places';
+        
+        // Create link with data attribute containing JSON
+        var link = '<a href="javascript:void(0)" class="place-link" data-category="' + category + '">' + label + '</a>';
+        
+        // Replace the pattern in HTML (e.g., "☕ 7 places" or "💊 Boots")
+        var pattern = new RegExp(icon + ' (' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '|\\d+ places|' + places[0].name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')');
+        html = html.replace(pattern, icon + ' ' + link);
+    }
+    
+    return html.replace(/\n/g, '<br>');
 }
 
 // Make place names and counts clickable
@@ -759,30 +1211,14 @@ function makeClickable(text) {
     
     // Enable location button
     html = html.replace(/\{enable_location\}/g, 
-        '<a href="#" class="enable-location-btn">📍 Enable location</a>');
+        '<a href="javascript:void(0)" class="enable-location-btn">📍 Enable location</a>');
     
-    // Match {data} format - contains all places data (single or multiple separated by ;;)
-    html = html.replace(/\{([^}]+)\}/g, function(match, data) {
-        var places = data.split(';;');
-        var firstName = places[0].split('|')[0] || '';
-        var count = places.length;
-        var label = count === 1 ? firstName : count + ' places';
-        return '<a href="#" class="place-link" data-type="places" data-details="' + encodeURIComponent(data) + '">' + label + '</a>';
-    });
-    
-    // Convert URLs to clickable links - detect type by URL pattern
+    // Convert URLs to clickable links
     html = html.replace(/(https?:\/\/[A-Za-z0-9-_.]+\.[A-Za-z0-9-_:%&~\?\/.=#,@+]+)/g, function(url) {
-        // News domains
-        var newsPatterns = /bbc\.com|bbc\.co\.uk|theguardian\.com|news\.|cnn\.com|reuters\.|nytimes\.|sky\.com|independent\.co\.uk|telegraph\.co\.uk|mirror\.co\.uk|dailymail\.co\.uk|metro\.co\.uk|huffpost|washingtonpost|apnews|aljazeera/i;
-        if (newsPatterns.test(url)) {
-            return '<a href="' + url + '" target="_blank" class="article-link">Read article →</a>';
-        }
-        // Google Maps links
         if (url.includes('google.com/maps') || url.includes('maps.google.com')) {
             return '<a href="' + url + '" target="_blank" class="map-link">Map</a>';
         }
-        // Other links - treat as website
-        return '<a href="' + url + '" target="_blank" class="web-link">Web</a>';
+        return '<a href="' + url + '" target="_blank" class="web-link">Link</a>';
     });
     
     return html;
@@ -791,31 +1227,118 @@ function makeClickable(text) {
 // Handle enable location button click
 $(document).on('click', '.enable-location-btn', function(e) {
     e.preventDefault();
+    e.stopPropagation(); // Prevent context card from closing
+    
+    // Disable button and show acquiring state
+    var btn = $(this);
+    btn.text('📍 Acquiring location...').addClass('acquiring');
+    
     getLocationAndContext();
 });
 
-// Handle clicks on place links - toggle expansion
-$(document).on('click', '.place-link', function(e) {
+function resetLocationButton() {
+    $('.enable-location-btn').text('📍 Enable location').removeClass('acquiring');
+}
+
+// Handle clicks on place links - add places to timeline
+// Clicking place links shows places in timeline
+// Clicking place links shows places from structured context data
+$(document).on('click touchend', '.place-link', function(e) {
     e.preventDefault();
-    var link = $(this);
+    e.stopPropagation();
+    e.stopImmediatePropagation();
     
-    // Prevent double-click
-    if (link.data('clicked')) return;
-    link.data('clicked', true);
+    var category = $(this).attr('data-category');
+    if (!category || !state.context || !state.context.places) return false;
     
-    var data = decodeURIComponent(link.data('details'));
-    showPlacesCard(data);
+    var places = state.context.places[category];
+    if (!places || places.length === 0) return false;
+    
+    var lines = [];
+    for (var i = 0; i < places.length; i++) {
+        var p = places[i];
+        var line = '📍 ' + p.name;
+        
+        // Build info line
+        var info = [];
+        if (p.address) info.push(p.address);
+        if (p.postcode) info.push(p.postcode);
+        if (p.hours) info.push('🕒' + p.hours);
+        if (p.phone) info.push('📞' + p.phone);
+        if (info.length) line += '\n   ' + info.join(', ');
+        
+        // Add Map and Directions links - include name and coordinates
+        var mapUrl = 'https://www.google.com/maps/search/' + encodeURIComponent(p.name) + '/@' + p.lat + ',' + p.lon + ',17z';
+        var links = [];
+        links.push('<a href="' + mapUrl + '" target="_blank" class="map-link">Map</a>');
+        links.push('<a href="javascript:void(0)" class="directions-link" data-name="' + p.name.replace(/"/g, '&quot;') + '" data-lat="' + p.lat + '" data-lon="' + p.lon + '">Directions</a>');
+        line += '\n   ' + links.join(' · ');
+        
+        lines.push(line);
+    }
+    
+    var text = lines.join('\n\n');
+    
+    // Add directly to DOM
+    var li = document.createElement('li');
+    var html = text.replace(/\n/g, '<br>');
+    li.innerHTML = '<div class="card card-location"><span class="card-time">Just now</span>' + html + '</div>';
+    document.getElementById('messages').appendChild(li);
+    scrollToBottom();
+    
+    return false;
 });
 
-// Show places card from embedded data (no API call)
-function showPlacesCard(data) {
+// Clicking directions link gets walking directions
+$(document).on('click touchend', '.directions-link', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    
+    var name = $(this).data('name');
+    var toLat = $(this).data('lat');
+    var toLon = $(this).data('lon');
+    
+    if (!state.hasLocation()) {
+        displaySystemMessage('📍 Need your location for directions');
+        return false;
+    }
+    
+    // Show loading
+    var li = document.createElement('li');
+    li.innerHTML = '<div class="card"><span class="card-time">Just now</span>🚶 Getting directions to ' + name + '...</div>';
+    document.getElementById('messages').appendChild(li);
+    scrollToBottom();
+    
+    // Call server for directions
+    $.post(commandUrl, {
+        prompt: '/directions ' + name,
+        stream: getStream(),
+        lat: state.lat,
+        lon: state.lon,
+        toLat: toLat,
+        toLon: toLon
+    }).done(function(response) {
+        // Replace loading with response
+        var html = response.replace(/\n/g, '<br>').replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" class="map-link">Open in Maps</a>');
+        li.innerHTML = '<div class="card"><span class="card-time">Just now</span>' + html + '</div>';
+        scrollToBottom();
+    }).fail(function() {
+        li.innerHTML = '<div class="card"><span class="card-time">Just now</span>❌ Couldn\'t get directions</div>';
+    });
+    
+    return false;
+});
+
+// Show places as a card in the timeline
+function showPlacesInTimeline(data) {
     var places = data.split(';;');
     var lines = [];
     
-    places.forEach(function(placeData, idx) {
+    places.forEach(function(placeData) {
         var parts = placeData.split('|');
         var name = parts[0] || '';
-        var placeLine = '📍 ' + name;
+        var details = [];
         var mapUrl = '';
         
         for (var i = 1; i < parts.length; i++) {
@@ -823,23 +1346,28 @@ function showPlacesCard(data) {
             if (part.startsWith('http')) {
                 mapUrl = part;
             } else if (part) {
-                placeLine += '\n   ' + part;
+                details.push(part);
             }
         }
-        // Just add URL - makeClickable will convert to link
-        if (mapUrl) {
-            placeLine += '\n   ' + mapUrl;
+        
+        var line = '📍 ' + name;
+        if (details.length > 0) {
+            line += '\n   ' + details.join(', ');
         }
-        lines.push(placeLine);
+        if (mapUrl) {
+            line += '\n   ' + mapUrl;
+        }
+        lines.push(line);
     });
     
-    displaySystemMessage(lines.join('\n\n'));
+    var text = lines.join('\n\n');
+    state.createCard(text);
     scrollToBottom();
 }
 
 var displayedCards = {}; // Track displayed card text to prevent duplicates
 
-function displaySystemMessage(text, timestamp) {
+function displaySystemMessage(text, timestamp, skipScroll) {
     // Dedupe - don't show same card text twice
     var textKey = text.substring(0, 100); // Use first 100 chars as key
     if (displayedCards[textKey]) {
@@ -859,6 +1387,11 @@ function displaySystemMessage(text, timestamp) {
         '</div>';
     
     insertCardByTimestamp(card, ts);
+    
+    // Always scroll to bottom unless explicitly skipped
+    if (!skipScroll) {
+        scrollToBottom();
+    }
 }
 
 // Insert card in chronological order (oldest at top, newest at bottom)
@@ -875,11 +1408,13 @@ function insertCardByTimestamp(card, timestamp, shouldScroll) {
 }
 
 function scrollToBottom() {
-    // Use setTimeout to ensure DOM has rendered
     setTimeout(function() {
-        var area = document.getElementById('messages-area');
-        if (area) area.scrollTop = area.scrollHeight;
-    }, 50);
+        // Try scrollIntoView on last message
+        var messages = document.getElementById('messages');
+        if (messages && messages.lastElementChild) {
+            messages.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }, 100);
 }
 
 function showLoading() {
@@ -1105,10 +1640,15 @@ function sendLocation(lat, lon) {
         connectWebSocket(); // Reconnect to new stream silently
     }
     
-    $.post(pingUrl, { lat: lat, lon: lon }).done(function(data) {
-        if (data.context) {
-            state.setContext(data.context);
-            displayContext(data.context);
+    $.post(commandUrl, {
+        prompt: '/ping',
+        stream: newStream,
+        lat: lat,
+        lon: lon
+    }).done(function(data) {
+        if (data && data.length > 0) {
+            state.setContext(data);
+            displayContext(data);
         }
     });
 }
@@ -1116,13 +1656,51 @@ function sendLocation(lat, lon) {
 // Get location and refresh context
 function getLocationAndContext() {
     if (!navigator.geolocation) {
-        refreshContextFromState();
+        showLocationNeeded('unavailable');
         return;
+    }
+    
+    // Check permission state first to show appropriate message while waiting
+    if (navigator.permissions) {
+        navigator.permissions.query({ name: 'geolocation' }).then(function(result) {
+            if (result.state === 'denied') {
+                // Already denied - show instructions
+                if (!state.context || !state.hasLocation()) {
+                    showLocationNeeded('denied');
+                }
+            } else if (result.state === 'prompt') {
+                // Will prompt - show welcome while waiting
+                if (!state.context) {
+                    showWelcome();
+                }
+            }
+            // For 'granted' or 'prompt', proceed to get location
+            if (result.state !== 'denied') {
+                requestLocationForContext();
+            }
+        }).catch(function() {
+            // Permissions API not supported, just try
+            requestLocationForContext();
+        });
+    } else {
+        // No permissions API, just try
+        requestLocationForContext();
+    }
+}
+
+function requestLocationForContext() {
+    // Show acquiring state if context is stale (> 5 min old)
+    var contextAge = state.contextTime ? Date.now() - state.contextTime : Infinity;
+    if (contextAge > 5 * 60 * 1000) {
+        isAcquiringLocation = true;
+        updateAcquiringIndicator();
     }
     
     navigator.geolocation.getCurrentPosition(
         function(pos) {
+            isAcquiringLocation = false;
             var oldStream = currentStream;
+            var wasStale = state.contextTime && (Date.now() - state.contextTime > 10 * 60 * 1000);
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
             
             // Reconnect WebSocket if stream changed
@@ -1131,21 +1709,53 @@ function getLocationAndContext() {
                 connectWebSocket();
             }
             
-            // Ping returns context and news
-            $.post(pingUrl, { lat: state.lat, lon: state.lon }).done(function(data) {
-                if (data.context) {
-                    state.setContext(data.context);
-                    displayContext(data.context);
+            // Ping returns context
+            $.post(commandUrl, {
+                prompt: '/ping',
+                stream: newStream,
+                lat: state.lat,
+                lon: state.lon
+            }).done(function(data) {
+                if (data && data.length > 0) {
+                    // Parse JSON if string
+                    var ctx = data;
+                    if (typeof data === 'string') {
+                        try { ctx = JSON.parse(data); } catch(e) { ctx = { html: data }; }
+                    }
+                    // If context was stale (>10 min) and just refreshed, create a card
+                    if (wasStale) {
+                        var loc = state.extractLocation(ctx);
+                        if (loc) {
+                            state.createCard('📍 ' + loc + ' · refreshed');
+                        }
+                    }
+                    state.setContext(ctx);
+                    displayContext(ctx);
                 }
             });
             startLocationWatch();
         },
         function(err) {
-            console.log("Location error:", err.message);
-            refreshContextFromState();
+            isAcquiringLocation = false;
+            updateAcquiringIndicator();
+            resetLocationButton();
+            console.log("Location error:", err.code, err.message);
+            // If we have cached context, show it but also note the error
+            if (state.context && state.hasLocation()) {
+                displayContext(state.context, true);
+            } else {
+                handleLocationError(err);
+            }
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
     );
+}
+
+function updateAcquiringIndicator() {
+    // Update context card to show acquiring state
+    if (state.context) {
+        displayContext(state.context, true);
+    }
 }
 
 function refreshContextFromState() {
@@ -1218,6 +1828,64 @@ function toggleSpeech() {
     }
 }
 
+// Available commands for autocomplete
+var commands = [
+    { cmd: '/nearby', desc: 'Find nearby places', usage: '/nearby cafe' },
+    { cmd: '/directions', desc: 'Get walking directions', usage: '/directions Waitrose' },
+    { cmd: '/checkin', desc: 'Check in to a place', usage: '/checkin Home' },
+    { cmd: '/checkout', desc: 'Clear check-in' },
+    { cmd: '/save', desc: 'Save current location', usage: '/save Home' },
+    { cmd: '/places', desc: 'List saved places' },
+    { cmd: '/delete', desc: 'Delete saved place', usage: '/delete Home' },
+    { cmd: '/weather', desc: 'Current weather' },
+    { cmd: '/bus', desc: 'Bus times' },
+    { cmd: '/prayer', desc: 'Prayer times' },
+    { cmd: '/export', desc: 'Backup to file' },
+    { cmd: '/import', desc: 'Restore from file' },
+    { cmd: '/refresh', desc: 'Force reload' },
+    { cmd: '/clear', desc: 'Reset all data' },
+    { cmd: '/debug', desc: 'Show debug info' },
+];
+
+function showCommandPalette(filter) {
+    var existing = document.getElementById('command-palette');
+    if (existing) existing.remove();
+    
+    var filtered = commands.filter(function(c) {
+        return !filter || c.cmd.toLowerCase().indexOf(filter.toLowerCase()) === 0;
+    });
+    
+    if (filtered.length === 0) return;
+    
+    var palette = document.createElement('div');
+    palette.id = 'command-palette';
+    
+    // Add title
+    var title = document.createElement('div');
+    title.className = 'command-title';
+    title.textContent = 'Commands';
+    palette.appendChild(title);
+    
+    filtered.forEach(function(c) {
+        var item = document.createElement('div');
+        item.className = 'command-item';
+        item.innerHTML = '<span class="cmd">' + c.cmd + '</span> <span class="desc">' + c.desc + '</span>';
+        item.onclick = function() {
+            document.getElementById('prompt').value = c.cmd + ' ';
+            document.getElementById('prompt').focus();
+            hideCommandPalette();
+        };
+        palette.appendChild(item);
+    });
+    
+    document.getElementById('bottom-fixed').appendChild(palette);
+}
+
+function hideCommandPalette() {
+    var palette = document.getElementById('command-palette');
+    if (palette) palette.remove();
+}
+
 function loadListeners() {
     // Scroll to load more (scroll down = load older)
     var area = document.getElementById('messages-area');
@@ -1229,20 +1897,57 @@ function loadListeners() {
         });
     }
 
-    // Collapse context card when input is focused (mobile keyboard)
     var prompt = document.getElementById('prompt');
     if (prompt) {
-        prompt.addEventListener('focus', function() {
-            var contextCard = document.getElementById('context-card');
-            if (contextCard) {
-                contextCard.classList.remove('expanded');
+        // Submit on Enter key
+        prompt.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                hideCommandPalette();
+                submitCommand();
             }
-            // Scroll to bottom when keyboard opens
+            if (e.key === 'Escape') {
+                hideCommandPalette();
+            }
+        });
+        
+        // Show command palette when typing /
+        prompt.addEventListener('input', function(e) {
+            var val = prompt.value;
+            if (val.startsWith('/')) {
+                showCommandPalette(val);
+            } else {
+                hideCommandPalette();
+            }
+        });
+        
+        // Collapse context card when input is focused (mobile keyboard)
+        prompt.addEventListener('focus', function() {
+            var card = document.getElementById('context-card');
+            if (card) card.classList.remove('expanded');
             scrollToBottom();
+        });
+        
+        // Hide palette on blur (with delay for click to register)
+        prompt.addEventListener('blur', function() {
+            setTimeout(hideCommandPalette, 200);
         });
     }
 
     initSpeech();
+    
+    // Handle mobile keyboard showing/hiding
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', function() {
+            // Scroll input into view when keyboard opens
+            var prompt = document.getElementById('prompt');
+            if (document.activeElement === prompt) {
+                setTimeout(function() {
+                    prompt.scrollIntoView({ block: 'end' });
+                }, 100);
+            }
+        });
+    }
 }
 
 // Register service worker
@@ -1261,6 +1966,165 @@ function updateTimestamps() {
             timeEl.textContent = formatTimeAgo(ts);
         }
     });
+}
+
+// Step counter and motion detection
+var stepDetector = {
+    lastAccel: 0,
+    lastTime: 0,
+    threshold: 10,  // Acceleration threshold for step detection
+    minInterval: 250,  // Min ms between steps (prevents double counting)
+    movementWindow: [],  // Last 5 seconds of movement data
+    movementThreshold: 3,  // Number of movements to consider "walking"
+    
+    init: function() {
+        if (!window.DeviceMotionEvent) {
+            console.log('DeviceMotion not supported');
+            return;
+        }
+        
+        // iOS 13+ requires permission
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            // Will request on first user interaction
+            this.needsPermission = true;
+        } else {
+            this.start();
+        }
+    },
+    
+    requestPermission: function() {
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            DeviceMotionEvent.requestPermission()
+                .then(function(response) {
+                    if (response === 'granted') {
+                        stepDetector.start();
+                    }
+                })
+                .catch(console.error);
+        }
+    },
+    
+    start: function() {
+        var self = this;
+        window.addEventListener('devicemotion', function(e) {
+            self.handleMotion(e);
+        });
+        console.log('Step counter started');
+    },
+    
+    handleMotion: function(e) {
+        var accel = e.accelerationIncludingGravity;
+        if (!accel) return;
+        
+        var now = Date.now();
+        
+        // Calculate total acceleration magnitude
+        var magnitude = Math.sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
+        
+        // Track movement for GPS-stuck detection
+        this.movementWindow.push({ time: now, mag: magnitude });
+        // Keep only last 5 seconds
+        var cutoff = now - 5000;
+        this.movementWindow = this.movementWindow.filter(function(m) { return m.time > cutoff; });
+        
+        // Detect step: acceleration spike above threshold
+        var delta = Math.abs(magnitude - this.lastAccel);
+        if (delta > this.threshold && (now - this.lastTime) > this.minInterval) {
+            this.countStep();
+            this.lastTime = now;
+        }
+        this.lastAccel = magnitude;
+    },
+    
+    countStep: function() {
+        var today = new Date().toDateString();
+        
+        // Reset count if new day
+        if (state.steps.date !== today) {
+            state.steps = { count: 0, date: today };
+        }
+        
+        state.steps.count++;
+        state.save();
+        
+        // Update display if visible
+        this.updateDisplay();
+    },
+    
+    updateDisplay: function() {
+        var el = document.getElementById('step-count');
+        if (el) {
+            el.textContent = state.steps.count.toLocaleString();
+        }
+    },
+    
+    isMoving: function() {
+        // Check if significant movement in last 5 seconds
+        var movements = this.movementWindow.filter(function(m) {
+            return m.mag > 12;  // Above resting gravity (~9.8)
+        });
+        return movements.length > this.movementThreshold;
+    },
+    
+    getSteps: function() {
+        var today = new Date().toDateString();
+        if (state.steps.date !== today) {
+            return 0;
+        }
+        return state.steps.count;
+    }
+};
+
+// Check for motion while GPS is stuck (for check-in prompt)
+var lastCheckInPrompt = 0;
+
+function checkMotionGpsStuck() {
+    // If we're moving (accelerometer) but GPS hasn't changed
+    if (stepDetector.isMoving() && lastPingLat && lastPingLon) {
+        var timeSinceMove = Date.now() - lastPingTime;
+        if (timeSinceMove > 60000) {  // GPS stuck for 1+ minute
+            var distance = haversineDistance(lastPingLat, lastPingLon, state.lat, state.lon);
+            if (distance < 20) {  // GPS moved less than 20m
+                state.motionDetected = true;
+                
+                // Don't prompt more than once per 10 minutes
+                var now = Date.now();
+                if (now - lastCheckInPrompt > 10 * 60 * 1000) {
+                    lastCheckInPrompt = now;
+                    showCheckInPrompt();
+                }
+            }
+        }
+    }
+}
+
+function showCheckInPrompt() {
+    // Get nearby places from context
+    var places = [];
+    if (state.context && state.context.places) {
+        // Collect places from all categories
+        Object.keys(state.context.places).forEach(function(cat) {
+            var list = state.context.places[cat];
+            if (list && list.length) {
+                list.slice(0, 2).forEach(function(p) {
+                    places.push(p.name);
+                });
+            }
+        });
+    }
+    
+    var msg = '📍 GPS seems stuck but you\'re moving.\nAre you indoors?\n\n';
+    if (places.length > 0) {
+        msg += 'Check in to:\n';
+        places.slice(0, 4).forEach(function(name) {
+            msg += '• <a href="javascript:void(0)" class="checkin-link" data-place="' + escapeHTML(name) + '">' + escapeHTML(name) + '</a>\n';
+        });
+        msg += '\nOr type /checkin [place name]';
+    } else {
+        msg += 'Type /checkin [place name] to set your location manually.';
+    }
+    
+    state.createCard(msg);
 }
 
 // Initialize
@@ -1290,6 +2154,22 @@ $(document).ready(function() {
             updateTimestamps();
         }
     });
+    
+    // Initialize step counter
+    stepDetector.init();
+    
+    // Check for motion vs GPS stuck periodically
+    setInterval(checkMotionGpsStuck, 10000);
+    
+    // Request motion permission on first tap (iOS)
+    if (stepDetector.needsPermission) {
+        document.body.addEventListener('click', function() {
+            if (stepDetector.needsPermission) {
+                stepDetector.requestPermission();
+                stepDetector.needsPermission = false;
+            }
+        }, { once: true });
+    }
 });
 
 function showCachedContext() {
@@ -1302,15 +2182,60 @@ function showCachedContext() {
 }
 
 function showWelcome() {
-    var hour = new Date().getHours();
-    var greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    var welcome = 'Welcome to Malten\n';
+    welcome += 'Spatial AI for the real world.\n\n';
+    welcome += 'Your context-aware assistant that knows where you are and what\'s around you.\n\n';
+    welcome += '📍 Where you are (street, postcode)\n';
+    welcome += '⛅ Weather + rain forecast\n';
+    welcome += '🕌 Prayer times\n';
+    welcome += '🚏 Live bus/train arrivals\n';
+    welcome += '☕ Nearby cafes, restaurants, shops\n\n';
+    welcome += '{enable_location}';
     
-    var welcome = greeting + '\n\n';
-    welcome += '{enable_location}\n\n';
-    welcome += '• Live bus arrivals\n';
-    welcome += '• Weather & prayer times\n';
-    welcome += '• Nearby cafes, shops, pharmacies\n\n';
-    welcome += 'Ask me anything — "cafes nearby", "pharmacies", "reminder"';
-    
-    displayContext(welcome, true); // Force update for welcome
+    displayContext({ html: welcome, places: {} }, true, true); // Force update, needs action
 }
+
+function showLocationNeeded(reason) {
+    var msg = '📍 Location needed\n\n';
+    if (reason === 'denied') {
+        msg += 'Location permission was denied.\n\n';
+        msg += 'To enable: Settings → Privacy → Location\n';
+        msg += 'Then refresh this page.';
+    } else if (reason === 'unavailable') {
+        msg += 'Location is unavailable.\n\n';
+        msg += 'Check your device\'s location settings.';
+    } else if (reason === 'timeout') {
+        msg += 'Location timed out.\n\n';
+        msg += 'Try again or check your connection.';
+    } else {
+        msg += '{enable_location}';
+    }
+    displayContext(msg, true, true); // Force update, needs action
+}
+
+// Handle check-in selection (server pushes the prompt via WebSocket)
+$(document).on('click', '.checkin-option, .checkin-link', function(e) {
+    e.preventDefault();
+    var name = $(this).data('name') || $(this).data('place');
+    var lat = parseFloat($(this).data('lat')) || state.lat;
+    var lon = parseFloat($(this).data('lon')) || state.lon;
+    
+    // Send check-in as a command
+    $.post(commandUrl, {
+        prompt: '/checkin ' + name,
+        stream: getStream(),
+        lat: lat,
+        lon: lon
+    });
+    
+    // Update local state
+    state.checkIn(name, lat, lon);
+    
+    // Remove the prompt card
+    $(this).closest('li').remove();
+});
+
+$(document).on('click', '.checkin-dismiss', function(e) {
+    e.preventDefault();
+    $(this).closest('li').remove();
+});

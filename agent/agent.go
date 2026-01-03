@@ -22,22 +22,24 @@ var (
 )
 
 var (
-	DefaultPrompt = `You are a spatial assistant for the Malten app. Never identify yourself as anything else.
+	DefaultPrompt = `You are a spatial assistant. Be extremely concise.
 
-Malten is a location-aware app that shows users what's around them in real-time. When they ask "what is this" or "what is this app", explain: "Malten shows you what's happening around you - weather, buses, nearby places, prayer times. Just ask me anything about your surroundings."
+The user's LIVE LOCATION CONTEXT is below. Use it to answer.
 
-You have the user's LIVE LOCATION CONTEXT below. USE IT to answer questions:
-- "Where am I" → Give their exact address from the context
-- "What's the weather" → Read the temperature from context  
-- "When's the next bus" → Give the bus times from context
-- "What's nearby" → List places from context
-- "Cafes?" → List the cafes from context
+Response format:
+- "Where am I" → Just the address, nothing else
+- "Weather" → Just temp and conditions
+- "Next bus" → Just route and time
+- "Cafes" → List 2-3 names only
+- General "what's around" → Pick ONE interesting thing to mention
 
 Rules:
-- ALWAYS use the context data to answer location questions
-- Be concise (1-3 sentences)
-- Don't say "based on the context" - just answer naturally
-- Never say you're an AI or language model
+- MAX 1-2 sentences
+- NO prose, NO filler words
+- NO "You are at..." or "The weather is..."
+- Just facts: "Milton Road, TW12. 1°C. 281 to Kingston in 7m."
+- NEVER repeat the entire context back
+- NEVER list every single place
 
 Tools (use ONLY when context doesn't have the answer):
 - price: Crypto prices
@@ -163,6 +165,23 @@ var tools = []openai.Tool{
 			}`),
 		},
 	},
+	{
+		Type: openai.ToolTypeFunction,
+		Function: &openai.FunctionDefinition{
+			Name:        "directions",
+			Description: "Get walking directions to a destination. Use for 'how do I get to X', 'directions to X', 'walk to X' type questions.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"destination": {
+						"type": "string",
+						"description": "Where to go (e.g., 'the station', 'Tesco', 'Whitton Station')"
+					}
+				},
+				"required": ["destination"]
+			}`),
+		},
+	},
 }
 
 // Message represents a conversation message
@@ -224,6 +243,21 @@ func executeTool(name string, args map[string]interface{}) (string, error) {
 		}
 		return command.NearbyWithLocation(placeType, loc.Lat, loc.Lon)
 
+	case "directions":
+		dest, _ := args["destination"].(string)
+		log.Printf("[directions] destination=%q CurrentStream=%q", dest, CurrentStream)
+		if dest == "" {
+			return "Where do you want to go?", nil
+		}
+		loc := command.GetLocation(CurrentStream)
+		log.Printf("[directions] loc=%v", loc)
+		if loc == nil {
+			return "📍 Need your location for directions. Enable location?", nil
+		}
+		result, err := command.Directions(dest, loc.Lat, loc.Lon)
+		log.Printf("[directions] result=%d chars, err=%v", len(result), err)
+		return result, err
+
 	default:
 		return "", errors.New("unknown tool: " + name)
 	}
@@ -239,6 +273,8 @@ Available tools:
 - video: Video search. Use for: find videos, watch tutorials, video about X
 - blog: Blog posts. Use for: blog, posts, articles
 - chat: Real-time AI with current context. Use for: questions needing current info, analysis with real-time data
+- nearby: Find nearby places. Use for: X near me, find X, where's the nearest X
+- directions: Walking directions. Use for: how do I get to X, directions to X, walk to X, way to X
 - none: Direct answer without tools. Use for: general questions, math, definitions, coding help
 
 Respond with ONLY a JSON object, nothing else:
@@ -251,7 +287,10 @@ Examples:
 - "latest news" -> {"tool": "news", "args": {}}
 - "news about gaza" -> {"tool": "news", "args": {"query": "gaza"}}
 - "daily reminder" -> {"tool": "reminder", "args": {}}
-- "what does quran say about patience" -> {"tool": "reminder", "args": {"query": "patience"}}`
+- "what does quran say about patience" -> {"tool": "reminder", "args": {"query": "patience"}}
+- "how do I get to the station" -> {"tool": "directions", "args": {"destination": "station"}}
+- "directions to tesco" -> {"tool": "directions", "args": {"destination": "tesco"}}
+- "cafes near me" -> {"tool": "nearby", "args": {"type": "cafe"}}`
 
 // CurrentStream holds the stream context for the current request
 var CurrentStream string
@@ -262,20 +301,51 @@ func Prompt(systemPrompt string, messages []Message, userPrompt string) (string,
 		return "", errors.New("AI client not initialized")
 	}
 
-	// Step 1: Ask LLM which tool to use
+	hasContext := strings.Contains(systemPrompt, "📍")
+	
+	// Check for directions - still need tool for routing even with context
+	lower := strings.ToLower(userPrompt)
+	needsDirections := strings.Contains(lower, "how do i get") || strings.Contains(lower, "directions to") ||
+		strings.Contains(lower, "walk to") || strings.Contains(lower, "route to")
+	
+	if needsDirections {
+		log.Printf("[AI] Directions query, extracting destination")
+		// Extract destination directly without going through selectTool
+		dest := userPrompt
+		for _, prefix := range []string{"how do i get to ", "how do I get to ", "directions to ", "walk to ", "way to ", "route to "} {
+			if idx := strings.Index(lower, prefix); idx >= 0 {
+				dest = userPrompt[idx+len(prefix):]
+				break
+			}
+		}
+		dest = strings.TrimSuffix(dest, "?")
+		dest = strings.TrimSpace(dest)
+		if dest != "" {
+			log.Printf("[AI] Directions to: %q", dest)
+			result, err := executeTool("directions", map[string]interface{}{"destination": dest})
+			if err == nil && result != "" {
+				return result, nil
+			}
+		}
+	}
+
+	// If we have location context, let LLM answer directly
+	if hasContext {
+		log.Printf("[AI] Has context, using direct response")
+		return directResponse(systemPrompt, messages, userPrompt)
+	}
+
+	// No context - use tool selection for things like price, news, etc
 	decision, err := selectTool(userPrompt)
 	if err == nil && decision != nil && decision.Tool != "none" && decision.Tool != "" {
-		// Ensure args map exists
 		if decision.Args == nil {
 			decision.Args = make(map[string]interface{})
 		}
-		// For chat tool, ensure the question is passed through
 		if decision.Tool == "chat" {
 			if q, _ := decision.Args["question"].(string); q == "" {
 				decision.Args["question"] = userPrompt
 			}
 		}
-		// Execute the tool
 		result, err := executeTool(decision.Tool, decision.Args)
 		if err != nil {
 			return "Error: " + err.Error(), nil
@@ -285,7 +355,6 @@ func Prompt(systemPrompt string, messages []Message, userPrompt string) (string,
 		}
 	}
 
-	// Step 2: No tool needed or tool failed, get direct response
 	return directResponse(systemPrompt, messages, userPrompt)
 }
 
@@ -355,6 +424,25 @@ func selectTool(userPrompt string) (*ToolDecision, error) {
 	}
 	log.Printf("[tool] isContextQuestion=false for %q - will ask LLM", userPrompt)
 
+	// Check for directions keywords first - LLM often gets this wrong
+	lower := strings.ToLower(userPrompt)
+	if strings.Contains(lower, "how do i get to") || strings.Contains(lower, "directions to") ||
+		strings.Contains(lower, "walk to") || strings.Contains(lower, "way to the") ||
+		strings.Contains(lower, "route to") || (strings.Contains(lower, "get to") && strings.Contains(lower, "how")) {
+		// Extract destination
+		dest := userPrompt
+		for _, prefix := range []string{"how do i get to ", "how do I get to ", "directions to ", "walk to ", "way to ", "route to ", "get to "} {
+			if idx := strings.Index(lower, prefix); idx >= 0 {
+				dest = userPrompt[idx+len(prefix):]
+				break
+			}
+		}
+		dest = strings.TrimSuffix(dest, "?")
+		dest = strings.TrimSpace(dest)
+		log.Printf("[tool] Detected directions question, dest=%q", dest)
+		return &ToolDecision{Tool: "directions", Args: map[string]interface{}{"destination": dest}}, nil
+	}
+
 	// Build tool selection prompt as user message (Fanar ignores system prompts for this)
 	selectionPrompt := `Which tool should I use for this question: "` + userPrompt + `"
 
@@ -364,6 +452,7 @@ Available tools:
 - news: news headlines or search news
 - video: search videos
 - nearby: find places near user (bowling, cinema, gym, hotel, any place type)
+- directions: walking directions to a place (how do I get to X, directions to X)
 - none: general questions, math, coding, conversation
 
 Respond ONLY with JSON: {"tool": "name", "args": {"key": "value"}}
@@ -374,6 +463,7 @@ Examples:
 - bowling near me -> {"tool": "nearby", "args": {"type": "bowling"}}
 - find a cinema -> {"tool": "nearby", "args": {"type": "cinema"}}
 - gyms nearby -> {"tool": "nearby", "args": {"type": "gym"}}
+- how do I get to the station -> {"tool": "directions", "args": {"destination": "station"}}
 - hello -> {"tool": "none", "args": {}}
 - what is 2+2 -> {"tool": "none", "args": {}}`
 
@@ -426,9 +516,16 @@ func directResponse(systemPrompt string, messages []Message, userPrompt string) 
 		})
 	}
 
+	// For Fanar: include context reminder since it may ignore system prompt
+	userMsg := userPrompt
+	if strings.Contains(systemPrompt, "📍") {
+		// Has location context - remind LLM to use it
+		userMsg = userPrompt + "\n\n(Answer from the location context above. Don't search the web. Be concise.)"
+	}
+
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
-		Content: userPrompt,
+		Content: userMsg,
 	})
 
 	resp, err := Client.CreateChatCompletion(

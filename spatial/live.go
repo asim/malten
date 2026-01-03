@@ -127,6 +127,7 @@ func computePrayerDisplay(e *Entity) string {
 		return e.Name
 	}
 	
+	// Prayer times in order (Sunrise is not a prayer but marks end of Fajr)
 	prayers := []string{"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"}
 	nowStr := time.Now().Format("15:04")
 	
@@ -137,13 +138,21 @@ func computePrayerDisplay(e *Entity) string {
 			pTime = pTime[:5] // strip seconds if present
 		}
 		if pTime > nowStr {
-			if i > 0 {
-				current = prayers[i-1]
-			}
+			// Found next prayer/event
 			if p == "Sunrise" {
+				// Before sunrise = Fajr is current
+				current = "Fajr"
 				next = "Dhuhr"
 				nextTime = timings["Dhuhr"]
+			} else if p == "Dhuhr" && i > 0 && prayers[i-1] == "Sunrise" {
+				// After sunrise but before Dhuhr - no current prayer
+				current = ""
+				next = p
+				nextTime = pTime
 			} else {
+				if i > 0 && prayers[i-1] != "Sunrise" {
+					current = prayers[i-1]
+				}
 				next = p
 				nextTime = pTime
 			}
@@ -151,33 +160,35 @@ func computePrayerDisplay(e *Entity) string {
 		}
 	}
 	if next == "" {
+		// After Isha time - Isha is current until Fajr
 		current = "Isha"
 		next = "Fajr"
 		nextTime = timings["Fajr"]
-	}
-	if current == "Sunrise" {
-		current = "Fajr"
 	}
 	if len(nextTime) > 5 {
 		nextTime = nextTime[:5]
 	}
 	
 	if current != "" {
-		// For Fajr, show when it ends (Sunrise)
+		// For Fajr, show when it ends (before sunrise - when threads become distinguishable)
 		if current == "Fajr" {
 			sunrise := timings["Sunrise"]
 			if len(sunrise) > 5 {
 				sunrise = sunrise[:5]
 			}
-			// Check if ending soon (within 15 min)
+			// Fajr ends before sunrise - calculate end time (10 min before sunrise)
 			if sunriseTime, err := time.Parse("15:04", sunrise); err == nil {
 				now := time.Now()
 				sunriseToday := time.Date(now.Year(), now.Month(), now.Day(), sunriseTime.Hour(), sunriseTime.Minute(), 0, 0, now.Location())
-				if sunriseToday.Sub(now) <= 15*time.Minute {
-					return fmt.Sprintf("🕌 %s ending %s · %s %s", current, sunrise, next, nextTime)
+				fajrEnd := sunriseToday.Add(-10 * time.Minute) // Fajr ends 10 min before sunrise
+				fajrEndStr := fajrEnd.Format("15:04")
+				
+				if fajrEnd.Sub(now) <= 15*time.Minute && fajrEnd.Sub(now) > 0 {
+					return fmt.Sprintf("🕌 %s ending %s · %s %s", current, fajrEndStr, next, nextTime)
 				}
+				return fmt.Sprintf("🕌 %s ends %s · %s %s", current, fajrEndStr, next, nextTime)
 			}
-			return fmt.Sprintf("🕌 %s ends %s · %s %s", current, sunrise, next, nextTime)
+			return fmt.Sprintf("🕌 %s · %s %s", current, next, nextTime)
 		}
 		return fmt.Sprintf("🕌 %s now · %s %s", current, next, nextTime)
 	}
@@ -285,6 +296,11 @@ func fetchBusArrivals(lat, lon float64) []*Entity {
 //   - empty slice if API returned no arrivals (caller should extend TTL)
 //   - nil if skipped because fresh cache exists (caller should not extend TTL)
 func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
+	// TfL only works for London - check region
+	if !IsLondon(lat, lon) {
+		return nil // Outside London - don't query TfL
+	}
+	
 	// Check if we have fresh arrivals in this area already
 	db := Get()
 	cached := db.Query(lat, lon, 500, EntityArrival, 3)
@@ -300,18 +316,37 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	}
 	log.Printf("[transport] Fetching %s arrivals for %.4f,%.4f (cached fresh: %d)", stopType, lat, lon, freshCount)
 	
-	// Get nearby stops
+	// Get nearby stops - use rate limiter to prevent hammering TfL
 	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=%s&radius=500",
 		tflBaseURL, lat, lon, stopType)
 	
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
+	var resp *http.Response
+	var fetchErr error
 	
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil
+	err := TfLRateLimitedCall(func() error {
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("User-Agent", "Malten/1.0")
+		
+		var err error
+		resp, err = httpClient.Do(req)
+		fetchErr = err
+		return err
+	})
+	
+	if err != nil || fetchErr != nil {
+		log.Printf("[transport] API error for %s: %v", stopType, err)
+		return []*Entity{} // empty = extend TTL
 	}
 	defer resp.Body.Close()
+	
+	if resp.StatusCode == 429 {
+		log.Printf("[transport] Rate limited (429) for %s", stopType)
+		return []*Entity{} // empty = extend TTL
+	}
+	if resp.StatusCode != 200 {
+		log.Printf("[transport] API returned %d for %s", resp.StatusCode, stopType)
+		return []*Entity{} // empty = extend TTL
+	}
 	
 	var stops struct {
 		StopPoints []struct {
@@ -387,10 +422,17 @@ type busArrival struct {
 func fetchStopArrivals(naptanID string) []busArrival {
 	url := fmt.Sprintf("%s/StopPoint/%s/Arrivals", tflBaseURL, naptanID)
 	
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
+	var resp *http.Response
 	
-	resp, err := httpClient.Do(req)
+	err := TfLRateLimitedCall(func() error {
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("User-Agent", "Malten/1.0")
+		
+		var err error
+		resp, err = httpClient.Do(req)
+		return err
+	})
+	
 	if err != nil {
 		return nil
 	}
@@ -463,73 +505,6 @@ func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 	return R * c
 }
 
-// GetLiveContext queries the spatial index for live data near a location
-// Fetches on demand if cache is empty - user should never wait
-func GetLiveContext(lat, lon float64) string {
-	db := Get()
-	var parts []string
-	
-	// Where am I? Fetch if not cached
-	locs := db.Query(lat, lon, 500, EntityLocation, 1)
-	if len(locs) > 0 {
-		parts = append(parts, "📍 "+locs[0].Name)
-	} else if loc := fetchLocation(lat, lon); loc != nil {
-		db.Insert(loc)
-		parts = append(parts, "📍 "+loc.Name)
-	}
-	
-	// Weather + Prayer on same line - fetch if not cached
-	var header []string
-	var rainForecast string
-	weather := db.Query(lat, lon, 10000, EntityWeather, 1)
-	if len(weather) > 0 {
-		header = append(header, weather[0].Name)
-		if rf, ok := weather[0].Data["rain_forecast"].(string); ok && rf != "" {
-			rainForecast = rf
-		}
-	} else if w := fetchWeather(lat, lon); w != nil {
-		db.Insert(w)
-		header = append(header, w.Name)
-		if rf, ok := w.Data["rain_forecast"].(string); ok && rf != "" {
-			rainForecast = rf
-		}
-	}
-	
-	// Prayer times - use 50km radius since prayer times are city-wide
-	prayer := db.Query(lat, lon, 50000, EntityPrayer, 1)
-	if len(prayer) > 0 {
-		header = append(header, computePrayerDisplay(prayer[0]))
-	} else if p := fetchPrayerTimes(lat, lon); p != nil {
-		db.Insert(p)
-		header = append(header, computePrayerDisplay(p))
-	}
-	
-	if len(header) > 0 {
-		parts = append(parts, strings.Join(header, " · "))
-	}
-	if rainForecast != "" {
-		parts = append(parts, rainForecast)
-	}
-	
-	// Traffic disruptions nearby (cached)
-	if disruption := getTrafficDisruptions(lat, lon); disruption != "" {
-		parts = append(parts, disruption)
-	}
-	
-	// Nearest bus stop with arrivals - already fetches on demand
-	nearestStop := getNearestStopWithArrivals(lat, lon)
-	if nearestStop != "" {
-		parts = append(parts, nearestStop)
-	}
-	
-	// Places - fetch on demand if cache empty
-	placesSummary := getPlacesSummaryOrFetch(db, lat, lon)
-	if placesSummary != "" {
-		parts = append(parts, placesSummary)
-	}
-	
-	return strings.Join(parts, "\n")
-}
 
 // fetchLocation reverse geocodes and returns an entity for caching
 // Locations are cached for 500m radius - same street basically
@@ -682,16 +657,23 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		return strings.Join(lines, "\n")
 	}
 	
-	// Fallback: no cached data with arrivals, query TfL directly
+	// Fallback: no cached data with arrivals, query TfL directly (rate limited)
 	log.Printf("[context] No cached arrivals at %.4f,%.4f - querying TfL directly", lat, lon)
 	
 	stopUrl := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=500",
 		tflBaseURL, lat, lon)
 	
-	req, _ := http.NewRequest("GET", stopUrl, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
+	var resp *http.Response
 	
-	resp, err := httpClient.Do(req)
+	err := TfLRateLimitedCall(func() error {
+		req, _ := http.NewRequest("GET", stopUrl, nil)
+		req.Header.Set("User-Agent", "Malten/1.0")
+		
+		var err error
+		resp, err = httpClient.Do(req)
+		return err
+	})
+	
 	if err != nil {
 		log.Printf("[context] TfL StopPoint query failed: %v", err)
 		return ""
@@ -708,6 +690,8 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 			NaptanID   string  `json:"naptanId"`
 			CommonName string  `json:"commonName"`
 			Distance   float64 `json:"distance"`
+			Lat        float64 `json:"lat"`
+			Lon        float64 `json:"lon"`
 		} `json:"stopPoints"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&stops); err != nil {
@@ -730,12 +714,17 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		
 		// Cache these arrivals so we don't hit TfL again
 		expiry := time.Now().Add(arrivalTTL)
+		stopLat, stopLon := stop.Lat, stop.Lon
+		if stopLat == 0 {
+			// Fallback if TfL didn't return coords (shouldn't happen)
+			stopLat, stopLon = lat, lon
+		}
 		arrEntity := &Entity{
-			ID:   GenerateID(EntityArrival, stop.Distance, stop.Distance, stop.NaptanID),
+			ID:   GenerateID(EntityArrival, stopLat, stopLon, stop.NaptanID),
 			Type: EntityArrival,
 			Name: fmt.Sprintf("🚌 %s", stop.CommonName),
-			Lat:  lat + (stop.Distance/111000)*0.001, // Approximate stop location
-			Lon:  lon,
+			Lat:  stopLat,
+			Lon:  stopLon,
 			Data: map[string]interface{}{
 				"stop_id":    stop.NaptanID,
 				"stop_name":  stop.CommonName,
@@ -961,12 +950,19 @@ func getTrafficDisruptions(lat, lon float64) string {
 // fetchTrafficDisruptions gets nearby road disruptions from TfL and caches them
 func fetchTrafficDisruptions(lat, lon float64) string {
 	db := Get()
-	url := "https://api.tfl.gov.uk/Road/all/Disruption"
+	disruptionUrl := "https://api.tfl.gov.uk/Road/all/Disruption"
 	
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
+	var resp *http.Response
 	
-	resp, err := httpClient.Do(req)
+	err := TfLRateLimitedCall(func() error {
+		req, _ := http.NewRequest("GET", disruptionUrl, nil)
+		req.Header.Set("User-Agent", "Malten/1.0")
+		
+		var err error
+		resp, err = httpClient.Do(req)
+		return err
+	})
+	
 	if err != nil {
 		log.Printf("[disruption] TfL API error: %v", err)
 		return ""

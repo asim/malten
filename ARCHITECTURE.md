@@ -1,134 +1,56 @@
 # Malten Architecture
 
-Malten is a spatial AI platform.
+## The Spacetime Model
 
-## Core Concepts
+This is the law. Read before changing anything.
 
-### Streams
-Ephemeral message channels. Messages expire after idle time. Users communicate in streams.
-- Max 1024 messages per stream
-- TTL: 1024 seconds idle
-- Identified by hash (e.g., `#hampton`)
+```
+events.jsonl     = cosmic ledger (facts about the world, append-only)
+spatial.json     = materialized view (quadtree, rebuildable from events)
+stream/websocket = real-time event propagation to observers
+localStorage     = user's worldline (private, client-side only)
+```
 
-### Commands
-Slash commands and natural language queries:
-- `/nearby cafes` - Find nearby places
-- `/price btc` - Crypto prices
-- `/reminder` - Islamic reminders
-- `cafes near me` - Natural language nearby query
+## What Goes Where
 
-### Agents
-Entities bound to geographic areas. Stored in spatial DB as type "agent".
+### events.jsonl (server persists)
+- Entity CRUD (places, weather, transport, agents)
+- Public broadcasts (channel="")
+- System events
 
-Agent structure:
-```json
-{
-  "id": "uuid",
-  "type": "agent",
-  "name": "Hampton",
-  "nodes": [{"id": "n0", "x": 51.4, "y": -0.37}],  // lat, lon
-  "radius": 5000,  // meters
-  "data": {
-    "prompt": "You are a local guide for Hampton.",
-    "status": "active",
-    "stream": "hampton"  // optional associated stream
-  }
+### localStorage (client persists)  
+- User queries
+- AI responses
+- Conversations
+- Timeline cards
+- Location history
+
+## Privacy Rule
+
+```
+if channel != "" {
+    // PRIVATE - do not persist to events.jsonl
+    // belongs in user's localStorage
 }
 ```
 
-Agents:
-- Are created automatically when a user queries a new area
-- Index POIs in their territory (cafes, mosques, shops, etc.)
-- Persist across restarts (stored in spatial.json)
-- Can have an associated stream for notifications
-- Have a prompt for AI persona/context
+## Code Enforcement
 
-### Spatial DB
-Quadtree-based spatial index for all entities:
-- Places (POIs from OSM)
-- Agents (area managers)
-- Events (time-bounded)
-- Zones (regions)
+1. `spatial/event.go:LogMessage()` - guards against logging private messages
+2. `server/server.go` - comments explain why user messages aren't persisted
+3. `client/web/malten.js:initialLoad()` - comments explain localStorage is source of truth
 
-File: `spatial.json`
+## Key Features to Preserve
 
-## Package Structure
+- **Adaptive ping**: 5s driving, 10s walking, 30s stationary
+- **Check-in**: GPS correction for indoor (manual location override)
+- **Directions**: OSRM routing with step-by-step
+- **Prayer times**: Current/next prayer, Fajr ends before sunrise
+- **Agent loop**: Background indexing every 30s
+- **Foursquare fallback**: When OSM returns nothing
+- **Supplementary data**: Cinema chains, etc.
+- **Context JSON**: Structured response from /ping with places, weather, prayer
 
-```
-malten/
-├── main.go           # HTTP server setup
-├── agent/            # LLM integration (OpenAI/Fanar)
-│   └── agent.go      # Tool selection, prompts, AI calls
-├── command/          # Command implementations
-│   ├── nearby.go     # Location search (OSM, cache, fallback)
-│   ├── spatial.go    # Spatial DB, quadtree, entities
-│   ├── price.go      # Crypto prices
-│   ├── reminder.go   # Islamic reminders
-│   └── ...           
-├── server/           # HTTP handlers, WebSocket
-│   ├── handler.go    # Command routing, AI dispatch
-│   ├── location.go   # Location handling, nearby command
-│   └── server.go     # Stream management, events
-├── client/web/       # Frontend (embedded)
-│   ├── index.html
-│   ├── malten.js
-│   └── malten.css
-└── config/           # Configuration
-```
+## On New Conversation
 
-## Data Flow
-
-### Nearby Query
-1. User: "cafes near me"
-2. `detectNearbyQuery()` identifies place type + location
-3. `HandleNearbyCommand()` resolves coordinates
-4. Check if agent exists for area (5km radius)
-5. If no agent, create one → starts background indexing
-6. Query spatial DB for cached POIs
-7. If cache miss, query OSM Overpass API
-8. If OSM fails/empty, return Google Maps fallback link
-9. Cache results in spatial DB
-10. Return formatted results with map links
-
-### Agent Lifecycle
-1. Created when user queries uncovered area
-2. Reverse geocodes to get area name (Hampton, Twickenham, etc.)
-3. Background task indexes POI categories:
-   - amenity=cafe, restaurant, pharmacy, hospital, bank, fuel
-   - amenity=place_of_worship (mosques, churches)
-   - shop=supermarket
-   - tourism=hotel
-4. Stores POIs in spatial DB with agent reference
-5. Persists to spatial.json
-6. Subsequent queries hit local index (fast)
-7. Periodic re-index to stay fresh
-
-## Spiritual Context
-
-Malten is built with Islamic values:
-- Privacy-respecting (no Google tracking by default)
-- Mosque/halal-aware place search
-- Islamic reminders (Quran, Hadith, Names of Allah)
-- Crisis support with appropriate resources
-
-Agents can be configured with prompts that reflect these values.
-
-## API Endpoints
-
-```
-GET  /messages?stream=x&limit=25    Messages
-POST /messages                       Post message
-POST /commands                       Execute command
-WS   /events?stream=x               Real-time events
-POST /ping                          Update location
-GET  /streams                       List streams
-POST /streams                       Create stream
-```
-
-## Future: /agents Endpoint
-
-```
-GET  /agents                        List all agents
-GET  /agents?lat=x&lon=y            Find agent for location
-POST /agents                        Create agent manually
-```
+Read claude.md "The Spacetime Model (CANONICAL)" section.

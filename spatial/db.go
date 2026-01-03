@@ -300,16 +300,42 @@ func (d *DB) GetByID(id string) *Entity {
 	return nil
 }
 
+// Delete removes an entity by ID
+func (d *DB) Delete(id string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	
+	if point, ok := d.entities[id]; ok {
+		d.tree.Remove(point)
+		delete(d.entities, id)
+		d.store.Delete(id)
+		
+		// Log event
+		if d.eventLog != nil {
+			d.eventLog.Log("entity.deleted", id, nil)
+		}
+		return true
+	}
+	return false
+}
+
 // ExtendArrivalsTTL extends the expiry of arrivals near a location
-// Used when API returns empty to preserve existing data
-func (d *DB) ExtendArrivalsTTL(lat, lon, radiusMeters float64) {
+// Used when API returns empty/error to preserve existing data
+func (d *DB) ExtendArrivalsTTL(lat, lon, radiusMeters float64) int {
 	arrivals := d.Query(lat, lon, radiusMeters, EntityArrival, 10)
+	extended := 0
 	for _, arr := range arrivals {
 		if arr.ExpiresAt != nil {
-			newExpiry := time.Now().Add(2 * time.Minute)
+			newExpiry := time.Now().Add(5 * time.Minute)
 			arr.ExpiresAt = &newExpiry
+			d.Insert(arr) // Save the updated expiry
+			extended++
 		}
 	}
+	if extended > 0 {
+		log.Printf("[db] Extended TTL for %d arrivals near %.4f,%.4f", extended, lat, lon)
+	}
+	return extended
 }
 
 // Close closes the database
@@ -320,4 +346,33 @@ func (d *DB) Close() error {
 		d.eventLog.Close()
 	}
 	return d.store.Close()
+}
+
+// QueryByNameContains searches for entities whose name contains the query string
+func (d *DB) QueryByNameContains(lat, lon, radiusMeters float64, nameContains string) []*Entity {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	center := quadtree.NewPoint(lat, lon, nil)
+	half := center.HalfPoint(radiusMeters)
+	boundary := quadtree.NewAABB(center, half)
+
+	nameContains = strings.ToLower(nameContains)
+	filter := func(p *quadtree.Point) bool {
+		entity, ok := p.Data().(*Entity)
+		if !ok {
+			return false
+		}
+		return strings.Contains(strings.ToLower(entity.Name), nameContains)
+	}
+
+	points := d.tree.KNearest(boundary, 10, filter)
+
+	var result []*Entity
+	for _, p := range points {
+		if entity, ok := p.Data().(*Entity); ok {
+			result = append(result, entity)
+		}
+	}
+	return result
 }

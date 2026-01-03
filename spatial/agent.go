@@ -117,7 +117,12 @@ func StartAgentLoop(agent *Entity) {
 }
 
 func agentLoop(agent *Entity) {
-	log.Printf("[agent] %s started", agent.Name)
+	region := GetRegion(agent.Lat, agent.Lon)
+	regionName := "unknown"
+	if region != nil {
+		regionName = region.Name
+	}
+	log.Printf("[agent] %s started (region: %s)", agent.Name, regionName)
 	
 	// Start live data immediately (don't wait for POI index)
 	go func() {
@@ -202,6 +207,7 @@ func updateLiveData(agent *Entity) {
 // recoverStaleAgents starts loops for all agents
 func (d *DB) recoverStaleAgents() {
 	agents := d.ListAgents()
+	log.Printf("[agent] Recovering %d agents", len(agents))
 	for _, agent := range agents {
 		StartAgentLoop(agent)
 	}
@@ -244,6 +250,8 @@ func IndexAgent(agent *Entity) {
 		// Shopping
 		"shop=supermarket", "shop=convenience", "shop=bakery",
 		"shop=butcher", "shop=greengrocer",
+		// Entertainment
+		"amenity=cinema", "amenity=theatre",
 		// Other
 		"amenity=place_of_worship", "tourism=hotel",
 		"leisure=park", "amenity=library",
@@ -346,6 +354,7 @@ out center 50;
 }
 
 // ReverseGeocode gets area name from coordinates
+// Returns "Suburb, City" or "Town, County" format for clarity
 func ReverseGeocode(lat, lon float64) string {
 	client := &http.Client{Timeout: 5 * time.Second}
 	url := fmt.Sprintf("%s/reverse?lat=%f&lon=%f&format=json&zoom=14", NominatimURL, lat, lon)
@@ -364,18 +373,41 @@ func ReverseGeocode(lat, lon float64) string {
 			Town    string `json:"town"`
 			City    string `json:"city"`
 			Village string `json:"village"`
+			County  string `json:"county"`
+			State   string `json:"state"`
 		} `json:"address"`
 	}
 	json.NewDecoder(resp.Body).Decode(&result)
 
-	if result.Address.Suburb != "" {
-		return result.Address.Suburb
+	addr := result.Address
+	
+	// Get the local area name
+	var local string
+	if addr.Suburb != "" {
+		local = addr.Suburb
+	} else if addr.Town != "" {
+		local = addr.Town
+	} else if addr.Village != "" {
+		local = addr.Village
 	}
-	if result.Address.Town != "" {
-		return result.Address.Town
+	
+	// Get the larger area (city or county)
+	var larger string
+	if addr.City != "" && addr.City != local {
+		larger = addr.City
+	} else if addr.County != "" && addr.County != local {
+		larger = addr.County
 	}
-	if result.Address.Village != "" {
-		return result.Address.Village
+	
+	// Combine: "Suburb, City" or just "City" if no suburb
+	if local != "" && larger != "" {
+		return local + ", " + larger
 	}
-	return result.Address.City
+	if local != "" {
+		return local
+	}
+	if larger != "" {
+		return larger
+	}
+	return addr.City
 }

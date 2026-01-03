@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,12 +20,25 @@ const nominatimURL = "https://nominatim.openstreetmap.org/search"
 
 // Geocode converts a place name to coordinates using Nominatim
 func Geocode(place string) (float64, float64, error) {
+	return GeocodeNear(place, 0, 0)
+}
+
+// GeocodeNear geocodes with location bias - prefers results near the given point
+func GeocodeNear(place string, nearLat, nearLon float64) (float64, float64, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, _ := http.NewRequest("GET", nominatimURL, nil)
 	q := req.URL.Query()
 	q.Add("q", place)
 	q.Add("format", "json")
-	q.Add("limit", "1")
+	q.Add("limit", "5") // Get multiple results to pick closest
+	
+	// Add viewbox to bias towards user's location (roughly 50km box)
+	if nearLat != 0 && nearLon != 0 {
+		q.Add("viewbox", fmt.Sprintf("%.4f,%.4f,%.4f,%.4f",
+			nearLon-0.5, nearLat+0.5, nearLon+0.5, nearLat-0.5))
+		q.Add("bounded", "0") // Prefer but don't require results in viewbox
+	}
+	
 	req.URL.RawQuery = q.Encode()
 	req.Header.Set("User-Agent", "Malten/1.0")
 
@@ -46,6 +60,22 @@ func Geocode(place string) (float64, float64, error) {
 		return 0, 0, fmt.Errorf("not found")
 	}
 
+	// If we have a reference point, pick the closest result
+	if nearLat != 0 && nearLon != 0 && len(results) > 1 {
+		var bestLat, bestLon float64
+		bestDist := 999999.0
+		for _, r := range results {
+			lat, _ := strconv.ParseFloat(r.Lat, 64)
+			lon, _ := strconv.ParseFloat(r.Lon, 64)
+			dist := (lat-nearLat)*(lat-nearLat) + (lon-nearLon)*(lon-nearLon)
+			if dist < bestDist {
+				bestDist = dist
+				bestLat, bestLon = lat, lon
+			}
+		}
+		return bestLat, bestLon, nil
+	}
+
 	lat, _ := strconv.ParseFloat(results[0].Lat, 64)
 	lon, _ := strconv.ParseFloat(results[0].Lon, 64)
 	return lat, lon, nil
@@ -55,11 +85,35 @@ func Geocode(place string) (float64, float64, error) {
 // session token context from the server handler
 
 // Location holds user's current location
+type LocationPoint struct {
+	Lat  float64
+	Lon  float64
+	Time time.Time
+}
+
 type Location struct {
 	Lat       float64
 	Lon       float64
 	UpdatedAt time.Time
+	History   []LocationPoint // Last N location updates
+	CheckedIn *CheckIn        // Manual location override
+	PromptedAt time.Time      // Last time we prompted for check-in
 }
+
+type CheckIn struct {
+	Name string
+	Lat  float64
+	Lon  float64
+	Time time.Time
+}
+
+const (
+	locationHistorySize = 10
+	gpsStuckThreshold   = 30.0  // meters - if all points within this, GPS is "stuck"
+	gpsStuckDuration    = 5 * time.Minute
+	checkInPromptCooldown = 10 * time.Minute
+	checkInExpiry       = 2 * time.Hour
+)
 
 // Global location store (token -> location)
 // Token is generated client-side and stored in sessionStorage
@@ -88,6 +142,22 @@ func init() {
 		Match:       matchPlaceInfo,
 	})
 	
+	// Register check-in command
+	Register(&Command{
+		Name:        "checkin",
+		Description: "Check in to a location",
+		Usage:       "/checkin <place name>",
+		Handler:     handleCheckIn,
+	})
+	
+	// Register ping command (location update + context)
+	Register(&Command{
+		Name:        "ping",
+		Description: "Update location and get context",
+		Usage:       "/ping (with lat/lon params)",
+		Handler:     handlePing,
+	})
+	
 	// Cleanup expired locations every minute
 	go func() {
 		for {
@@ -110,13 +180,44 @@ func cleanupLocations() {
 }
 
 // SetLocation stores location for a session token and updates their view
-func SetLocation(token string, lat, lon float64) {
+// Returns true if we should prompt for check-in (GPS appears stuck)
+func SetLocation(token string, lat, lon float64) bool {
 	log.Printf("[nearby] SetLocation(%s, %f, %f)", token, lat, lon)
+	now := time.Now()
+	
 	locationsMu.Lock()
-	locations[token] = &Location{
-		Lat:       lat,
-		Lon:       lon,
-		UpdatedAt: time.Now(),
+	loc := locations[token]
+	if loc == nil {
+		loc = &Location{}
+		locations[token] = loc
+	}
+	
+	// Add to history
+	loc.History = append(loc.History, LocationPoint{Lat: lat, Lon: lon, Time: now})
+	if len(loc.History) > locationHistorySize {
+		loc.History = loc.History[1:]
+	}
+	
+	// Check if user moved significantly from check-in location
+	if loc.CheckedIn != nil {
+		dist := haversineMeters(lat, lon, loc.CheckedIn.Lat, loc.CheckedIn.Lon)
+		if dist > 200 || now.Sub(loc.CheckedIn.Time) > checkInExpiry {
+			log.Printf("[nearby] Clearing check-in for %s (moved %.0fm or expired)", token, dist)
+			loc.CheckedIn = nil
+		}
+	}
+	
+	loc.Lat = lat
+	loc.Lon = lon
+	loc.UpdatedAt = now
+	
+	// Check if GPS is stuck and we should prompt
+	shouldPrompt := false
+	if loc.CheckedIn == nil && isGpsStuck(loc.History) {
+		if now.Sub(loc.PromptedAt) > checkInPromptCooldown {
+			shouldPrompt = true
+			loc.PromptedAt = now
+		}
 	}
 	locationsMu.Unlock()
 	
@@ -129,6 +230,43 @@ func SetLocation(token string, lat, lon float64) {
 	
 	// Build and cache their context view (sync - needed for immediate AI requests)
 	updateUserContext(token, lat, lon)
+	
+	return shouldPrompt
+}
+
+// isGpsStuck checks if all recent locations are within threshold distance
+func isGpsStuck(history []LocationPoint) bool {
+	if len(history) < 3 {
+		return false
+	}
+	
+	// Need at least gpsStuckDuration of history
+	oldest := history[0]
+	newest := history[len(history)-1]
+	if newest.Time.Sub(oldest.Time) < gpsStuckDuration {
+		return false
+	}
+	
+	// Check if all points are within threshold of first point
+	for i := 1; i < len(history); i++ {
+		dist := haversineMeters(oldest.Lat, oldest.Lon, history[i].Lat, history[i].Lon)
+		if dist > gpsStuckThreshold {
+			return false
+		}
+	}
+	return true
+}
+
+// haversineMeters returns distance between two points in meters
+func haversineMeters(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371000 // Earth radius in meters
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return R * c
 }
 
 func updateUserInSpatialIndex(token string, lat, lon float64) {
@@ -154,10 +292,10 @@ var (
 )
 
 func updateUserContext(token string, lat, lon float64) {
-	ctx := spatial.GetLiveContext(lat, lon)
+	ctxData := spatial.GetContextData(lat, lon)
 	
 	userContextsMu.Lock()
-	userContexts[token] = ctx
+	userContexts[token] = ctxData.HTML // Store HTML for AI context
 	userContextsMu.Unlock()
 }
 
@@ -190,6 +328,52 @@ func ClearLocation(token string) {
 	locationsMu.Lock()
 	defer locationsMu.Unlock()
 	delete(locations, token)
+}
+
+// SetCheckIn manually sets user's location to a named place
+func SetCheckIn(token string, name string, lat, lon float64) {
+	locationsMu.Lock()
+	defer locationsMu.Unlock()
+	
+	loc := locations[token]
+	if loc == nil {
+		loc = &Location{}
+		locations[token] = loc
+	}
+	
+	loc.CheckedIn = &CheckIn{
+		Name: name,
+		Lat:  lat,
+		Lon:  lon,
+		Time: time.Now(),
+	}
+}
+
+// GetCheckIn returns the current check-in for a user, if any
+func GetCheckIn(token string) *CheckIn {
+	locationsMu.RLock()
+	defer locationsMu.RUnlock()
+	
+	loc := locations[token]
+	if loc == nil || loc.CheckedIn == nil {
+		return nil
+	}
+	
+	// Check if expired
+	if time.Since(loc.CheckedIn.Time) > checkInExpiry {
+		return nil
+	}
+	return loc.CheckedIn
+}
+
+// ClearCheckIn removes the check-in for a user
+func ClearCheckIn(token string) {
+	locationsMu.Lock()
+	defer locationsMu.Unlock()
+	
+	if loc := locations[token]; loc != nil {
+		loc.CheckedIn = nil
+	}
 }
 
 // OSM element from Overpass API
@@ -320,7 +504,8 @@ var placeTypes = map[string]string{
 	"gas":         "amenity=fuel",
 	"petrol":      "amenity=fuel",
 	"fuel":        "amenity=fuel",
-	"station":     "amenity=fuel",
+	"petrol station": "amenity=fuel",
+	"gas station":    "amenity=fuel",
 	"parking":     "amenity=parking",
 	"gym":         "leisure=fitness_centre",
 	"mosque":      "amenity=place_of_worship][religion=muslim",
@@ -741,11 +926,16 @@ func matchNearby(input string) (bool, []string) {
 	}
 	
 	// Don't match question patterns - those go to AI or place command
-	questionPhrases := []string{"what time", "when does", "is .* open", "opening hours", "hours for", "what about", "tell me about", "info on", "information about"}
+	questionPhrases := []string{"what time", "when does", "is .* open", "opening hours", "hours for", "what about", "tell me about", "info on", "information about", "how do i", "how to", "get to", "directions to", "way to"}
 	for _, q := range questionPhrases {
 		if strings.Contains(lower, q) || matchWildcard(lower, q) {
 			return false, nil
 		}
+	}
+	
+	// Don't match "where is" questions - those go to AI with context
+	if strings.HasPrefix(lower, "where is") || strings.HasPrefix(lower, "where's") {
+		return false, nil
 	}
 
 	// Remove filler words
@@ -781,11 +971,22 @@ func matchNearby(input string) (bool, []string) {
 		return false, nil
 	}
 
-	// Check if it looks like a nearby query
-	if strings.HasPrefix(lower, "near") ||
-		strings.Contains(lower, "near me") ||
-		strings.Contains(lower, "around me") ||
-		len(cleaned) >= 1 {
+	// Only match explicit nearby queries - not just any sentence with a place type
+	// "cafes near me" = yes, "I want coffee" = no (let AI handle it)
+	nearbyPatterns := []string{"near me", "around me", "nearby", "closest", "nearest", "find a", "find me", "show me", "where can i find"}
+	isNearbyQuery := false
+	for _, p := range nearbyPatterns {
+		if strings.Contains(lower, p) {
+			isNearbyQuery = true
+			break
+		}
+	}
+	// Also match if it starts with a place type ("cafes?", "restaurants")
+	if !isNearbyQuery && len(cleaned) == 1 && IsValidPlaceType(strings.ToLower(cleaned[0])) {
+		isNearbyQuery = true
+	}
+	
+	if isNearbyQuery {
 		return true, cleaned
 	}
 	
@@ -1047,3 +1248,60 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 	
 	return result.String(), nil
 }
+
+// handleCheckIn processes check-in to a named location
+func handleCheckIn(ctx *Context, args []string) (string, error) {
+	if len(args) == 0 {
+		return "Usage: /checkin <place name>", nil
+	}
+	
+	placeName := strings.Join(args, " ")
+	
+	if !ctx.HasLocation() {
+		return "Enable location first", nil
+	}
+	
+	// Search nearby POIs for matching name
+	db := spatial.Get()
+	pois := db.Query(ctx.Lat, ctx.Lon, 500, spatial.EntityPlace, 50)
+	
+	var match *spatial.Entity
+	lowerName := strings.ToLower(placeName)
+	for _, p := range pois {
+		if strings.Contains(strings.ToLower(p.Name), lowerName) {
+			match = p
+			break
+		}
+	}
+	
+	if match == nil {
+		return fmt.Sprintf("No place matching %q found nearby", placeName), nil
+	}
+	
+	// Set the check-in
+	SetCheckIn(ctx.Session, match.Name, match.Lat, match.Lon)
+	log.Printf("[checkin] %s checked in to %s (%.4f, %.4f)", ctx.Session, match.Name, match.Lat, match.Lon)
+	
+	return fmt.Sprintf("📍 Checked in to %s", match.Name), nil
+}
+
+// handlePing processes location update and returns context as JSON
+func handlePing(ctx *Context, args []string) (string, error) {
+	if !ctx.HasLocation() {
+		return "📍 Location not provided", nil
+	}
+	
+	// SetLocation tracks history, detects stuck GPS
+	SetLocation(ctx.Session, ctx.Lat, ctx.Lon)
+	
+	// Use check-in location if set, otherwise GPS
+	contextLat, contextLon := ctx.Lat, ctx.Lon
+	if checkIn := GetCheckIn(ctx.Session); checkIn != nil {
+		contextLat, contextLon = checkIn.Lat, checkIn.Lon
+	}
+	
+	// Return JSON context
+	return spatial.GetContextJSON(contextLat, contextLon), nil
+}
+
+

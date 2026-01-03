@@ -11,6 +11,8 @@ type Context struct {
 	Session string
 	Lat     float64
 	Lon     float64
+	ToLat   float64 // Destination lat (for directions)
+	ToLon   float64 // Destination lon (for directions)
 	Input   string
 }
 
@@ -67,6 +69,8 @@ func Dispatch(ctx *Context) (string, bool) {
 			}
 			return result, true
 		}
+		// Unknown slash command
+		return "❌ Unknown command: /" + name, true
 	}
 	
 	// Natural language: check each command's Match function

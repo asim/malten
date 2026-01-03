@@ -1,4 +1,4 @@
-const CACHE_NAME = 'malten-v14';
+const CACHE_NAME = 'malten-v__VERSION__';
 
 // Only cache the bare minimum for offline shell
 const STATIC_ASSETS = [

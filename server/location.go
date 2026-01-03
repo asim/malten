@@ -3,11 +3,12 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"malten.ai/command"
 	"malten.ai/spatial"
@@ -28,96 +29,21 @@ func getSessionToken(w http.ResponseWriter, r *http.Request) string {
 	rand.Read(b)
 	token := hex.EncodeToString(b)
 
-	// Set cookie - session only (no expiry), secure, httpOnly
+	// Set cookie - session only (no expiry), httpOnly
+	// Check X-Forwarded-Proto for HTTPS behind proxy, or localhost
+	isSecure := r.Header.Get("X-Forwarded-Proto") == "https" || r.TLS != nil
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	return token
 }
 
-// ContextHandler returns local context for the user's session
-func ContextHandler(w http.ResponseWriter, r *http.Request) {
-	token := getSessionToken(w, r)
-	
-	// First check if we have pre-built context for this user
-	if ctx := command.GetUserContext(token); ctx != "" {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"context": ctx})
-		return
-	}
-	
-	// Fall back to location from request params
-	r.ParseForm()
-	latStr := r.Form.Get("lat")
-	lonStr := r.Form.Get("lon")
-
-	if latStr == "" || lonStr == "" {
-		// Try to get from stored location
-		if loc := command.GetLocation(token); loc != nil {
-			w.Header().Set("Content-Type", "application/json")
-			ctx := spatial.GetLiveContext(loc.Lat, loc.Lon)
-			json.NewEncoder(w).Encode(map[string]interface{}{"context": ctx})
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"context": ""})
-		return
-	}
-
-	lat, _ := strconv.ParseFloat(latStr, 64)
-	lon, _ := strconv.ParseFloat(lonStr, 64)
-
-	context := spatial.GetLiveContext(lat, lon)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"context": context})
-}
-
-// PingHandler receives location updates from clients
-func PingHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", 405)
-		return
-	}
-
-	token := getSessionToken(w, r)
-	r.ParseForm()
-
-	latStr := r.Form.Get("lat")
-	lonStr := r.Form.Get("lon")
-
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		http.Error(w, "Invalid latitude", 400)
-		return
-	}
-
-	lon, err := strconv.ParseFloat(lonStr, 64)
-	if err != nil {
-		http.Error(w, "Invalid longitude", 400)
-		return
-	}
-
-	// Store location and update user in quadtree
-	// This also builds their context view in background
-	command.SetLocation(token, lat, lon)
-
-	// Return context immediately from spatial index
-	context := spatial.GetLiveContext(lat, lon)
-	stream := spatial.StreamFromLocation(lat, lon)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":      true,
-		"context": context,
-		"stream":  stream,
-	})
-}
 
 // HandlePingCommand handles /ping on/off commands
 func HandlePingCommand(cmd string, token string) string {
@@ -206,32 +132,49 @@ func HandleNearbyCommand(args []string, token string) string {
 	return result
 }
 
-// HandleAgentsCommand lists spatial agents
-func HandleAgentsCommand() string {
+// haversine calculates distance between two points in km
+func haversine(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371 // Earth's radius in km
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return R * c
+}
+
+// sendCheckInPrompt queries nearby POIs and sends a check-in prompt to the user
+func sendCheckInPrompt(token, stream string, lat, lon float64) {
 	db := spatial.Get()
-	agents := db.ListAgents()
-
-	if len(agents) == 0 {
-		return "🤖 No agents.\nAgents are created when you search a new area."
+	
+	// Query nearby POIs (200m radius)
+	pois := db.Query(lat, lon, 200, spatial.EntityPlace, 5)
+	if len(pois) == 0 {
+		return
 	}
-
-	var result strings.Builder
-	result.WriteString("🤖 AGENTS\n\n")
-
-	for _, a := range agents {
-		radius, _ := a.Data["radius"].(float64)
-		status, _ := a.Data["status"].(string)
-		poiCount, _ := a.Data["poi_count"].(float64)
-		lastIndex, _ := a.Data["last_index"].(string)
-
-		result.WriteString(fmt.Sprintf("• %s\n", a.Name))
-		result.WriteString(fmt.Sprintf("  📍 %.4f, %.4f (%.0fm)\n", a.Lat, a.Lon, radius))
-		result.WriteString(fmt.Sprintf("  📊 %d POIs | %s\n", int(poiCount), status))
-		if lastIndex != "" {
-			result.WriteString(fmt.Sprintf("  🕐 %s\n", lastIndex))
-		}
-		result.WriteString("\n")
+	
+	// Build check-in prompt message
+	var lines []string
+	lines = append(lines, "📍 Where are you?")
+	lines = append(lines, "")
+	
+	for _, poi := range pois {
+		dist := haversine(lat, lon, poi.Lat, poi.Lon) * 1000 // km to m
+		lines = append(lines, fmt.Sprintf("• %s (%.0fm)", poi.Name, dist))
 	}
-
-	return strings.TrimSpace(result.String())
+	
+	lines = append(lines, "")
+	lines = append(lines, "Reply with the name to check in, or ignore.")
+	
+	msg := &Message{
+		Id:      Random(16),
+		Type:    "message",
+		Text:    strings.Join(lines, "\n"),
+		Stream:  stream,
+		Channel: "@" + token, // Private to this user
+		Created: time.Now().UnixNano(),
+	}
+	
+	Default.Broadcast(msg)
 }

@@ -1,0 +1,246 @@
+package spatial
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"strings"
+)
+
+// Place represents a nearby place with structured data
+type Place struct {
+	Name     string  `json:"name"`
+	Address  string  `json:"address,omitempty"`
+	Postcode string  `json:"postcode,omitempty"`
+	Phone    string  `json:"phone,omitempty"`
+	Hours    string  `json:"hours,omitempty"`
+	Lat      float64 `json:"lat"`
+	Lon      float64 `json:"lon"`
+}
+
+// ContextData is the structured context response
+type ContextData struct {
+	HTML     string             `json:"html"`     // Formatted display text
+	Location *LocationInfo      `json:"location"` // Where you are
+	Weather  *WeatherInfo       `json:"weather"`  // Current weather
+	Prayer   *PrayerInfo        `json:"prayer"`   // Prayer times
+	Bus      *BusInfo           `json:"bus"`      // Nearest bus
+	Places   map[string][]Place `json:"places"`   // Nearby places by category
+}
+
+type LocationInfo struct {
+	Name     string  `json:"name"`
+	Postcode string  `json:"postcode,omitempty"`
+	Lat      float64 `json:"lat"`
+	Lon      float64 `json:"lon"`
+}
+
+type WeatherInfo struct {
+	Temp        int    `json:"temp"`
+	Condition   string `json:"condition"`
+	Icon        string `json:"icon"`
+	RainWarning string `json:"rain_warning,omitempty"`
+}
+
+type PrayerInfo struct {
+	Current  string `json:"current,omitempty"`
+	Next     string `json:"next"`
+	NextTime string `json:"next_time"`
+	Display  string `json:"display"` // Formatted: "Asr now · Maghrib 16:06"
+}
+
+type BusInfo struct {
+	StopName string   `json:"stop_name"`
+	Distance int      `json:"distance"` // meters
+	Arrivals []string `json:"arrivals"` // "185 → Victoria in 3m"
+}
+
+// GetContextData returns structured context data for a location
+func GetContextData(lat, lon float64) *ContextData {
+	db := Get()
+	ctx := &ContextData{
+		Places: make(map[string][]Place),
+	}
+	var htmlParts []string
+
+	// Ensure agent exists
+	agent := db.FindAgent(lat, lon, AgentRadius)
+	if agent == nil {
+		log.Printf("[context] Creating new agent for %.4f,%.4f", lat, lon)
+		db.FindOrCreateAgent(lat, lon)
+	}
+
+	// Location
+	locs := db.Query(lat, lon, 500, EntityLocation, 1)
+	if len(locs) == 0 {
+		if loc := fetchLocation(lat, lon); loc != nil {
+			db.Insert(loc)
+			locs = []*Entity{loc}
+		}
+	}
+	if len(locs) > 0 {
+		ctx.Location = &LocationInfo{
+			Name: locs[0].Name,
+			Lat:  lat,
+			Lon:  lon,
+		}
+		// Extract postcode if in name
+		if parts := strings.Split(locs[0].Name, ", "); len(parts) > 1 {
+			ctx.Location.Postcode = parts[len(parts)-1]
+		}
+		htmlParts = append(htmlParts, "📍 "+locs[0].Name)
+	}
+
+	// Weather
+	var headerParts []string
+	var rainForecast string
+	weather := db.Query(lat, lon, 10000, EntityWeather, 1)
+	if len(weather) == 0 {
+		if w := fetchWeather(lat, lon); w != nil {
+			db.Insert(w)
+			weather = []*Entity{w}
+		}
+	}
+	if len(weather) > 0 {
+		w := weather[0]
+		ctx.Weather = &WeatherInfo{
+			Condition: w.Name,
+		}
+		if temp, ok := w.Data["temp"].(float64); ok {
+			ctx.Weather.Temp = int(temp)
+		}
+		if icon, ok := w.Data["icon"].(string); ok {
+			ctx.Weather.Icon = icon
+		}
+		if rf, ok := w.Data["rain_forecast"].(string); ok && rf != "" {
+			ctx.Weather.RainWarning = rf
+			rainForecast = rf
+		}
+		headerParts = append(headerParts, w.Name)
+	}
+
+	// Prayer times
+	prayer := db.Query(lat, lon, 50000, EntityPrayer, 1)
+	if len(prayer) == 0 {
+		if p := fetchPrayerTimes(lat, lon); p != nil {
+			db.Insert(p)
+			prayer = []*Entity{p}
+		}
+	}
+	if len(prayer) > 0 {
+		display := computePrayerDisplay(prayer[0])
+		ctx.Prayer = &PrayerInfo{
+			Display: display,
+		}
+		// Parse display to extract current/next
+		if strings.Contains(display, " now") {
+			parts := strings.Split(display, " ")
+			if len(parts) > 0 {
+				ctx.Prayer.Current = parts[0]
+			}
+		}
+		headerParts = append(headerParts, display)
+	}
+
+	if len(headerParts) > 0 {
+		htmlParts = append(htmlParts, strings.Join(headerParts, " · "))
+	}
+	if rainForecast != "" {
+		htmlParts = append(htmlParts, rainForecast)
+	}
+
+	// Traffic disruptions
+	if disruption := getTrafficDisruptions(lat, lon); disruption != "" {
+		htmlParts = append(htmlParts, disruption)
+	}
+
+	// Bus arrivals
+	if busInfo := getNearestStopWithArrivals(lat, lon); busInfo != "" {
+		htmlParts = append(htmlParts, busInfo)
+		// TODO: parse into BusInfo struct
+	}
+
+	// Places by category
+	categories := []struct {
+		osmTag   string
+		category string
+		icon     string
+	}{
+		{"amenity=cafe", "cafe", "☕"},
+		{"amenity=restaurant", "restaurant", "🍽️"},
+		{"amenity=pharmacy", "pharmacy", "💊"},
+		{"shop=supermarket", "supermarket", "🛒"},
+	}
+
+	var placeParts []string
+	for _, c := range categories {
+		places := db.QueryPlaces(lat, lon, 500, c.category, 10)
+		if len(places) == 0 {
+			fetched := fetchPlacesNow(lat, lon, 500, c.osmTag, c.category, 10)
+			for _, p := range fetched {
+				db.Insert(p)
+			}
+			places = fetched
+		}
+
+		if len(places) > 0 {
+			var categoryPlaces []Place
+			for _, p := range places {
+				place := Place{
+					Name: p.Name,
+					Lat:  p.Lat,
+					Lon:  p.Lon,
+				}
+				if tags, ok := p.Data["tags"].(map[string]interface{}); ok {
+					var addr string
+					if num, ok := tags["addr:housenumber"].(string); ok {
+						addr = num
+					}
+					if street, ok := tags["addr:street"].(string); ok {
+						if addr != "" {
+							addr += " "
+						}
+						addr += street
+					}
+					place.Address = addr
+					if pc, ok := tags["addr:postcode"].(string); ok {
+						place.Postcode = pc
+					}
+					if hours, ok := tags["opening_hours"].(string); ok {
+						place.Hours = hours
+					}
+					if phone, ok := tags["phone"].(string); ok {
+						place.Phone = phone
+					} else if phone, ok := tags["contact:phone"].(string); ok {
+						place.Phone = phone
+					}
+				}
+				categoryPlaces = append(categoryPlaces, place)
+			}
+			ctx.Places[c.category] = categoryPlaces
+
+			// Build HTML for this category
+			var label string
+			if len(categoryPlaces) == 1 {
+				label = categoryPlaces[0].Name
+			} else {
+				label = fmt.Sprintf("%d places", len(categoryPlaces))
+			}
+			placeParts = append(placeParts, fmt.Sprintf("%s %s", c.icon, label))
+		}
+	}
+
+	if len(placeParts) > 0 {
+		htmlParts = append(htmlParts, strings.Join(placeParts, " · "))
+	}
+
+	ctx.HTML = strings.Join(htmlParts, "\n")
+	return ctx
+}
+
+// GetContextJSON returns context as JSON string
+func GetContextJSON(lat, lon float64) string {
+	ctx := GetContextData(lat, lon)
+	b, _ := json.Marshal(ctx)
+	return string(b)
+}

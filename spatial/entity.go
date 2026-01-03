@@ -21,7 +21,8 @@ const (
 	EntityPrayer   EntityType = "prayer"   // Prayer times
 	EntityArrival  EntityType = "arrival"  // Transport arrivals
 	EntityLocation EntityType = "location" // Reverse geocoded location names
-	EntityNews     EntityType = "news"     // Breaking news/headlines
+	EntityNews       EntityType = "news"       // Breaking news/headlines
+	EntityDisruption EntityType = "disruption" // Traffic disruptions
 )
 
 // Entity represents any spatial object in the world

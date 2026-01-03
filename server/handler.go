@@ -17,6 +17,13 @@ var (
 	defaultStream = "~"
 )
 
+// JsonError writes a JSON error response
+func JsonError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
 func GetCommandsHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
@@ -53,11 +60,14 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save user message to their session channel (private)
-	select {
-	case Default.Events <- NewChannelMessage(input, stream, "@"+token):
-	case <-time.After(time.Second):
-		http.Error(w, "Timed out creating message", 504)
-		return
+	// Skip system commands that shouldn't appear in timeline
+	if !strings.HasPrefix(input, "/ping") && !strings.HasPrefix(input, "/context") {
+		select {
+		case Default.Events <- NewChannelMessage(input, stream, "@"+token):
+		case <-time.After(time.Second):
+			JsonError(w, "timed out", 504)
+			return
+		}
 	}
 
 
@@ -72,6 +82,17 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 			if lon, err := strconv.ParseFloat(r.Form.Get("lon"), 64); err == nil {
 				ctx.Lat = lat
 				ctx.Lon = lon
+				// Also store for AI tool usage
+				command.SetLocation(token, lat, lon)
+			}
+		}
+	}
+	// Destination coordinates (for directions)
+	if toLatStr := r.Form.Get("toLat"); toLatStr != "" {
+		if toLat, err := strconv.ParseFloat(toLatStr, 64); err == nil {
+			if toLon, err := strconv.ParseFloat(r.Form.Get("toLon"), 64); err == nil {
+				ctx.ToLat = toLat
+				ctx.ToLon = toLon
 			}
 		}
 	}
@@ -86,9 +107,9 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	// Try command dispatch (handles /commands and natural language)
 	if result, handled := command.Dispatch(ctx); handled {
 		if result != "" {
-			// Return response directly (HTTP) and broadcast to session channel (WebSocket)
 			w.Write([]byte(result))
-			Default.Events <- NewChannelMessage(result, stream, "@"+token)
+			// Don't broadcast command responses - HTTP response is enough
+			// Only AI responses need WebSocket (they're async)
 		}
 		return
 	}
@@ -103,31 +124,7 @@ func sendToSession(text, stream, token string) {
 	Default.Events <- NewChannelMessage(text, stream, "@"+token)
 }
 
-func handleCommand(cmd, stream, token string) {
-	parts := strings.Fields(cmd)
-	if len(parts) == 0 {
-		return
-	}
 
-	name := strings.ToLower(strings.TrimPrefix(parts[0], "/"))
-	args := parts[1:]
-
-	// Check pluggable commands first
-	if result, err := command.Execute(name, args); result != "" || err != nil {
-		if err != nil {
-			sendToSession("Error: "+err.Error(), stream, token)
-		} else {
-			sendToSession(result, stream, token)
-		}
-		return
-	}
-
-	// Built-in commands (minimal - most things work via natural language)
-	switch name {
-	case "agents":
-		sendToSession(HandleAgentsCommand(), stream, token)
-	}
-}
 
 // detectNearbyQuery checks if input is a nearby/location query
 // Handles: "cafes near me", "nearby cafes", "Twickenham cafes", "petrol station"
@@ -351,7 +348,7 @@ func NewStreamHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := Default.New(stream, "", private, ttl); err != nil {
-		http.Error(w, "Cannot create stream", 500)
+		JsonError(w, "cannot create stream", 500)
 		return
 	}
 
@@ -372,7 +369,7 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 	stream := r.Form.Get("stream")
 
 	if len(message) == 0 {
-		http.Error(w, "Message cannot be blank", 400)
+		JsonError(w, "message required", 400)
 		return
 	}
 
@@ -390,7 +387,7 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 	select {
 	case Default.Events <- NewChannelMessage(message, stream, ""):
 	case <-time.After(time.Second):
-		http.Error(w, "Timed out creating message", 504)
+		JsonError(w, "timed out", 504)
 	}
 }
 
