@@ -1335,3 +1335,136 @@ Agents are now region-aware. See `spatial/regions.go` for full implementation.
 2. Create fetch function in `live.go` (e.g., `fetchTfGMArrivals`)
 3. Update `updateLiveData` in `agent.go` to call based on region
 4. Wrap in `RateLimitedCall("api-name", ...)` for rate limiting
+
+## Purpose & Roadmap: Signs in the World
+
+Malten isn't Foursquare with AI. It's a window to the signs (ayat) around you.
+
+### The Vision
+
+The world is filled with signs of Allah. Technology should help us see them, not distract from them. Every moment is purposeful. The app should remind you why you're here, subtly, while helping with the mundane.
+
+### What We're Building
+
+**Phase 1: The Reminder** (integrate reminder.dev)
+
+| Feature | When it appears | Source |
+|---------|-----------------|--------|
+| Daily verse | First open of the day | `/api/daily` → verse field |
+| Name of Allah | With daily verse | `/api/daily` → name field |
+| Hijri date | In context bar | `/api/daily` → hijri field |
+
+Implementation:
+- Fetch `/api/daily` once per day, cache in localStorage
+- Show verse card on first open (before context)
+- Add Hijri date to context bar: "14 Rajab 1447"
+- Link verse to reminder.dev for full context
+
+**Phase 2: The Natural World**
+
+| Feature | When it appears | Data source |
+|---------|-----------------|-------------|
+| Sun times | In context | Calculate from lat/lon |
+| Moon phase | In context | Calculate or API |
+| Weather as sign | With weather | Already have, reframe |
+
+Implementation:
+- Add sunrise/sunset to context: "☀️ Rises 07:52 · Sets 16:23"
+- Add moon phase: "🌒 Waxing crescent"
+- Weather already there, keep it factual
+
+**Phase 3: The Built World**
+
+| Feature | When it appears | Data source |
+|---------|-----------------|-------------|
+| Mosques nearby | In places | OSM amenity=place_of_worship + religion=muslim |
+| Historic sites | On request | OSM historic=* |
+| Age of places | With place info | OSM or Wikipedia |
+
+Implementation:
+- Already index mosques via OSM
+- Add `/mosques` or `/nearby mosque` command
+- Show mosque direction and distance
+- Historic sites: query OSM for historic=* tag
+
+**Phase 4: Journey Context**
+
+| Feature | When it appears | Trigger |
+|---------|-----------------|---------|  
+| Route suggestions | When moving with direction | Speed + heading consistent |
+| "On your way" | During journey | Detect destination from pattern |
+| Mosque en route | During journey | If prayer time approaching |
+
+Implementation:
+- Detect journey: consistent movement >5 min
+- Ask "Where are you headed?" or infer from direction
+- Surface relevant stops: "Mosque 200m off route, Dhuhr in 20 min"
+
+**Phase 5: Share with Family**
+
+| Feature | How it works |
+|---------|--------------|
+| Share location | Generate link, family sees your position |
+| Safety check-in | "I've arrived" notification |
+| Group coordination | See each other on map |
+
+Implementation:
+- `/share` generates temporary link
+- Link shows read-only map with your position
+- Optional: WebSocket for live updates
+- No accounts needed - link-based sharing
+
+### What We're NOT Building
+
+- Creepy pattern learning ("you usually...")
+- Gamification (points, badges, streaks)
+- Social features beyond family sharing
+- Predictive suggestions without asking
+- Anything that treats you as a data point
+
+### Concrete Next Steps
+
+1. **Today**: Integrate reminder.dev daily verse
+   - Fetch on first open
+   - Show verse card with Name of Allah
+   - Add Hijri date to context
+
+2. **Next**: Sun/moon in context
+   - Sunrise/sunset times
+   - Moon phase
+   - Keep it factual, not preachy
+
+3. **Then**: Mosques
+   - Already in OSM index
+   - `/mosque` command for nearest
+   - Show in context if prayer approaching
+
+### UI Treatment
+
+The reminder should be:
+- **Subtle** - not a popup, just a card in your timeline
+- **First** - appears before the mundane context
+- **Linked** - tap to read more on reminder.dev
+- **Daily** - changes each day, not random
+
+Example first-open experience:
+```
+📖 14 Rajab 1447
+
+"So endure with beautiful patience."
+— Al-Ma'arij 70:5
+
+Al Baa'ith - The Resurrector
+```
+
+Then the normal context:
+```
+📍 Hampton, TW12 2LL
+☀️ 3°C · Rises 07:52 · Sets 16:23
+🌒 Waxing crescent
+🕌 Asr now · Maghrib 16:05
+```
+
+### The Principle
+
+Utility over creep. Signs over stats. Purpose over points.
