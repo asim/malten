@@ -8,12 +8,13 @@ import (
 
 // Context provides user context to commands
 type Context struct {
-	Session string
-	Lat     float64
-	Lon     float64
-	ToLat   float64 // Destination lat (for directions)
-	ToLon   float64 // Destination lon (for directions)
-	Input   string
+	Session      string
+	Lat          float64
+	Lon          float64
+	ToLat        float64  // Destination lat (for directions)
+	ToLon        float64  // Destination lon (for directions)
+	Input        string
+	PushMessages []string // Messages to push via websocket after command completes
 }
 
 // HasLocation returns true if user has shared location
@@ -26,6 +27,8 @@ type Command struct {
 	Name        string
 	Description string
 	Usage       string
+	Emoji       string // Emoji for display (e.g., "🚶")
+	LoadingText string // Text while loading (e.g., "Getting directions to %s...")
 	Handler     func(ctx *Context, args []string) (string, error)
 	Match       func(input string) (bool, []string) // optional natural language matcher
 }
@@ -50,6 +53,30 @@ func List() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// CommandMeta is the client-facing command metadata
+type CommandMeta struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Usage       string `json:"usage,omitempty"`
+	Emoji       string `json:"emoji,omitempty"`
+	LoadingText string `json:"loading,omitempty"`
+}
+
+// GetMeta returns metadata for all commands (for client)
+func GetMeta() []CommandMeta {
+	var meta []CommandMeta
+	for _, cmd := range Registry {
+		meta = append(meta, CommandMeta{
+			Name:        cmd.Name,
+			Description: cmd.Description,
+			Usage:       cmd.Usage,
+			Emoji:       cmd.Emoji,
+			LoadingText: cmd.LoadingText,
+		})
+	}
+	return meta
 }
 
 // Dispatch routes input to the appropriate command

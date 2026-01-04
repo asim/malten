@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"malten.ai/agent"
+	"malten.ai/command"
 	"malten.ai/server"
 	"malten.ai/spatial"
 )
@@ -158,9 +160,9 @@ func main() {
 			return
 		}
 		
-		// For JS/CSS, set cache headers
+		// No caching for JS/CSS - service worker caching caused too many issues
 		if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css") {
-			w.Header().Set("Cache-Control", "public, max-age=31536000") // 1 year (versioned URLs)
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		}
 		
 		http.FileServer(staticFS).ServeHTTP(w, r)
@@ -169,6 +171,12 @@ func main() {
 	http.HandleFunc("/events", server.GetEvents)
 	http.HandleFunc("/agents", server.AgentsHandler)
 	http.HandleFunc("/agents/", server.AgentsHandler)
+	
+	// Command metadata for client
+	http.HandleFunc("/commands/meta", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(command.GetMeta())
+	})
 	
 	http.HandleFunc("/commands", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -184,9 +192,15 @@ func main() {
 	http.HandleFunc("/streams", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
+			// If WebSocket upgrade, stream events (like /events)
+			if server.IsWebSocket(r) {
+				server.GetEvents(w, r)
+				return
+			}
 			server.GetStreamsHandler(w, r)
 		case "POST":
-			server.NewStreamHandler(w, r)
+			// POST to stream = send command (like /commands)
+			server.PostCommandHandler(w, r)
 		default:
 			server.JsonError(w, "method not allowed", 405)
 		}

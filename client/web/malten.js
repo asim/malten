@@ -28,10 +28,10 @@
     }
 })();
 
-var commandUrl = "/commands";
+var commandUrl = "/streams";
 var messageUrl = "/messages";
 
-var eventUrl = "/events";
+var eventUrl = "/streams";
 var limit = 25;
 
 // Debug logging to screen (enable with /debug on)
@@ -220,8 +220,6 @@ var state = {
         this.save();
     },
     setContext: function(ctx) {
-        var oldHtml = this.context ? this.context.html : null;
-        
         // ctx can be JSON string or object
         if (typeof ctx === 'string') {
             try {
@@ -236,100 +234,16 @@ var state = {
         this.contextTime = Date.now();
         this.save();
         
-        // Detect significant changes and create cards
-        this.detectChanges(oldHtml, ctx.html);
-    },
-    detectChanges: function(oldCtx, newCtx) {
-        if (!newCtx) return;
-        
-        // First context - show initial location
-        if (!oldCtx) {
-            var loc = this.extractLocation(newCtx);
-            if (loc) {
-                addToTimeline('📍 ' + loc);
-            }
-            return;
-        }
-        
-        // Location/street changed
-        var oldLoc = this.extractLocation(oldCtx);
-        var newLoc = this.extractLocation(newCtx);
-        if (newLoc && oldLoc && newLoc !== oldLoc) {
-            var oldStreet = oldLoc.split(',')[0];
-            var newStreet = newLoc.split(',')[0];
-            if (newStreet !== oldStreet) {
-                addToTimeline('📍 ' + newStreet);
-            }
-        }
-        
-        // Rain warning
-        if (newCtx.indexOf('🌧️ Rain') >= 0 && oldCtx.indexOf('🌧️ Rain') < 0) {
-            var rainMatch = newCtx.match(/🌧️ Rain[^\n]+/);
-            if (rainMatch && !this.hasRecentCard(rainMatch[0], 30)) {
-                addToTimeline(rainMatch[0]);
-            }
-        }
-        
-        // Prayer time change
-        var oldPrayer = this.extractPrayer(oldCtx);
-        var newPrayer = this.extractPrayer(newCtx);
-        if (newPrayer && oldPrayer && newPrayer !== oldPrayer) {
-            var prayerCard = '🕌 ' + newPrayer;
-            if (!this.hasRecentCard(prayerCard, 30)) {
-                addToTimeline(prayerCard);
-            }
-        }
-        
-        // Bus arriving soon (< 3 mins)
-        var busMatch = newCtx.match(/(\d+) → ([^\n]+) in (\d+)m/);
-        if (busMatch) {
-            var mins = parseInt(busMatch[3]);
-            if (mins <= 3) {
-                var busCard = '🚌 ' + busMatch[1] + ' → ' + busMatch[2] + ' in ' + mins + 'm';
-                if (!this.hasRecentCard(busCard, 5)) {
-                    addToTimeline(busCard);
-                }
-            }
-        }
-        
-        // Traffic disruption - new incident
-        var oldDisrupt = oldCtx.match(/🚧[^\n]+/);
-        var newDisrupt = newCtx.match(/🚧[^\n]+/);
-        if (newDisrupt && (!oldDisrupt || oldDisrupt[0] !== newDisrupt[0])) {
-            if (!this.hasRecentCard(newDisrupt[0], 60)) {
-                addToTimeline(newDisrupt[0]);
-            }
-        }
-        
-        // Check for prayer-time reminder
-        checkPrayerReminder();
-    },
-    hasRecentCard: function(text, minutes) {
-        // Check if a card with similar text exists within last N minutes
-        var cutoff = Date.now() - (minutes * 60 * 1000);
-        for (var i = 0; i < this.cards.length; i++) {
-            if (this.cards[i].time > cutoff && this.cards[i].text === text) {
-                return true;
-            }
-        }
-        return false;
+        // Server pushes meaningful updates via websocket
+        // Client just stores context for display
     },
     extractLocation: function(ctx) {
-        // Handle both structured and legacy format
         if (ctx && ctx.location && ctx.location.name) {
             return ctx.location.name;
         }
         var html = (typeof ctx === 'string') ? ctx : (ctx && ctx.html) || '';
         var match = html.match(/📍 ([^\n]+)/);
         return match ? match[1].trim() : null;
-    },
-    extractPrayer: function(ctx) {
-        if (ctx && ctx.prayer && ctx.prayer.display) {
-            return ctx.prayer.display;
-        }
-        var html = (typeof ctx === 'string') ? ctx : (ctx && ctx.html) || '';
-        var match = html.match(/🕌 ([^\n]+)/);
-        return match ? match[1] : null;
     },
     createQACard: function(question, answer) {
         var card = {
@@ -963,7 +877,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 92';
+        info += 'JS version: 94';
         addToTimeline(info);
         return false;
     }
@@ -1004,7 +918,7 @@ function submitCommand() {
         connectWebSocket();
     }
     
-    // Post to /commands with location - response comes via WebSocket
+    // Post to /streams with location - response comes via WebSocket
     var data = {
         prompt: prompt,
         stream: targetStream

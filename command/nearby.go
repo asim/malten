@@ -18,6 +18,11 @@ import (
 const overpassURL = "https://overpass-api.de/api/interpreter"
 const nominatimURL = "https://nominatim.openstreetmap.org/search"
 
+// urlEncode encodes a string for URLs, including apostrophes
+func urlEncode(s string) string {
+	return strings.ReplaceAll(url.QueryEscape(s), "'", "%27")
+}
+
 // Geocode converts a place name to coordinates using Nominatim
 func Geocode(place string) (float64, float64, error) {
 	return GeocodeNear(place, 0, 0)
@@ -129,6 +134,8 @@ func init() {
 		Name:        "nearby",
 		Description: "Find nearby places",
 		Usage:       "/nearby <type> [location]",
+		Emoji:       "🔍",
+		LoadingText: "Searching for %s nearby...",
 		Handler:     handleNearby,
 		Match:       matchNearby,
 	})
@@ -138,6 +145,8 @@ func init() {
 		Name:        "place",
 		Description: "Get info about a specific place",
 		Usage:       "/place <name>",
+		Emoji:       "📍",
+		LoadingText: "Looking up %s...",
 		Handler:     handlePlaceInfo,
 		Match:       matchPlaceInfo,
 	})
@@ -147,6 +156,8 @@ func init() {
 		Name:        "checkin",
 		Description: "Check in to a location",
 		Usage:       "/checkin <place name>",
+		Emoji:       "📍",
+		LoadingText: "Checking in to %s...",
 		Handler:     handleCheckIn,
 	})
 	
@@ -560,7 +571,7 @@ func searchByName(name string, lat, lon float64) (string, error) {
 			break
 		}
 		// Google Maps link with name and coordinates
-		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(e.Name), e.Lat, e.Lon)
+		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", urlEncode(e.Name), e.Lat, e.Lon)
 		result.WriteString(fmt.Sprintf("• %s · %s\n", e.Name, mapLink))
 
 		// Add address
@@ -806,7 +817,7 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 		}
 
 		// Links: Map and Website (if available)
-		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(name), e.Lat, e.Lon)
+		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", urlEncode(name), e.Lat, e.Lon)
 		if website != "" {
 			result.WriteString(fmt.Sprintf("• %s · %s · %s\n", name, mapLink, website))
 		} else {
@@ -866,7 +877,7 @@ func formatOSMResults(elements []OSMElement, placeType string, lat, lon float64)
 		}
 
 		// Google Maps link with name and coordinates
-		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(name), elLat, elLon)
+		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", urlEncode(name), elLat, elLon)
 		result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
 
 		if addr := formatAddress(el.Tags); addr != "" {
@@ -890,7 +901,7 @@ func formatOSMResults(elements []OSMElement, placeType string, lat, lon float64)
 // ReverseGeocode gets area name from coordinates
 
 func fallbackGoogleMapsLink(placeType string, lat, lon float64) string {
-	searchTerm := url.QueryEscape(placeType)
+	searchTerm := urlEncode(placeType)
 	link := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,15z", searchTerm, lat, lon)
 	return fmt.Sprintf("📍 Search %s on Google Maps:\n%s", placeType, link)
 }
@@ -1300,8 +1311,17 @@ func handlePing(ctx *Context, args []string) (string, error) {
 		contextLat, contextLon = checkIn.Lat, checkIn.Lon
 	}
 	
+	// Get context with change detection
+	contextData, changes := spatial.GetContextWithChanges(ctx.Session, contextLat, contextLon)
+	
+	// Push meaningful changes via websocket (handled by server)
+	if len(changes) > 0 {
+		ctx.PushMessages = changes
+	}
+	
 	// Return JSON context
-	return spatial.GetContextJSON(contextLat, contextLon), nil
+	b, _ := json.Marshal(contextData)
+	return string(b), nil
 }
 
 

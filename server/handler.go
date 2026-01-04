@@ -77,13 +77,14 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		Input:   input,
 	}
 	// First try location from POST (inline with command)
+	var shouldPromptCheckIn bool
 	if latStr := r.Form.Get("lat"); latStr != "" {
 		if lat, err := strconv.ParseFloat(latStr, 64); err == nil {
 			if lon, err := strconv.ParseFloat(r.Form.Get("lon"), 64); err == nil {
 				ctx.Lat = lat
 				ctx.Lon = lon
-				// Also store for AI tool usage
-				command.SetLocation(token, lat, lon)
+				// Store location and check if GPS is stuck
+				shouldPromptCheckIn = command.SetLocation(token, lat, lon)
 			}
 		}
 	}
@@ -108,8 +109,16 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	if result, handled := command.Dispatch(ctx); handled {
 		if result != "" {
 			w.Write([]byte(result))
-			// Don't broadcast command responses - HTTP response is enough
-			// Only AI responses need WebSocket (they're async)
+		}
+		// Push any context change messages to the user's channel
+		if len(ctx.PushMessages) > 0 {
+			for _, msg := range ctx.PushMessages {
+				Default.Events <- NewChannelMessage(msg, stream, "@"+token)
+			}
+		}
+		// Check if we should prompt for check-in (GPS stuck)
+		if shouldPromptCheckIn {
+			go sendCheckInPrompt(token, stream, ctx.Lat, ctx.Lon)
 		}
 		return
 	}
