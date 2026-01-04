@@ -254,8 +254,8 @@ func SetLocation(token string, lat, lon float64) bool {
 	db := spatial.Get()
 	db.FindOrCreateAgent(lat, lon)
 	
-	// Build and cache their context view (sync - needed for immediate AI requests)
-	updateUserContext(token, lat, lon)
+	// Context is built on-demand in handlePing, not here
+	// This avoids duplicate calls
 	
 	return shouldPrompt
 }
@@ -1327,6 +1327,11 @@ func handlePing(ctx *Context, args []string) (string, error) {
 	
 	// Get context with change detection
 	contextData, changes := spatial.GetContextWithChanges(ctx.Session, contextLat, contextLon)
+	
+	// Cache for AI requests
+	userContextsMu.Lock()
+	userContexts[ctx.Session] = contextData.HTML
+	userContextsMu.Unlock()
 	
 	// Push meaningful changes via websocket (handled by server)
 	if len(changes) > 0 {

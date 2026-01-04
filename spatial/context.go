@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 )
 
 // Place represents a nearby place with structured data
@@ -65,11 +66,16 @@ type BusInfo struct {
 
 // GetContextData returns structured context data for a location
 func GetContextData(lat, lon float64) *ContextData {
+	start := time.Now()
 	db := Get()
 	ctx := &ContextData{
 		Places: make(map[string][]Place),
 	}
 	var htmlParts []string
+	
+	// Add formatted date/time for AI context
+	now := time.Now()
+	htmlParts = append(htmlParts, now.Format("Monday, 2 January 2006 15:04"))
 
 	// Ensure agent exists
 	agent := db.FindAgent(lat, lon, AgentRadius)
@@ -97,14 +103,10 @@ func GetContextData(lat, lon float64) *ContextData {
 		}
 	}
 
-	// Location
+	// Location - cache only, don't block on geocoding
+	tLoc := time.Now()
 	locs := db.Query(lat, lon, 500, EntityLocation, 1)
-	if len(locs) == 0 {
-		if loc := fetchLocation(lat, lon); loc != nil {
-			db.Insert(loc)
-			locs = []*Entity{loc}
-		}
-	}
+	log.Printf("[context] location: %v", time.Since(tLoc))
 	if len(locs) > 0 {
 		ctx.Location = &LocationInfo{
 			Name: locs[0].Name,
@@ -118,16 +120,12 @@ func GetContextData(lat, lon float64) *ContextData {
 		htmlParts = append(htmlParts, "📍 "+locs[0].Name)
 	}
 
-	// Weather
+	// Weather - cache only
+	tWeather := time.Now()
 	var headerParts []string
 	var rainForecast string
 	weather := db.Query(lat, lon, 10000, EntityWeather, 1)
-	if len(weather) == 0 {
-		if w := fetchWeather(lat, lon); w != nil {
-			db.Insert(w)
-			weather = []*Entity{w}
-		}
-	}
+	log.Printf("[context] weather: %v", time.Since(tWeather))
 	if len(weather) > 0 {
 		w := weather[0]
 		ctx.Weather = &WeatherInfo{
@@ -177,15 +175,18 @@ func GetContextData(lat, lon float64) *ContextData {
 	}
 
 	// Traffic disruptions
+	t1 := time.Now()
 	if disruption := getTrafficDisruptions(lat, lon); disruption != "" {
 		htmlParts = append(htmlParts, disruption)
 	}
+	log.Printf("[context] disruptions: %v", time.Since(t1))
 
-	// Bus arrivals
-	if busInfo := getNearestStopWithArrivals(lat, lon); busInfo != "" {
+	// Bus arrivals - only use cached data, never block on TfL
+	t2 := time.Now()
+	if busInfo := getNearestStopCached(lat, lon); busInfo != "" {
 		htmlParts = append(htmlParts, busInfo)
-		// TODO: parse into BusInfo struct
 	}
+	log.Printf("[context] bus arrivals: %v", time.Since(t2))
 
 	// Places by category
 	categories := []struct {
@@ -199,16 +200,11 @@ func GetContextData(lat, lon float64) *ContextData {
 		{"shop=supermarket", "supermarket", "🛒"},
 	}
 
+	// Places - only use cached data, agents handle fetching
+	tPlaces := time.Now()
 	var placeParts []string
 	for _, c := range categories {
 		places := db.QueryPlaces(lat, lon, 500, c.category, 10)
-		if len(places) == 0 {
-			fetched := fetchPlacesNow(lat, lon, 500, c.osmTag, c.category, 10)
-			for _, p := range fetched {
-				db.Insert(p)
-			}
-			places = fetched
-		}
 
 		if len(places) > 0 {
 			var categoryPlaces []Place
@@ -257,11 +253,13 @@ func GetContextData(lat, lon float64) *ContextData {
 		}
 	}
 
+	log.Printf("[context] places: %v", time.Since(tPlaces))
 	if len(placeParts) > 0 {
 		htmlParts = append(htmlParts, strings.Join(placeParts, " · "))
 	}
 
 	ctx.HTML = strings.Join(htmlParts, "\n")
+	log.Printf("[context] GetContextData took %v", time.Since(start))
 	return ctx
 }
 

@@ -925,8 +925,9 @@ func formatPlaceData(e *Entity) string {
 		}
 	}
 	
-	// Add map link with name for better search
-	parts = append(parts, fmt.Sprintf("https://maps.google.com/maps/search/%s/@%f,%f,17z", url.QueryEscape(e.Name), e.Lat, e.Lon))
+	// Add map link with name for better search (encode apostrophes too)
+	encodedName := strings.ReplaceAll(url.QueryEscape(e.Name), "'", "%27")
+	parts = append(parts, fmt.Sprintf("https://maps.google.com/maps/search/%s/@%f,%f,17z", encodedName, e.Lat, e.Lon))
 	
 	return strings.Join(parts, "|")
 }
@@ -935,7 +936,7 @@ func formatPlaceData(e *Entity) string {
 func getTrafficDisruptions(lat, lon float64) string {
 	db := Get()
 	
-	// Check cache first - 10km radius for disruptions
+	// Cache only - agents handle fetching
 	cached := db.Query(lat, lon, 10000, EntityDisruption, 1)
 	for _, d := range cached {
 		if d.ExpiresAt != nil && time.Now().Before(*d.ExpiresAt) {
@@ -943,8 +944,7 @@ func getTrafficDisruptions(lat, lon float64) string {
 		}
 	}
 	
-	// Fetch fresh disruptions
-	return fetchTrafficDisruptions(lat, lon)
+	return ""
 }
 
 // fetchTrafficDisruptions gets nearby road disruptions from TfL and caches them
@@ -1125,4 +1125,58 @@ func fetchBreakingNews() *Entity {
 		Data:      map[string]interface{}{"source": "BBC UK", "pubDate": top.PubDate, "link": link},
 		ExpiresAt: &expiry,
 	}
+}
+
+// getNearestStopCached returns bus arrivals from cache only, never blocks on TfL
+func getNearestStopCached(lat, lon float64) string {
+	db := Get()
+	
+	// Query quadtree for arrivals - allow stale data up to 10 minutes past expiry
+	arrivals := db.QueryWithMaxAge(lat, lon, 500, EntityArrival, 5, 600)
+	
+	// Find first stop with actual arrivals
+	for _, arr := range arrivals {
+		stopName, _ := arr.Data["stop_name"].(string)
+		arrData, _ := arr.Data["arrivals"].([]interface{})
+		
+		if len(arrData) == 0 {
+			continue
+		}
+		
+		isStale := arr.ExpiresAt != nil && time.Now().After(*arr.ExpiresAt)
+		
+		var lines []string
+		dist := haversine(lat, lon, arr.Lat, arr.Lon) * 1000
+		stopLabel := stopName
+		if dist >= 30 {
+			stopLabel = fmt.Sprintf("%s (%.0fm)", stopName, dist)
+		}
+		if isStale {
+			lines = append(lines, fmt.Sprintf("🚏 %s ⏳", stopLabel))
+		} else if dist < 30 {
+			lines = append(lines, fmt.Sprintf("🚏 At %s", stopName))
+		} else {
+			lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
+		}
+		
+		for i, a := range arrData {
+			if i >= 3 {
+				break
+			}
+			if amap, ok := a.(map[string]interface{}); ok {
+				line, _ := amap["line"].(string)
+				dest, _ := amap["destination"].(string)
+				mins, _ := amap["minutes"].(float64)
+				if mins <= 1 {
+					lines = append(lines, fmt.Sprintf("   %s → %s arriving now", line, shortDest(dest)))
+				} else {
+					lines = append(lines, fmt.Sprintf("   %s → %s in %.0fm", line, shortDest(dest), mins))
+				}
+			}
+		}
+		
+		return strings.Join(lines, "\n")
+	}
+	
+	return ""
 }
