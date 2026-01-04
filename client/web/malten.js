@@ -860,7 +860,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 226';
+        info += 'JS version: 227';
         addToTimeline(info);
         return false;
     }
@@ -1830,6 +1830,45 @@ function sendLocation(lat, lon) {
 }
 
 // Get location and refresh context
+// Check if we moved since last ping - only refresh if needed
+function checkIfMoved() {
+    // If very stale (>10 min), just refresh
+    var isStale = state.contextTime && Date.now() - state.contextTime > 10 * 60 * 1000;
+    if (isStale) {
+        debugLog('Context stale, refreshing');
+        getLocationAndContext();
+        return;
+    }
+    
+    // If we detected steps while foregrounded, refresh
+    if (stepDetector.stepsSinceLastPing > 50) {
+        debugLog('Movement detected (' + stepDetector.stepsSinceLastPing + ' steps), refreshing');
+        stepDetector.stepsSinceLastPing = 0;
+        getLocationAndContext();
+        return;
+    }
+    
+    // Silently check GPS to see if we moved significantly
+    if (navigator.geolocation && state.hasLocation()) {
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                var dist = state.distance(
+                    { lat: state.lat, lon: state.lon },
+                    { lat: pos.coords.latitude, lon: pos.coords.longitude }
+                ) * 1000; // km to m
+                debugLog('GPS check: moved ' + Math.round(dist) + 'm');
+                if (dist > 100) { // Moved more than 100m
+                    getLocationAndContext();
+                }
+            },
+            function(err) {
+                debugLog('GPS check failed', err.message);
+            },
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        );
+    }
+}
+
 function getLocationAndContext() {
     if (!navigator.geolocation) {
         showLocationNeeded('unavailable');
@@ -2346,17 +2385,11 @@ $(document).ready(function() {
     // Update timestamps every minute
     setInterval(updateTimestamps, 60000);
     
-    // Update timestamps when page becomes visible (PWA reopen)
+    // When page becomes visible (PWA reopen), check if we moved
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
             updateTimestamps();
-            // Only refresh location if stale (>10 min) or we detect movement
-            var isStale = state.contextTime && Date.now() - state.contextTime > 10 * 60 * 1000;
-            var hasMovement = stepDetector.stepsSinceLastPing > 50; // ~35m walked
-            if (isStale || hasMovement) {
-                getLocationAndContext();
-                stepDetector.stepsSinceLastPing = 0;
-            }
+            checkIfMoved();
         }
     });
     
