@@ -313,6 +313,12 @@ ul li {
 
 .card.card-user {
   background: transparent;
+  color: #5f6368;
+}
+
+.card.card-user .card-time::before {
+  content: '> ';
+  color: #aaa;
 }
 
 .card.card-movement {
@@ -451,9 +457,7 @@ ul li {
   color: #333;
 }
 
-.card-user {
-  background: #e3f2fd;
-}
+
 
 #loading {
   text-align: center;

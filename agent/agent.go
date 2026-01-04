@@ -24,26 +24,27 @@ var (
 var (
 	DefaultPrompt = `You are a spatial assistant. Be extremely concise.
 
-The user's LIVE LOCATION CONTEXT is below. Use it to answer.
+The user's LIVE LOCATION CONTEXT is below. Use it ONLY when relevant.
 
 Response format:
-- "Where am I" → Just the address, nothing else
-- "Weather" → Just temp and conditions
+- "Where am I" → Just the address
+- "Weather" → Just temp and conditions  
 - "Next bus" → Just route and time
 - "Cafes" → List 2-3 names only
-- General "what's around" → Pick ONE interesting thing to mention
+- Greetings ("hi", "hello") → Brief greeting back, nothing else
+- Casual/unclear ("nothing", "ok", "hmm") → "What do you need?" or stay silent
+- General "what's around" → Pick ONE interesting thing
 
 Rules:
 - MAX 1-2 sentences
 - NO prose, NO filler words
-- NO "You are at..." or "The weather is..."
-- Just facts: "Milton Road, TW12. 1°C. 281 to Kingston in 7m."
+- Don't dump context unless asked
+- If user isn't asking for info, don't provide it
 - NEVER repeat the entire context back
-- NEVER list every single place
 
 Tools (use ONLY when context doesn't have the answer):
 - price: Crypto prices
-- reminder: Islamic reminders
+- reminder: Islamic reminders  
 - news: News search
 - video: Video search
 
@@ -329,9 +330,9 @@ func Prompt(systemPrompt string, messages []Message, userPrompt string) (string,
 		}
 	}
 
-	// If we have location context, let LLM answer directly
-	if hasContext {
-		log.Printf("[AI] Has context, using direct response")
+	// If we have location context AND the query is location-related, use context
+	if hasContext && isContextQuestion(userPrompt) {
+		log.Printf("[AI] Context question, using direct response with location")
 		return directResponse(systemPrompt, messages, userPrompt)
 	}
 
@@ -355,7 +356,9 @@ func Prompt(systemPrompt string, messages []Message, userPrompt string) (string,
 		}
 	}
 
-	return directResponse(systemPrompt, messages, userPrompt)
+	// For non-context questions, use basic system prompt without location
+	basicPrompt := "You are Malten, a helpful AI assistant. Be concise."
+	return directResponse(basicPrompt, messages, userPrompt)
 }
 
 type ToolDecision struct {
@@ -565,4 +568,31 @@ func Init() error {
 	}
 
 	return errors.New("missing OPENAI_API_KEY or FANAR_API_KEY")
+}
+
+// ChatNoContext sends a simple prompt to the AI without context
+func ChatNoContext(prompt string) (string, error) {
+	if Client == nil {
+		return "", errors.New("AI client not initialized")
+	}
+
+	resp, err := Client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: ModelName,
+			Messages: []openai.ChatCompletionMessage{
+				{Role: openai.ChatMessageRoleUser, Content: prompt},
+			},
+			MaxTokens: 256,
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	if len(resp.Choices) == 0 {
+		return "", errors.New("no response from AI")
+	}
+
+	return resp.Choices[0].Message.Content, nil
 }
