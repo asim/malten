@@ -212,6 +212,29 @@ Options:
 - `client/web/` - PWA frontend
 - `event/` - event log
 
+## Client Timeline Functions
+
+Your timeline is your worldline through spacetime. Everything flows through one path:
+
+```javascript
+addToTimeline(text, type)   // THE ONE way to add anything - saves + renders
+loadTimeline()              // Load from localStorage on startup
+renderTimelineItem(item)    // Render single item to DOM (internal)
+getTimelineType(text)       // Determine type from emoji in text
+```
+
+**Item types:** `location`, `transport`, `weather`, `prayer`, `reminder`, `default`
+
+**How it works:**
+1. `addToTimeline()` dedupes, saves to `state.cards`, prunes 24h, renders, scrolls
+2. `loadTimeline()` called on startup, renders all persisted cards
+3. Everything persists across reloads - no more disappearing cards
+
+**NEVER:**
+- Render directly to DOM without saving
+- Create new display functions
+- Bypass `addToTimeline()`
+
 ## User Context
 - Muslim. Prayer times important. No anthropomorphizing.
 - Engineer. Brevity.
