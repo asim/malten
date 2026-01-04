@@ -64,11 +64,14 @@ var lastAcquiringShown = 0;
 // Set acquiring state - always shows in timeline
 function setAcquiring(acquiring) {
     if (acquiring && !isAcquiringLocation) {
-        // Only show in timeline if not shown in last 30 seconds
-        var now = Date.now();
-        if (now - lastAcquiringShown > 30000) {
-            addToTimeline('📡 Acquiring location...');
-            lastAcquiringShown = now;
+        // Only show in timeline if we have NO cached location
+        // Don't spam "acquiring" when we already have context
+        if (!state.hasLocation()) {
+            var now = Date.now();
+            if (now - lastAcquiringShown > 30000) {
+                addToTimeline('📡 Acquiring location...');
+                lastAcquiringShown = now;
+            }
         }
     }
     isAcquiringLocation = acquiring;
@@ -857,7 +860,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 225';
+        info += 'JS version: 226';
         addToTimeline(info);
         return false;
     }
@@ -1871,8 +1874,10 @@ function showAcquiring() {
 }
 
 function requestLocationForContext() {
-    // Always show acquiring state - it's an event
-    setAcquiring(true);
+    // Only show acquiring if we don't have cached context
+    if (!state.context || !state.hasLocation()) {
+        setAcquiring(true);
+    }
     
     var isFirstLocation = !state.hasLocation();
     
@@ -2151,6 +2156,7 @@ var stepDetector = {
     minInterval: 250,  // Min ms between steps (prevents double counting)
     movementWindow: [],  // Last 5 seconds of movement data
     movementThreshold: 3,  // Number of movements to consider "walking"
+    stepsSinceLastPing: 0,  // Reset when we ping, used to detect movement
     
     init: function() {
         if (!window.DeviceMotionEvent) {
@@ -2220,6 +2226,7 @@ var stepDetector = {
         }
         
         state.steps.count++;
+        this.stepsSinceLastPing++;
         state.save();
         
         // Update display if visible
@@ -2326,21 +2333,30 @@ $(document).ready(function() {
     // Scroll to bottom after loading persisted content
     scrollToBottom();
     
-    // Show cached context immediately
+    // Show cached context immediately - this is the primary experience
     showCachedContext();
     
-    // Then try to get fresh location/context
-    getLocationAndContext();
+    // Only get fresh location if we don't have one or it's very stale (>10 min)
+    var needsFreshLocation = !state.hasLocation() || 
+        (state.contextTime && Date.now() - state.contextTime > 10 * 60 * 1000);
+    if (needsFreshLocation) {
+        getLocationAndContext();
+    }
     
     // Update timestamps every minute
     setInterval(updateTimestamps, 60000);
     
-    // Update timestamps and refresh location when page becomes visible (PWA reopen)
+    // Update timestamps when page becomes visible (PWA reopen)
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
             updateTimestamps();
-            // Server pushes updates via /ping, no need for client-side showPresence
-            getLocationAndContext();
+            // Only refresh location if stale (>10 min) or we detect movement
+            var isStale = state.contextTime && Date.now() - state.contextTime > 10 * 60 * 1000;
+            var hasMovement = stepDetector.stepsSinceLastPing > 50; // ~35m walked
+            if (isStale || hasMovement) {
+                getLocationAndContext();
+                stepDetector.stepsSinceLastPing = 0;
+            }
         }
     });
     
