@@ -293,10 +293,6 @@ var state = {
         var match = html.match(/🕌 ([^\n]+)/);
         return match ? match[1] : null;
     },
-    createCard: function(text) {
-        // DEPRECATED: Use addToTimeline() directly
-        addToTimeline(text);
-    },
     createQACard: function(question, answer) {
         var card = {
             question: question,
@@ -420,6 +416,11 @@ function addToTimeline(text, type) {
     var key = text.substring(0, 100);
     if (displayedItems[key]) return;
     displayedItems[key] = true;
+    
+    // Augment check-in prompts with saved places
+    if (text.indexOf('Where are you?') >= 0) {
+        text = augmentCheckInPrompt(text);
+    }
     
     var item = {
         text: text,
@@ -596,7 +597,7 @@ function displayMessages(array, direction) {
         
         // Use card format with timestamp from message
         var timestamp = sorted[i].Created / 1e6; // Convert from nanos to millis
-        displaySystemMessage(sorted[i].Text, timestamp);
+        addToTimeline(sorted[i].Text, timestamp);
     }
 
     if (direction >= 0 && array.length > 0) {
@@ -682,7 +683,7 @@ function connectWebSocket() {
             if (pendingCommand) {
                 displayResponse(ev.Text);
             } else {
-                displaySystemMessage(ev.Text);
+                addToTimeline(ev.Text);
             }
             clipMessages();
         }
@@ -742,7 +743,7 @@ function submitCommand() {
     // "new" command disabled - streams are geo-based now
     if (prompt.match(/^\/?new(\s|$)/i)) {
         form.elements["prompt"].value = '';
-        displaySystemMessage('Stream creation disabled - location determines your stream');
+        addToTimeline('Stream creation disabled - location determines your stream');
         return false;
     }
     
@@ -755,7 +756,7 @@ function submitCommand() {
                 registrations.forEach(function(r) { r.unregister(); });
             });
         }
-        displaySystemMessage('🔄 Refreshing...');
+        addToTimeline('🔄 Refreshing...');
         setTimeout(function() { location.reload(true); }, 500);
         return false;
     }
@@ -771,7 +772,7 @@ function submitCommand() {
             });
         }
         // Show feedback then reload
-        displaySystemMessage('🗑️ Cleared all local data. Reloading...');
+        addToTimeline('🗑️ Cleared all local data. Reloading...');
         setTimeout(function() { location.reload(); }, 1000);
         return false;
     }
@@ -782,12 +783,12 @@ function submitCommand() {
         form.elements["prompt"].value = '';
         var placeName = saveMatch[1].trim();
         if (!state.hasLocation()) {
-            displaySystemMessage('❌ Need location to save a place');
+            addToTimeline('❌ Need location to save a place');
             return false;
         }
         state.savedPlaces[placeName] = { lat: state.lat, lon: state.lon };
         state.save();
-        state.createCard('📍 Saved "' + placeName + '"');
+        addToTimeline('📍 Saved "' + placeName + '"');
         return false;
     }
     
@@ -796,14 +797,14 @@ function submitCommand() {
         form.elements["prompt"].value = '';
         var names = Object.keys(state.savedPlaces || {});
         if (names.length === 0) {
-            displaySystemMessage('📍 No saved places.\nUse /save Home to save current location.');
+            addToTimeline('📍 No saved places.\nUse /save Home to save current location.');
         } else {
             var msg = '📍 Saved places:\n';
             names.forEach(function(name) {
                 msg += '• ' + name + '\n';
             });
             msg += '\nUse /checkin [name] or /delete [name]';
-            displaySystemMessage(msg);
+            addToTimeline(msg);
         }
         return false;
     }
@@ -816,9 +817,9 @@ function submitCommand() {
         if (state.savedPlaces[placeName]) {
             delete state.savedPlaces[placeName];
             state.save();
-            state.createCard('🗑️ Deleted "' + placeName + '"');
+            addToTimeline('🗑️ Deleted "' + placeName + '"');
         } else {
-            displaySystemMessage('❌ No saved place named "' + placeName + '"');
+            addToTimeline('❌ No saved place named "' + placeName + '"');
         }
         return false;
     }
@@ -833,13 +834,13 @@ function submitCommand() {
         if (state.savedPlaces[placeName]) {
             var place = state.savedPlaces[placeName];
             state.checkIn(placeName, place.lat, place.lon);
-            state.createCard('📍 Checked in to ' + placeName);
+            addToTimeline('📍 Checked in to ' + placeName);
         } else if (state.hasLocation()) {
             // Use current location with this name
             state.checkIn(placeName, state.lat, state.lon);
-            state.createCard('📍 Checked in to ' + placeName);
+            addToTimeline('📍 Checked in to ' + placeName);
         } else {
-            displaySystemMessage('❌ Need location to check in');
+            addToTimeline('❌ Need location to check in');
         }
         return false;
     }
@@ -849,7 +850,7 @@ function submitCommand() {
         form.elements["prompt"].value = '';
         var data = localStorage.getItem('malten_state');
         if (!data) {
-            displaySystemMessage('❌ Nothing to export');
+            addToTimeline('❌ Nothing to export');
             return false;
         }
         var blob = new Blob([data], { type: 'application/json' });
@@ -859,7 +860,7 @@ function submitCommand() {
         a.download = 'malten-backup-' + new Date().toISOString().split('T')[0] + '.json';
         a.click();
         URL.revokeObjectURL(url);
-        displaySystemMessage('💾 Exported backup to Downloads');
+        addToTimeline('💾 Exported backup to Downloads');
         return false;
     }
     
@@ -878,10 +879,10 @@ function submitCommand() {
                     var data = JSON.parse(e.target.result);
                     if (!data.version) throw new Error('Invalid backup file');
                     localStorage.setItem('malten_state', e.target.result);
-                    displaySystemMessage('✅ Imported backup. Reloading...');
+                    addToTimeline('✅ Imported backup. Reloading...');
                     setTimeout(function() { location.reload(); }, 1000);
                 } catch(err) {
-                    displaySystemMessage('❌ Invalid backup file: ' + err.message);
+                    addToTimeline('❌ Invalid backup file: ' + err.message);
                 }
             };
             reader.readAsText(file);
@@ -897,9 +898,9 @@ function submitCommand() {
             var name = state.checkedIn.name;
             state.checkedIn = null;
             state.save();
-            state.createCard('📍 Checked out from ' + name);
+            addToTimeline('📍 Checked out from ' + name);
         } else {
-            displaySystemMessage('📍 Not checked in anywhere');
+            addToTimeline('📍 Not checked in anywhere');
         }
         return false;
     }
@@ -914,7 +915,7 @@ function submitCommand() {
                     displayReminderCard(r);
                 }
             } catch(e) {
-                displaySystemMessage(response);
+                addToTimeline(response);
             }
         });
         return false;
@@ -930,7 +931,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
         info += 'JS version: 71';
-        displaySystemMessage(info);
+        addToTimeline(info);
         return false;
     }
 
@@ -950,10 +951,10 @@ function submitCommand() {
         var action = pingMatch[1].toLowerCase();
         if (action === 'on') {
             enableLocation();
-            displaySystemMessage('📍 Location tracking enabled');
+            addToTimeline('📍 Location tracking enabled');
         } else {
             disableLocation();
-            displaySystemMessage('📍 Location tracking disabled');
+            addToTimeline('📍 Location tracking disabled');
         }
         return false;
     }
@@ -1249,7 +1250,7 @@ function displayReminderCard(r) {
     if (!text) return;
     
     // displaySystemMessage handles both display AND persistence
-    displaySystemMessage(text);
+    addToTimeline(text);
 }
 
 function fetchContext() {
@@ -1578,7 +1579,7 @@ $(document).on('click touchend', '.directions-link', function(e) {
     var toLon = $(this).data('lon');
     
     if (!state.hasLocation()) {
-        displaySystemMessage('📍 Need your location for directions');
+        addToTimeline('📍 Need your location for directions');
         return false;
     }
     
@@ -1639,18 +1640,8 @@ function showPlacesInTimeline(data) {
     });
     
     var text = lines.join('\n\n');
-    state.createCard(text);
-    scrollToBottom();
-}
-
-// DEPRECATED: Use addToTimeline() instead
-// Kept for backward compatibility during refactor
-function displaySystemMessage(text) {
-    // Augment check-in prompts with saved places
-    if (text && text.indexOf('Where are you?') >= 0) {
-        text = augmentCheckInPrompt(text);
-    }
     addToTimeline(text);
+    scrollToBottom();
 }
 
 // Insert card in chronological order (oldest at top, newest at bottom)
@@ -1788,11 +1779,6 @@ function displayQACard(question, answer, timestamp) {
         '<div class="card-answer">' + makeClickable(answer).replace(/\n/g, '<br>') + '</div>' +
         '</div>';
     insertCardByTimestamp(card, timestamp);
-}
-
-function loadPersistedCards() {
-    // DEPRECATED: Use loadTimeline()
-    loadTimeline();
 }
 
 function restoreConversation() {
@@ -1962,7 +1948,7 @@ function requestLocationForContext() {
                     if (wasStale) {
                         var loc = state.extractLocation(ctx);
                         if (loc) {
-                            state.createCard('📍 ' + loc + ' · refreshed');
+                            addToTimeline('📍 ' + loc + ' · refreshed');
                         }
                     }
                     state.setContext(ctx);
@@ -2361,7 +2347,7 @@ function showCheckInPrompt() {
         msg += 'Type /checkin [place name] to set your location manually.';
     }
     
-    state.createCard(msg);
+    addToTimeline(msg);
 }
 
 // Initialize
@@ -2370,7 +2356,7 @@ $(document).ready(function() {
     initialLoad();
     
     // Load persisted cards and conversation from localStorage
-    loadPersistedCards();
+    loadTimeline();
     restoreConversation();
     
     // Fetch daily reminder (shows once per day at top)
