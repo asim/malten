@@ -103,6 +103,7 @@ var state = {
                 this.checkedIn = s.checkedIn || null;
                 this.savedPlaces = s.savedPlaces || {};
                 this.steps = s.steps || { count: 0, date: null };
+                this.reminderDate = s.reminderDate || null;
                 // Prune old cards on load (24 hour retention)
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
@@ -133,7 +134,8 @@ var state = {
             conversation: this.conversation,
             checkedIn: this.checkedIn,
             savedPlaces: this.savedPlaces,
-            steps: this.steps
+            steps: this.steps,
+            reminderDate: this.reminderDate
         }));
     },
     hasSeenNews: function(newsText) {
@@ -344,6 +346,7 @@ var state = {
     checkedIn: null,  // {name, lat, lon, time} - manual location override
     savedPlaces: {},  // Private named places: { "Home": {lat, lon}, "Work": {lat, lon} }
     steps: { count: 0, date: null },  // Daily step counter
+    reminderDate: null,  // Last date reminder was shown (YYYY-MM-DD)
     motionDetected: false,  // Movement detected via accelerometer while GPS stuck
     
     // Check if user has manually checked in to a location
@@ -800,6 +803,18 @@ function submitCommand() {
         return false;
     }
     
+    // Handle reminder command - show today's reminder
+    if (prompt.match(/^\/?reminder$/i)) {
+        form.elements["prompt"].value = '';
+        $.get('/reminder').done(function(r) {
+            if (r && r.verse) {
+                displayReminderCard(r);
+                scrollToBottom();
+            }
+        });
+        return false;
+    }
+    
     // Handle debug command locally
     if (prompt.match(/^\/?debug$/i)) {
         form.elements["prompt"].value = '';
@@ -809,7 +824,7 @@ function submitCommand() {
         info += 'Context cached: ' + (state.context ? state.context.length + ' chars' : 'none') + '\n';
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 69';
+        info += 'JS version: 70';
         displaySystemMessage(info);
         return false;
     }
@@ -1019,6 +1034,61 @@ function startLocationWatch() {
         },
         { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
     );
+}
+
+// Fetch and display daily reminder (once per day)
+function fetchReminder() {
+    var today = new Date().toISOString().split('T')[0];
+    if (state.reminderDate === today) return; // Already shown today
+    
+    $.get('/reminder').done(function(r) {
+        if (!r || !r.verse) return;
+        
+        // Mark as shown
+        state.reminderDate = today;
+        state.save();
+        
+        // Display reminder card
+        displayReminderCard(r);
+    });
+}
+
+function displayReminderCard(r) {
+    // Parse verse - format: "Surah Name - English Name - Chapter:Verse\n\nText"
+    var verseParts = r.verse.split('\n\n');
+    var verseRef = verseParts[0] || '';
+    var verseText = verseParts.slice(1).join('\n\n') || r.verse;
+    
+    // Parse name - format: "Arabic Name - الاسم - English Meaning\n\nDescription"
+    var nameParts = r.name.split('\n\n');
+    var nameTitle = nameParts[0] || '';
+    
+    // Extract just the English meaning
+    var nameMeaning = nameTitle.split(' - ')[2] || nameTitle.split(' - ')[0] || '';
+    var nameArabic = nameTitle.split(' - ')[1] || '';
+    
+    // Build card HTML
+    var html = '<div class="reminder-card">';
+    html += '<div class="reminder-hijri">☪ ' + escapeHTML(r.hijri) + '</div>';
+    html += '<div class="reminder-verse">"' + escapeHTML(verseText.trim()) + '"</div>';
+    html += '<div class="reminder-ref">— ' + escapeHTML(verseRef) + '</div>';
+    if (nameMeaning) {
+        html += '<div class="reminder-name">' + escapeHTML(nameMeaning);
+        if (nameArabic) html += ' <span class="arabic">' + escapeHTML(nameArabic) + '</span>';
+        html += '</div>';
+    }
+    html += '</div>';
+    
+    var li = document.createElement('li');
+    li.innerHTML = html;
+    
+    // Insert at top of messages
+    var messages = document.getElementById('messages');
+    if (messages.firstChild) {
+        messages.insertBefore(li, messages.firstChild);
+    } else {
+        messages.appendChild(li);
+    }
 }
 
 function fetchContext() {
@@ -1892,6 +1962,7 @@ var commands = [
     { cmd: '/weather', desc: 'Current weather' },
     { cmd: '/bus', desc: 'Bus times' },
     { cmd: '/prayer', desc: 'Prayer times' },
+    { cmd: '/reminder', desc: 'Daily verse' },
     { cmd: '/export', desc: 'Backup to file' },
     { cmd: '/import', desc: 'Restore from file' },
     { cmd: '/refresh', desc: 'Force reload' },
@@ -2187,6 +2258,9 @@ $(document).ready(function() {
     // Load persisted cards and conversation from localStorage
     loadPersistedCards();
     restoreConversation();
+    
+    // Fetch daily reminder (shows once per day at top)
+    fetchReminder();
     
     // Scroll to bottom after loading persisted content
     scrollToBottom();

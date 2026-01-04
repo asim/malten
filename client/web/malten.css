@@ -564,3 +564,45 @@ ul li {
 .checkin-dismiss:hover {
   background: #f8f9fa;
 }
+
+/* Daily reminder card */
+.reminder-card {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #e8e8e8;
+  padding: 20px;
+  border-radius: 12px;
+  margin: 10px 0;
+}
+
+.reminder-hijri {
+  font-size: 13px;
+  color: #a0a0a0;
+  margin-bottom: 12px;
+}
+
+.reminder-verse {
+  font-size: 17px;
+  line-height: 1.6;
+  font-style: italic;
+  margin-bottom: 8px;
+}
+
+.reminder-ref {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+.reminder-name {
+  font-size: 14px;
+  color: #c9a227;
+  border-top: 1px solid #333;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.reminder-name .arabic {
+  font-family: 'Traditional Arabic', 'Scheherazade', serif;
+  font-size: 18px;
+  margin-left: 8px;
+}

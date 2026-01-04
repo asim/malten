@@ -169,6 +169,7 @@ func main() {
 	http.HandleFunc("/events", server.GetEvents)
 	http.HandleFunc("/agents", server.AgentsHandler)
 	http.HandleFunc("/agents/", server.AgentsHandler)
+	http.HandleFunc("/reminder", server.ReminderHandler)
 	
 	http.HandleFunc("/commands", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
