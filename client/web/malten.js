@@ -856,7 +856,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 106';
+        info += 'JS version: 107';
         addToTimeline(info);
         return false;
     }
@@ -1815,15 +1815,7 @@ function sendLocation(lat, lon) {
         if (data && data.length > 0) {
             state.setContext(data);
             displayContext(data);
-            
-            // Note area change in timeline
-            if (areaChanged) {
-                var ctx = typeof data === 'string' ? JSON.parse(data) : data;
-                if (ctx && ctx.location) {
-                    var areaName = ctx.location.name.split(',')[0];
-                    addToTimeline('📍 Entered ' + areaName, 'movement');
-                }
-            }
+            // Server pushes location changes via WebSocket, no need to duplicate here
         }
     });
 }
