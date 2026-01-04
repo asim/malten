@@ -135,24 +135,191 @@ func GetSurah(number int) *Surah {
 	return &s
 }
 
-// GetDuhaReminder returns a reminder from Surah Ad-Duha (93)
-// Best shown at Duha time (after sunrise until before Dhuhr)
-func GetDuhaReminder() *Reminder {
-	s := GetSurah(93)
-	if s == nil || len(s.Verses) < 3 {
+// Name holds a Name of Allah
+type Name struct {
+	Number      int      `json:"number"`
+	English     string   `json:"english"`
+	Arabic      string   `json:"arabic"`
+	Meaning     string   `json:"meaning"`
+	Description string   `json:"description"`
+	Summary     string   `json:"summary"`
+	Location    []string `json:"location"`
+}
+
+var (
+	// Cache for names
+	nameCache   = make(map[int]*Name)
+	nameCacheMu sync.RWMutex
+)
+
+// GetName fetches a Name of Allah by number (1-99)
+func GetName(number int) *Name {
+	nameCacheMu.RLock()
+	if n, ok := nameCache[number]; ok {
+		nameCacheMu.RUnlock()
+		return n
+	}
+	nameCacheMu.RUnlock()
+	
+	nameCacheMu.Lock()
+	defer nameCacheMu.Unlock()
+	
+	// Double-check
+	if n, ok := nameCache[number]; ok {
+		return n
+	}
+	
+	url := fmt.Sprintf("https://reminder.dev/api/names/%d", number)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("[reminder] fetch name %d error: %v", number, err)
+		return nil
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != 200 {
+		log.Printf("[reminder] name %d API returned %d", number, resp.StatusCode)
 		return nil
 	}
 	
-	// Get verses 1-3 (skip bismillah at index 0)
+	var n Name
+	if err := json.NewDecoder(resp.Body).Decode(&n); err != nil {
+		log.Printf("[reminder] decode name %d error: %v", number, err)
+		return nil
+	}
+	
+	nameCache[number] = &n
+	log.Printf("[reminder] cached name %d: %s", number, n.English)
+	
+	return &n
+}
+
+// TimeBasedReminder represents a curated reminder for a specific time
+type TimeBasedReminder struct {
+	Type     string // "surah", "name", "verse"
+	Number   int    // Surah number or Name number
+	Verses   []int  // For surahs, which verses to show (empty = first 3)
+	Reason   string // Why this reminder at this time
+}
+
+// Curated time-based reminders
+var timeReminders = map[string]TimeBasedReminder{
+	// Morning reminders (Fajr to sunrise)
+	"fajr": {
+		Type:   "surah",
+		Number: 89, // Al-Fajr (The Dawn)
+		Verses: []int{1, 2, 3, 4},
+		Reason: "By the dawn...",
+	},
+	// Duha time (after sunrise, before Dhuhr)
+	"duha": {
+		Type:   "surah",
+		Number: 93, // Ad-Duhaa (The Morning Hours)
+		Verses: []int{1, 2, 3},
+		Reason: "By the morning sunlight...",
+	},
+	// Midday - The Provider
+	"dhuhr": {
+		Type:   "name",
+		Number: 17, // Ar-Razzaq (The Provider)
+		Reason: "Midday reminder of provision",
+	},
+	// Afternoon - The Designer
+	"asr": {
+		Type:   "name",
+		Number: 13, // Al-Musawwir (The Fashioner)
+		Reason: "Afternoon reflection on creation",
+	},
+	// Evening - The Light
+	"maghrib": {
+		Type:   "name",
+		Number: 93, // An-Nur (The Light) - actually let's use As-Samad
+		Reason: "As day turns to night",
+	},
+	// Night
+	"isha": {
+		Type:   "surah",
+		Number: 92, // Al-Layl (The Night)
+		Verses: []int{1, 2, 3, 4},
+		Reason: "By the night when it covers...",
+	},
+	// Eternal Refuge - for difficult moments
+	"refuge": {
+		Type:   "name",
+		Number: 68, // As-Samad (The Eternal Refuge)
+		Reason: "The Self-Sufficient, upon whom all depend",
+	},
+	// The Creator - seeing nature
+	"creator": {
+		Type:   "name",
+		Number: 11, // Al-Khaliq (The Creator)
+		Reason: "Reminder of creation",
+	},
+}
+
+// GetTimeReminder returns a reminder for a specific time/context
+func GetTimeReminder(key string) *Reminder {
+	tr, ok := timeReminders[key]
+	if !ok {
+		return nil
+	}
+	
+	switch tr.Type {
+	case "surah":
+		return getSurahReminder(tr.Number, tr.Verses)
+	case "name":
+		return getNameReminder(tr.Number)
+	default:
+		return nil
+	}
+}
+
+func getSurahReminder(number int, verses []int) *Reminder {
+	s := GetSurah(number)
+	if s == nil || len(s.Verses) < 2 {
+		return nil
+	}
+	
+	// Default to verses 1-3 if not specified
+	if len(verses) == 0 {
+		verses = []int{1, 2, 3}
+	}
+	
+	// Build verse text (skip bismillah at index 0)
 	verseText := ""
-	for i := 1; i <= 3 && i < len(s.Verses); i++ {
-		if verseText != "" {
-			verseText += " "
+	for _, v := range verses {
+		if v < len(s.Verses) {
+			if verseText != "" {
+				verseText += " "
+			}
+			verseText += s.Verses[v].Text
 		}
-		verseText += s.Verses[i].Text
+	}
+	
+	// Format reference
+	ref := fmt.Sprintf("%s - %d:%d", s.Name, number, verses[0])
+	if len(verses) > 1 {
+		ref = fmt.Sprintf("%s - %d:%d-%d", s.Name, number, verses[0], verses[len(verses)-1])
 	}
 	
 	return &Reminder{
-		Verse: fmt.Sprintf("%s - 93:1-3\n\n%s", s.Name, verseText),
+		Verse: fmt.Sprintf("%s\n\n%s", ref, verseText),
 	}
+}
+
+func getNameReminder(number int) *Reminder {
+	n := GetName(number)
+	if n == nil {
+		return nil
+	}
+	
+	return &Reminder{
+		Name: fmt.Sprintf("%s - %s - %s\n\n%s", n.English, n.Arabic, n.Meaning, n.Description),
+	}
+}
+
+// GetDuhaReminder returns a reminder from Surah Ad-Duha (93)
+// Best shown at Duha time (after sunrise until before Dhuhr)
+func GetDuhaReminder() *Reminder {
+	return GetTimeReminder("duha")
 }

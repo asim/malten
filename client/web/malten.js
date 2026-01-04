@@ -1088,15 +1088,29 @@ function fetchReminder() {
 }
 
 function displayReminderCard(r) {
-    // Parse verse - format: "Surah Name - English Name - Chapter:Verse\n\nText"
-    var verseParts = r.verse.split('\n\n');
-    var verseRef = verseParts[0] || '';
-    var verseText = verseParts.slice(1).join('\n\n') || r.verse;
-    
-    // Build simple card - just verse and reference
     var html = '<div class="reminder-card">';
-    html += '<div class="reminder-verse">"' + escapeHTML(verseText.trim()) + '"</div>';
-    html += '<div class="reminder-ref">— ' + escapeHTML(verseRef) + '</div>';
+    
+    // Check if it's a Name of Allah or a verse
+    if (r.name && r.name.length > 0) {
+        // Name format: "English - Arabic - Meaning\n\nDescription"
+        var nameParts = r.name.split('\n\n');
+        var nameTitle = nameParts[0] || '';
+        var nameDesc = nameParts.slice(1).join('\n\n') || '';
+        
+        html += '<div class="reminder-name-title">' + escapeHTML(nameTitle) + '</div>';
+        if (nameDesc) {
+            html += '<div class="reminder-name-desc">' + escapeHTML(nameDesc) + '</div>';
+        }
+    } else if (r.verse && r.verse.length > 0) {
+        // Verse format: "Surah Name - Chapter:Verse\n\nText"
+        var verseParts = r.verse.split('\n\n');
+        var verseRef = verseParts[0] || '';
+        var verseText = verseParts.slice(1).join('\n\n') || r.verse;
+        
+        html += '<div class="reminder-verse">"' + escapeHTML(verseText.trim()) + '"</div>';
+        html += '<div class="reminder-ref">— ' + escapeHTML(verseRef) + '</div>';
+    }
+    
     html += '</div>';
     
     var li = document.createElement('li');

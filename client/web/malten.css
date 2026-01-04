@@ -585,3 +585,14 @@ ul li {
   font-size: 12px;
   color: #666;
 }
+
+.reminder-name-title {
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.reminder-name-desc {
+  font-size: 13px;
+  color: #555;
+  line-height: 1.5;
+}
