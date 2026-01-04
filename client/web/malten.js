@@ -208,7 +208,7 @@ var state = {
         if (!oldCtx) {
             var loc = this.extractLocation(newCtx);
             if (loc) {
-                this.createCard('📍 ' + loc);
+                addToTimeline('📍 ' + loc);
             }
             return;
         }
@@ -220,7 +220,7 @@ var state = {
             var oldStreet = oldLoc.split(',')[0];
             var newStreet = newLoc.split(',')[0];
             if (newStreet !== oldStreet) {
-                this.createCard('📍 ' + newStreet);
+                addToTimeline('📍 ' + newStreet);
             }
         }
         
@@ -228,7 +228,7 @@ var state = {
         if (newCtx.indexOf('🌧️ Rain') >= 0 && oldCtx.indexOf('🌧️ Rain') < 0) {
             var rainMatch = newCtx.match(/🌧️ Rain[^\n]+/);
             if (rainMatch && !this.hasRecentCard(rainMatch[0], 30)) {
-                this.createCard(rainMatch[0]);
+                addToTimeline(rainMatch[0]);
             }
         }
         
@@ -238,7 +238,7 @@ var state = {
         if (newPrayer && oldPrayer && newPrayer !== oldPrayer) {
             var prayerCard = '🕌 ' + newPrayer;
             if (!this.hasRecentCard(prayerCard, 30)) {
-                this.createCard(prayerCard);
+                addToTimeline(prayerCard);
             }
         }
         
@@ -249,7 +249,7 @@ var state = {
             if (mins <= 3) {
                 var busCard = '🚌 ' + busMatch[1] + ' → ' + busMatch[2] + ' in ' + mins + 'm';
                 if (!this.hasRecentCard(busCard, 5)) {
-                    this.createCard(busCard);
+                    addToTimeline(busCard);
                 }
             }
         }
@@ -259,7 +259,7 @@ var state = {
         var newDisrupt = newCtx.match(/🚧[^\n]+/);
         if (newDisrupt && (!oldDisrupt || oldDisrupt[0] !== newDisrupt[0])) {
             if (!this.hasRecentCard(newDisrupt[0], 60)) {
-                this.createCard(newDisrupt[0]);
+                addToTimeline(newDisrupt[0]);
             }
         }
         
@@ -367,7 +367,7 @@ var state = {
             time: Date.now()
         };
         this.save();
-        this.createCard('📍 Checked in: ' + name);
+        addToTimeline('📍 Checked in: ' + name);
     },
     
     // Clear check-in (when GPS moves significantly)
