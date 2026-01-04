@@ -857,7 +857,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 224';
+        info += 'JS version: 225';
         addToTimeline(info);
         return false;
     }
@@ -918,7 +918,9 @@ function submitCommand() {
     // Track pending to dedupe echo
     pendingMessages[prompt] = true;
     
+    debugLog('POST', commandUrl, data);
     $.post(commandUrl, data).done(function(response) {
+        debugLog('Response', response ? response.substring(0, 200) : '(empty)');
         // If we got a direct response, show it immediately
         if (response && response.length > 0 && !response.startsWith('{')) {
             hideLoading();
@@ -928,6 +930,9 @@ function submitCommand() {
         }
         // JSON responses (like /ping) are handled elsewhere
         // Empty responses mean async (AI) - wait for WebSocket
+    }).fail(function(xhr, status, err) {
+        debugLog('Request failed', status, err);
+        hideLoading();
     });
 
     form.elements["prompt"].value = '';
@@ -1873,6 +1878,7 @@ function requestLocationForContext() {
     
     navigator.geolocation.getCurrentPosition(
         function(pos) {
+            debugLog('Geolocation success', pos.coords.latitude, pos.coords.longitude);
             setAcquiring(false);
             var oldStream = currentStream;
             var wasStale = state.contextTime && (Date.now() - state.contextTime > 10 * 60 * 1000);
@@ -1886,12 +1892,14 @@ function requestLocationForContext() {
             }
             
             // Ping returns context
+            debugLog('Ping', state.lat, state.lon);
             $.post(commandUrl, {
                 prompt: '/ping',
                 stream: newStream,
                 lat: state.lat,
                 lon: state.lon
             }).done(function(data) {
+                debugLog('Ping response', data ? data.substring(0, 100) : '(empty)');
                 if (data && data.length > 0) {
                     // Parse JSON if string
                     var ctx = data;
@@ -1911,10 +1919,13 @@ function requestLocationForContext() {
                     state.setContext(ctx);
                     displayContext(ctx);
                 }
+            }).fail(function(xhr, status, err) {
+                debugLog('Ping failed', status, err);
             });
             startLocationWatch();
         },
         function(err) {
+            debugLog('Geolocation error', err.code, err.message);
             setAcquiring(false);
             resetLocationButton();
             console.log("Location error:", err.code, err.message);
