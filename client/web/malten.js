@@ -1644,19 +1644,6 @@ function showPlacesInTimeline(data) {
     scrollToBottom();
 }
 
-// Insert card in chronological order (oldest at top, newest at bottom)
-function insertCardByTimestamp(card, timestamp, shouldScroll) {
-    var messages = document.getElementById('messages');
-    
-    // Always append new cards at the end (bottom) for chat-like flow
-    messages.appendChild(card);
-    
-    // Only scroll if explicitly requested (user-initiated)
-    if (shouldScroll) {
-        scrollToBottom();
-    }
-}
-
 function scrollToBottom() {
     setTimeout(function() {
         // Try scrollIntoView on last message
@@ -1736,49 +1723,6 @@ function displayResponse(text) {
 function resetConversationTimeout() {}
 function endConversation() {
     pendingCommand = null;
-}
-
-// Restore conversation from state on load
-// Unused pending card functions kept for compatibility
-function displayPendingCard(question) {
-    var ts = Date.now();
-    var card = document.createElement('li');
-    card.innerHTML = '<div class="card card-qa" data-timestamp="' + ts + '">' +
-        '<span class="card-time">' + formatTimeAgo(ts) + '</span>' +
-        '<div class="card-question">' + escapeHTML(question) + '</div>' +
-        '<div class="card-answer card-loading">...</div>' +
-        '</div>';
-    
-    insertCardByTimestamp(card, ts);
-    return card;
-}
-
-// Update pending card with answer
-function updateCardWithAnswer(card, question, answer) {
-    var answerDiv = card.querySelector('.card-answer');
-    if (answerDiv) {
-        answerDiv.classList.remove('card-loading');
-        answerDiv.innerHTML = makeClickable(answer).replace(/\n/g, '<br>');
-    }
-    // Update card type based on answer content
-    var cardDiv = card.querySelector('.card');
-    if (cardDiv) {
-        var type = getCardType(answer);
-        if (type) cardDiv.classList.add(type);
-    }
-}
-
-// displayCard removed - use renderTimelineItem or addToTimeline
-
-function displayQACard(question, answer, timestamp) {
-    var cardType = getCardType(answer);
-    var card = document.createElement('li');
-    card.innerHTML = '<div class="card card-qa ' + cardType + '" data-timestamp="' + timestamp + '">' +
-        '<span class="card-time">' + formatTimeAgo(timestamp) + '</span>' +
-        '<div class="card-question">' + escapeHTML(question) + '</div>' +
-        '<div class="card-answer">' + makeClickable(answer).replace(/\n/g, '<br>') + '</div>' +
-        '</div>';
-    insertCardByTimestamp(card, timestamp);
 }
 
 function restoreConversation() {
