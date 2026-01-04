@@ -7,6 +7,11 @@
  * YOUR timeline (cards, conversations) lives in localStorage.
  * Server streams are for real-time spatial events, not persistence.
  * On refresh, localStorage is YOUR source of truth.
+ *
+ * TIMELINE FUNCTIONS:
+ *   addToTimeline(text, type)  - Save + render (the ONE way to add anything)
+ *   loadTimeline()             - Load from localStorage on startup
+ *   renderTimelineItem(item)   - Render single item to DOM (internal)
  */
 
 var commandUrl = "/commands";
@@ -289,18 +294,8 @@ var state = {
         return match ? match[1] : null;
     },
     createCard: function(text) {
-        var card = {
-            text: text,
-            time: Date.now(),
-            lat: this.lat,
-            lon: this.lon
-        };
-        this.cards.push(card);
-        // Prune cards older than 24 hours
-        var cutoff = Date.now() - (24 * 60 * 60 * 1000);
-        this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
-        this.save();
-        displaySystemMessage(text);
+        // DEPRECATED: Use addToTimeline() directly
+        addToTimeline(text);
     },
     createQACard: function(question, answer) {
         var card = {
@@ -409,6 +404,106 @@ var state = {
     }
 };
 state.load();
+
+// =============================================================================
+// TIMELINE - Your worldline through spacetime
+// Everything that happens flows through here
+// =============================================================================
+
+var displayedItems = {}; // Deduplication tracker
+
+// Add item to timeline (saves to localStorage + renders to DOM)
+function addToTimeline(text, type) {
+    if (!text) return;
+    
+    // Dedupe by first 100 chars
+    var key = text.substring(0, 100);
+    if (displayedItems[key]) return;
+    displayedItems[key] = true;
+    
+    var item = {
+        text: text,
+        type: type || getTimelineType(text),
+        time: Date.now(),
+        lat: state.lat,
+        lon: state.lon
+    };
+    
+    // Save to state
+    state.cards.push(item);
+    
+    // Prune old items (24 hour retention)
+    var cutoff = Date.now() - (24 * 60 * 60 * 1000);
+    state.cards = state.cards.filter(function(c) { return c.time > cutoff; });
+    state.save();
+    
+    // Render
+    renderTimelineItem(item);
+    scrollToBottom();
+}
+
+// Load timeline from localStorage on startup
+function loadTimeline() {
+    if (!state.cards || !state.cards.length) return;
+    
+    // Sort oldest first
+    var sorted = state.cards.slice().sort(function(a, b) { return a.time - b.time; });
+    
+    sorted.forEach(function(item) {
+        if (item.text) {
+            // Mark as displayed (for deduplication)
+            var key = item.text.substring(0, 100);
+            displayedItems[key] = true;
+            // Render without saving (already in storage)
+            renderTimelineItem(item);
+        }
+    });
+}
+
+// Render single item to DOM
+function renderTimelineItem(item) {
+    var type = item.type || getTimelineType(item.text);
+    var time = item.time || Date.now();
+    
+    var li = document.createElement('li');
+    var html = makeClickable(item.text).replace(/\n/g, '<br>');
+    
+    li.innerHTML = '<div class="card card-' + type + '" data-timestamp="' + time + '">' +
+        '<span class="card-time">' + formatTimeAgo(time) + '</span>' +
+        html +
+        '</div>';
+    
+    // Insert in chronological order
+    var messages = document.getElementById('messages');
+    var cards = messages.querySelectorAll('.card');
+    var inserted = false;
+    
+    for (var i = 0; i < cards.length; i++) {
+        var cardTime = parseInt(cards[i].getAttribute('data-timestamp')) || 0;
+        if (time < cardTime) {
+            messages.insertBefore(li, cards[i].parentElement);
+            inserted = true;
+            break;
+        }
+    }
+    
+    if (!inserted) {
+        messages.appendChild(li);
+    }
+}
+
+// Determine item type from text
+function getTimelineType(text) {
+    if (!text) return 'default';
+    if (text.indexOf('🚏') >= 0 || text.indexOf('🚌') >= 0) return 'transport';
+    if (text.indexOf('🌧️') >= 0 || text.indexOf('☀️') >= 0 || text.indexOf('⛅') >= 0) return 'weather';
+    if (text.indexOf('🕌') >= 0) return 'prayer';
+    if (text.indexOf('📍') >= 0) return 'location';
+    if (text.indexOf('📖') >= 0 || text.indexOf('📿') >= 0) return 'reminder';
+    return 'default';
+}
+
+// =============================================================================
 
 String.prototype.parseURL = function() {
     // Match URLs including @, commas, %, etc
@@ -1028,21 +1123,43 @@ function startLocationWatch() {
     }
     locationWatchId = navigator.geolocation.watchPosition(
         function(pos) {
+            var lat = pos.coords.latitude;
+            var lon = pos.coords.longitude;
             var now = Date.now();
-            var interval = getPingInterval();
-            if (now - lastPingSent >= interval) {
-                // Track for speed calculation
-                lastPingLat = state.lat;
-                lastPingLon = state.lon;
+            
+            // Always update local state immediately
+            var moved = false;
+            if (state.lat && state.lon) {
+                var distance = haversineDistance(state.lat, state.lon, lat, lon);
+                moved = distance > 20; // More than 20m = significant movement
+            }
+            
+            // Update local state
+            state.setLocation(lat, lon);
+            
+            // If significant movement, ping immediately
+            if (moved || !lastPingSent) {
+                lastPingLat = lat;
+                lastPingLon = lon;
                 lastPingTime = now;
                 lastPingSent = now;
-                sendLocation(pos.coords.latitude, pos.coords.longitude);
+                sendLocation(lat, lon);
+            } else {
+                // Otherwise respect throttle interval
+                var interval = getPingInterval();
+                if (now - lastPingSent >= interval) {
+                    lastPingLat = lat;
+                    lastPingLon = lon;
+                    lastPingTime = now;
+                    lastPingSent = now;
+                    sendLocation(lat, lon);
+                }
             }
         },
         function(err) {
             console.log("Location watch error:", err.message);
         },
-        { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 }
     );
 }
 
@@ -1074,33 +1191,32 @@ function fetchReminder() {
 // Check if we should show a prayer-time reminder based on current prayer
 function checkPrayerReminder() {
     var ctx = state.context;
-    if (!ctx || !ctx.prayer || !ctx.prayer.current) return;
+    if (!ctx || !ctx.prayer) return;
     
     var today = new Date().toISOString().split('T')[0];
-    var currentPrayer = ctx.prayer.current.toLowerCase();
+    var hour = new Date().getHours();
+    var reminderKey = null;
     
-    // Map prayer names to reminder keys
-    var prayerToReminder = {
-        'fajr': 'fajr',
-        'dhuhr': 'dhuhr',
-        'asr': 'asr',
-        'maghrib': 'maghrib',
-        'isha': 'isha'
-    };
+    // Duha time: after sunrise (roughly 8am) until Dhuhr (roughly noon)
+    // This is when there's no "current" prayer in the morning
+    if (!ctx.prayer.current && hour >= 8 && hour < 12) {
+        reminderKey = 'duha';
+    } else if (ctx.prayer.current) {
+        // Map prayer names to reminder keys
+        var prayerToReminder = {
+            'fajr': 'fajr',
+            'dhuhr': 'dhuhr',
+            'asr': 'asr',
+            'maghrib': 'maghrib',
+            'isha': 'isha'
+        };
+        reminderKey = prayerToReminder[ctx.prayer.current.toLowerCase()];
+    }
     
-    var reminderKey = prayerToReminder[currentPrayer];
     if (!reminderKey) return;
     
     // Check if already shown today
     if (state.prayerReminders[reminderKey] === today) return;
-    
-    // Special case: during Duha time (between Fajr end and Dhuhr), show Duha reminder
-    // This is when there's no "current" prayer but we're in the morning
-    var hour = new Date().getHours();
-    if (!ctx.prayer.current && hour >= 9 && hour < 12) {
-        reminderKey = 'duha';
-        if (state.prayerReminders['duha'] === today) return;
-    }
     
     // Fetch and display the prayer reminder
     $.post(commandUrl, { prompt: '/reminder ' + reminderKey, stream: getStream() }).done(function(response) {
@@ -1119,37 +1235,21 @@ function checkPrayerReminder() {
 }
 
 function displayReminderCard(r) {
-    var html = '<div class="reminder-card">';
-    
-    // Check if it's a Name of Allah or a verse
+    // Build the text
+    var text = '';
     if (r.name && r.name.length > 0) {
-        // Name format: "English - Arabic - Meaning\n\nDescription"
-        var nameParts = r.name.split('\n\n');
-        var nameTitle = nameParts[0] || '';
-        var nameDesc = nameParts.slice(1).join('\n\n') || '';
-        
-        html += '<div class="reminder-name-title">' + escapeHTML(nameTitle) + '</div>';
-        if (nameDesc) {
-            html += '<div class="reminder-name-desc">' + escapeHTML(nameDesc) + '</div>';
-        }
+        text = '📿 ' + r.name.split('\n\n')[0]; // Just the title
     } else if (r.verse && r.verse.length > 0) {
-        // Verse format: "Surah Name - Chapter:Verse\n\nText"
         var verseParts = r.verse.split('\n\n');
         var verseRef = verseParts[0] || '';
         var verseText = verseParts.slice(1).join('\n\n') || r.verse;
-        
-        html += '<div class="reminder-verse">"' + escapeHTML(verseText.trim()) + '"</div>';
-        html += '<div class="reminder-ref">— ' + escapeHTML(verseRef) + '</div>';
+        text = '📖 "' + verseText.trim() + '" — ' + verseRef;
     }
     
-    html += '</div>';
+    if (!text) return;
     
-    var li = document.createElement('li');
-    li.innerHTML = html;
-    
-    var messages = document.getElementById('messages');
-    messages.appendChild(li);
-    scrollToBottom();
+    // displaySystemMessage handles both display AND persistence
+    displaySystemMessage(text);
 }
 
 function fetchContext() {
@@ -1543,38 +1643,14 @@ function showPlacesInTimeline(data) {
     scrollToBottom();
 }
 
-var displayedCards = {}; // Track displayed card text to prevent duplicates
-
-function displaySystemMessage(text, timestamp, skipScroll) {
+// DEPRECATED: Use addToTimeline() instead
+// Kept for backward compatibility during refactor
+function displaySystemMessage(text) {
     // Augment check-in prompts with saved places
-    if (text.indexOf('Where are you?') >= 0) {
+    if (text && text.indexOf('Where are you?') >= 0) {
         text = augmentCheckInPrompt(text);
     }
-    
-    // Dedupe - don't show same card text twice
-    var textKey = text.substring(0, 100); // Use first 100 chars as key
-    if (displayedCards[textKey]) {
-        return;
-    }
-    displayedCards[textKey] = true;
-    
-    // Create a card in the messages area
-    var ts = timestamp || Date.now();
-    var timeStr = formatTimeAgo(ts);
-    var cardType = getCardType(text);
-    var card = document.createElement('li');
-    var html = makeCheckInClickable(text).replace(/\n/g, '<br>');
-    card.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + ts + '">' +
-        '<span class="card-time">' + timeStr + '</span>' +
-        html +
-        '</div>';
-    
-    insertCardByTimestamp(card, ts);
-    
-    // Always scroll to bottom unless explicitly skipped
-    if (!skipScroll) {
-        scrollToBottom();
-    }
+    addToTimeline(text);
 }
 
 // Insert card in chronological order (oldest at top, newest at bottom)
@@ -1701,23 +1777,7 @@ function updateCardWithAnswer(card, question, answer) {
     }
 }
 
-function displayCard(text, timestamp) {
-    // Dedupe - don't show same card text twice
-    var textKey = text.substring(0, 100);
-    if (displayedCards[textKey]) {
-        return;
-    }
-    displayedCards[textKey] = true;
-    
-    var cardType = getCardType(text);
-    var card = document.createElement('li');
-    var html = makeClickable(text).replace(/\n/g, '<br>');
-    card.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + timestamp + '">' +
-        '<span class="card-time">' + formatTimeAgo(timestamp) + '</span>' +
-        html +
-        '</div>';
-    insertCardByTimestamp(card, timestamp);
-}
+// displayCard removed - use renderTimelineItem or addToTimeline
 
 function displayQACard(question, answer, timestamp) {
     var cardType = getCardType(answer);
@@ -1731,16 +1791,8 @@ function displayQACard(question, answer, timestamp) {
 }
 
 function loadPersistedCards() {
-    if (!state.cards || state.cards.length === 0) return;
-    
-    // Sort oldest first for chronological display
-    var sorted = state.cards.slice().sort(function(a, b) { return a.time - b.time; });
-    
-    sorted.forEach(function(c) {
-        if (c.text) {
-            displayCard(c.text, c.time);
-        }
-    });
+    // DEPRECATED: Use loadTimeline()
+    loadTimeline();
 }
 
 function restoreConversation() {
@@ -1792,6 +1844,7 @@ function getCardType(text) {
     if (text.indexOf('🌧️') >= 0 || text.indexOf('☀️') >= 0 || text.indexOf('⛅') >= 0) return 'card-weather';
     if (text.indexOf('🕌') >= 0) return 'card-prayer';
     if (text.indexOf('📍') >= 0) return 'card-location';
+    if (text.indexOf('📖') >= 0 || text.indexOf('📿') >= 0) return 'card-reminder';
     return '';
 }
 
@@ -2335,10 +2388,12 @@ $(document).ready(function() {
     // Update timestamps every minute
     setInterval(updateTimestamps, 60000);
     
-    // Update timestamps when page becomes visible (PWA reopen)
+    // Update timestamps and refresh location when page becomes visible (PWA reopen)
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
             updateTimestamps();
+            // Refresh location and context when app reopens
+            getLocationAndContext();
         }
     });
     
