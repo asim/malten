@@ -772,6 +772,16 @@ function submitCommand() {
         // Otherwise let it fall through to server
     }
     
+    // Handle checkout - clear local state, then send to server
+    if (prompt.match(/^\/?checkout$/i)) {
+        // Clear local state first
+        if (state.checkedIn) {
+            state.checkedIn = null;
+            state.save();
+        }
+        // Let it fall through to server
+    }
+    
     // Handle export command - download state as JSON
     if (prompt.match(/^\/?export$/i)) {
         form.elements["prompt"].value = '';
@@ -818,35 +828,6 @@ function submitCommand() {
         return false;
     }
     
-    // Handle checkout command
-    if (prompt.match(/^\/?checkout$/i)) {
-        form.elements["prompt"].value = '';
-        if (state.checkedIn) {
-            var name = state.checkedIn.name;
-            state.checkedIn = null;
-            state.save();
-            addToTimeline('📍 Checked out from ' + name);
-        } else {
-            addToTimeline('📍 Not checked in anywhere');
-        }
-        return false;
-    }
-    
-    // Handle reminder command - show today's reminder
-    if (prompt.match(/^\/?reminder$/i)) {
-        form.elements["prompt"].value = '';
-        $.post(commandUrl, { prompt: '/reminder', stream: getStream() }).done(function(response) {
-            try {
-                var r = JSON.parse(response);
-                if (r && r.verse) {
-                    displayReminderCard(r);
-                }
-            } catch(e) {
-                addToTimeline(response);
-            }
-        });
-        return false;
-    }
     
     // Handle debug on/off - toggle screen logging
     var debugMatch = prompt.match(/^\/?debug\s+(on|off)$/i);
@@ -867,7 +848,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 98';
+        info += 'JS version: 99';
         addToTimeline(info);
         return false;
     }

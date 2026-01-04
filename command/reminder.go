@@ -1,7 +1,6 @@
 package command
 
 import (
-	"encoding/json"
 	"strings"
 
 	"malten.ai/spatial"
@@ -10,7 +9,10 @@ import (
 func init() {
 	Register(&Command{
 		Name:        "reminder",
-		Description: "Daily verse and reminder. Usage: /reminder [type]",
+		Description: "Daily verse and reminder",
+		Usage:       "/reminder [type]",
+		Emoji:       "💿",
+		LoadingText: "Getting reminder...",
 		Handler: func(ctx *Context, args []string) (string, error) {
 			var r *spatial.Reminder
 			
@@ -31,9 +33,25 @@ func init() {
 				return "Reminder unavailable", nil
 			}
 			
-			// Return as JSON for client to render as card
-			data, _ := json.Marshal(r)
-			return string(data), nil
+			// Return formatted text
+			return formatReminder(r), nil
 		},
 	})
+}
+
+func formatReminder(r *spatial.Reminder) string {
+	var parts []string
+	
+	// Name of Allah or verse
+	if r.Name != "" {
+		parts = append(parts, "💿 "+r.Name)
+	}
+	if r.Verse != "" {
+		parts = append(parts, r.Verse)
+	}
+	if r.Message != "" {
+		parts = append(parts, r.Message)
+	}
+	
+	return strings.Join(parts, "\n")
 }

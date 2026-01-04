@@ -161,6 +161,21 @@ func init() {
 		Handler:     handleCheckIn,
 	})
 	
+	Register(&Command{
+		Name:        "checkout",
+		Description: "Clear check-in",
+		Usage:       "/checkout",
+		Emoji:       "📍",
+		Handler: func(ctx *Context, args []string) (string, error) {
+			if checkIn := GetCheckIn(ctx.Session); checkIn != nil {
+				name := checkIn.Name
+				ClearCheckIn(ctx.Session)
+				return "📍 Checked out from " + name, nil
+			}
+			return "📍 Not checked in anywhere", nil
+		},
+	})
+	
 	// Register ping command (location update + context)
 	Register(&Command{
 		Name:        "ping",
