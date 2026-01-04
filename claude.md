@@ -1346,19 +1346,26 @@ The world is filled with signs of Allah. Technology should help us see them, not
 
 ### What We're Building
 
-**Phase 1: The Reminder** (integrate reminder.dev)
+**Phase 1: The Reminder** (integrate reminder.dev) ✅ DONE
 
-| Feature | When it appears | Source |
-|---------|-----------------|--------|
-| Daily verse | First open of the day | `/api/daily` → verse field |
-| Name of Allah | With daily verse | `/api/daily` → name field |
-| Hijri date | In context bar | `/api/daily` → hijri field |
+| Feature | When it appears | Source | Status |
+|---------|-----------------|--------|--------|
+| Daily verse | First open of the day | `/api/daily` → verse field | ✅ |
+| Duha reminder | 10:00-11:30am | `/api/quran/93` (Ad-Duhaa) | ✅ |
+| Name of Allah | With daily verse | `/api/daily` → name field | TODO |
+| Hijri date | In context bar | `/api/daily` → hijri field | TODO |
 
 Implementation:
-- Fetch `/api/daily` once per day, cache in localStorage
-- Show verse card on first open (before context)
-- Add Hijri date to context bar: "14 Rajab 1447"
-- Link verse to reminder.dev for full context
+- Daily reminder fetched from `/api/daily`, cached per day
+- Duha reminder fetched from `/api/quran/93` during Duha time (10:00-11:30am)
+- Subtle card style: light gray background, left border, just verse + reference
+- State tracks `reminderDate` and `duhaReminderDate` to show each once per day
+- `/reminder` command for manual access, `/reminder duha` for Duha specifically
+
+Reminder.dev API:
+- `/api/daily` - Today's verse, hadith, name of Allah, hijri date
+- `/api/quran/{number}` - Full surah with all verses
+- `/api/search` - Search verses (TODO: integrate)
 
 **Phase 2: The Natural World**
 
