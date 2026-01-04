@@ -313,12 +313,13 @@ ul li {
 
 .card.card-user {
   background: transparent;
+  border: none;
+  padding-left: 0;
   color: #5f6368;
 }
 
-.card.card-user .card-time::before {
-  content: '> ';
-  color: #aaa;
+.card.card-user .card-time {
+  display: none;
 }
 
 .card.card-movement {

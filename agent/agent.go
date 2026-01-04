@@ -357,6 +357,7 @@ func Prompt(systemPrompt string, messages []Message, userPrompt string) (string,
 	}
 
 	// For non-context questions, use basic system prompt without location
+	log.Printf("[AI] Non-context question, using basic prompt")
 	basicPrompt := "You are Malten, a helpful AI assistant. Be concise."
 	return directResponse(basicPrompt, messages, userPrompt)
 }
@@ -507,6 +508,7 @@ Examples:
 }
 
 func directResponse(systemPrompt string, messages []Message, userPrompt string) (string, error) {
+	log.Printf("[AI] directResponse called for: %q", userPrompt)
 	chatMessages := []openai.ChatCompletionMessage{{
 		Role:    openai.ChatMessageRoleSystem,
 		Content: systemPrompt,
@@ -547,7 +549,13 @@ func directResponse(systemPrompt string, messages []Message, userPrompt string) 
 		return "", errors.New("no response from AI")
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	reply := resp.Choices[0].Message.Content
+	preview := reply
+	if len(preview) > 100 {
+		preview = preview[:100]
+	}
+	log.Printf("[AI] directResponse reply: %s", preview)
+	return reply, nil
 }
 
 // Init initializes the AI client

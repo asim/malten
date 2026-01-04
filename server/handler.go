@@ -220,6 +220,7 @@ func handleAI(prompt, stream, token string) {
 	}
 
 	// Send to session's channel
+	log.Printf("[handleAI] Sending reply to stream=%s channel=@%s", stream, token)
 	Default.Events <- NewChannelMessage(reply, stream, "@"+token)
 }
 
@@ -270,6 +271,7 @@ func GetEvents(w http.ResponseWriter, r *http.Request) {
 	// Get session for channel filtering
 	session := getSessionToken(w, r)
 
+	log.Printf("[events] New observer: stream=%s session=%s", stream, session)
 	o := NewObserver(stream, session)
 
 	defer func() {
