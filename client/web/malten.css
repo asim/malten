@@ -283,8 +283,10 @@ ul li {
 /* Cards - timeline events */
 .card {
   padding: 10px 16px;
-  margin: 4px 0;
+  margin: 4px 15px;
   position: relative;
+  background: #f8f9fa;
+  border-radius: 8px;
 }
 
 .card .card-time {
@@ -313,8 +315,6 @@ ul li {
 
 .card.card-user {
   background: transparent;
-  border: none;
-  padding-left: 0;
   color: #5f6368;
 }
 
