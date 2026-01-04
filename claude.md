@@ -1575,3 +1575,119 @@ Removed ~200 lines:
 
 ### Known Issue
 Mobile PWA may cache old JS. Fix: Clear app cache or `/clear` command.
+
+## Session: Jan 4, 2026 - Movement Feedback
+
+### User Feedback
+- App feels dead between updates
+- No visual feedback on movement (unlike Google Maps)
+- Updates too slow/sparse
+- Need perceptual feedback that reflects reality
+- Area knowledge not surfaced ("what do you know about Whitton?")
+
+### Changes Made
+
+**Movement Tracker (v72)**
+- New `movementTracker` object tracks distance traveled since last context update
+- Calculates speed to determine mode: walking, driving, stationary
+- Heading calculation from location history (→N, →SE, etc.)
+- Heartbeat messages every 60s while moving: "🚶 142m →NE"
+- Movement cards styled subtle (no border, small text, no timestamp)
+
+**Area Change Acknowledgment**
+- When geohash changes (new stream), shows "📍 Entered [street name]"
+- Movement tracker resets on area change
+
+**Step Counter in Context**
+- Shows daily step count in context summary: "🚶 2,340"
+- Steps from accelerometer via stepDetector
+
+**Improved Presence on Reopen**
+- `showPresence()` now shows time since last update
+- Includes step count if any today
+- Shows even without cached context
+
+**Fixed First-Open Flow**
+- When permission is 'prompt', show "Acquiring..." not "Enable location"
+- Enable button only shown when permission is denied
+- New `showAcquiring()` function for clearer UX
+
+### Files Changed
+- `client/web/malten.js` - Movement tracker, presence, first-open flow (v72)
+- `client/web/malten.css` - Movement card styling (v27)
+- `client/web/index.html` - Version bumps
+- `agent/agent.go` - Added ChatNoContext function (unused for now)
+
+### What's Still TODO
+- Area knowledge ("what do you know about Whitton?") - blocked by import cycle
+- More frequent heartbeat when moving fast
+- Visual indicator (pulsing dot?) when motion detected
+- Map/network view for spatial visualization
+
+## Session: Jan 4, 2026 - Simplification
+
+### The Problem
+Too much complexity scattered across client and server:
+- Client had `detectChanges` with ad-hoc rules for filtering updates
+- Multiple endpoints for similar things (`/events`, `/streams`, `/commands`)
+- Deduplication logic that broke command output
+
+### The Solution
+
+**1. Client is dumb, server is smart**
+- Removed `detectChanges` and all client-side filtering
+- Server now tracks session context and pushes meaningful changes
+- `addToTimeline()` is now truly simple - just save and render
+- Client renders what it receives, nothing more
+
+**2. Unified `/streams` endpoint**
+```
+GET  /streams              - list all streams
+GET  /streams?stream=xxx   - WebSocket upgrade: stream events
+POST /streams              - send command/message
+```
+
+Old endpoints still work for backwards compatibility:
+- `/events` - still works (same as GET /streams with WebSocket)
+- `/commands` - still works (same as POST /streams)
+
+**3. Server-side change detection**
+New `spatial/changes.go`:
+- Tracks last context per session
+- `DetectChanges()` compares old vs new context
+- Only pushes when something meaningful changes:
+  - Location (street level)
+  - Prayer time change
+  - Rain warning (new)
+  - Temperature change (>3°)
+- Messages pushed via WebSocket to user's channel
+
+### Files Changed
+- `client/web/malten.js` - Removed detectChanges, hasRecentCard, extractPrayer
+- `spatial/changes.go` - New: server-side change detection
+- `command/nearby.go` - handlePing uses GetContextWithChanges
+- `command/command.go` - Added PushMessages to Context
+- `server/handler.go` - Push change messages after command dispatch
+- `main.go` - Unified /streams endpoint
+
+### The Model Now
+
+```
+Client:
+  - Sends commands to /streams (POST)
+  - Receives messages via /streams (WebSocket)
+  - Renders messages to timeline
+  - Saves timeline to localStorage
+  - That's it.
+
+Server:
+  - Receives commands
+  - Tracks context per session
+  - Decides what's worth pushing
+  - Pushes meaningful changes via WebSocket
+```
+
+### What's Still TODO
+- `/messages` endpoint could merge into `/streams?history=true`
+- `/agents` stays separate (infrastructure CRUD)
+- Consider removing old `/events` and `/commands` endpoints after client migration
