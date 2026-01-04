@@ -131,6 +131,27 @@ Messages are the primitive. Format is presentation:
 
 **That's it.** No other endpoints. Everything goes through `/commands`.
 
+### /streams Endpoint
+
+```
+GET /streams         → List all public streams
+GET /streams?id=xxx  → Get single stream (TODO)
+POST /streams        → Create new stream (stream, private, ttl params)
+```
+
+Stream types:
+- **Geo streams** - geohash (e.g., `gcpsxz`) - created automatically on location
+- **Named streams** - `~` (default), `~home`, `@family`, `#topic` - for private/shared spaces
+- **Channels** - `@session_id` within a stream - your private view/conversation
+
+Streams are created dynamically when someone connects. Geo streams dominate now, but named streams enable:
+- Private spaces (your home stream follows you)
+- Shared spaces (family, groups)
+- Topic streams (communities, events)
+- Building/venue streams (alternative to geo)
+
+Future: stream navigation, hopping between streams while in one physical location.
+
 ## Commands (Complete List)
 
 | Command | Description | Example |
