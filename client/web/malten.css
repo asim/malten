@@ -1,72 +1,29 @@
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+/* === RESET & BASE === */
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body {
-  color: #4d5156;
-  padding: 0;
   margin: 0;
+  padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  font-weight: 400;
   font-size: 14px;
-  word-wrap: break-word;
   line-height: 1.5;
+  color: #333;
   height: 100%;
   overflow: hidden;
 }
 
-html a {
-  color: #1a73e8;
-  text-decoration: none;
-}
+a { color: #1a73e8; text-decoration: none; }
+a:hover { text-decoration: underline; }
 
-html a:hover {
-  text-decoration: underline;
-}
+ul { list-style: none; margin: 0; padding: 0; }
+input:focus { outline: none; }
 
-iframe {
-  position: absolute;
-  top: 20px;
-  width: 100%;
-  height: 100%;
-}
-
-input:focus {
-  outline: none;
-}
-
-ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-ul li {
-  padding: 10px 5px;
-}
-
-#chars {
-  color: #8899a6;
-  font-size: 0.8em;
-  font-weight: bold;
-  float: right;
-}
-
-#controls {
-  padding: 5px;
-}
-
-#desc {
-  margin: 0 auto;
-  display: none;
-  width: 80%;
-}
-
+/* === LAYOUT === */
 #app {
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-width: 1024px;
+  max-width: 800px;
   margin: 0 auto;
 }
 
@@ -86,11 +43,13 @@ ul li {
 }
 
 #messages-area {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 1;
   overflow-y: auto;
-  padding: 10px;
-  padding-bottom: 20px;
+  padding: 10px 0;
+}
+
+#messages li {
+  padding: 4px 0;
 }
 
 #bottom-fixed {
@@ -98,41 +57,6 @@ ul li {
   background: #fff;
   border-top: 1px solid #eee;
   padding: 10px 15px;
-  position: relative;
-}
-
-#present {
-  margin-left: 10px;
-  font-size: 0.8em;
-}
-
-#main {
-  margin: 0 auto;
-  max-width: 1024px;
-}
-
-#messages-container {
-  padding: 10px;
-  padding-bottom: 80px; /* Space for fixed prompt */
-}
-
-#messages {
-  margin: 0;
-  padding: 0;
-}
-
-#messages a {
-  color: #666;
-  font-weight: normal;
-  text-decoration: none;
-}
-
-#messages a:hover {
-  text-decoration: underline;
-}
-
-#messages li {
-  padding: 10px 0;
 }
 
 #bottom-fixed form {
@@ -140,156 +64,23 @@ ul li {
   align-items: center;
 }
 
-#bottom-fixed input,
-#prompt {
+#bottom-fixed input {
   flex: 1;
   font-size: 16px;
-  color: rgba(0,0,0,.87);
   background: transparent;
   border: none;
-  padding: 8px 5px;
+  padding: 8px 0;
 }
 
-#private {
-  vertical-align: middle;
-  margin-bottom: 4px;
-}
-
-#side span {
-  margin: 10px;
-}
-
-.animation img, .image img {
-  width: 100%;
-  height: auto;
-  margin-top: 5px;
-}
-
-.iframe {
-  position: relative;
-  width: 100%;
-  height: 0;
-  padding-bottom: 60%;
-  margin-bottom: 25px;
-  margin-top: 5px;
-}
-
-.image {
-  position: relative;
-  height: 300px;
-  overflow: hidden;
-  margin: 10px 0;
-}
-
-.image img {
-  margin: auto;
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-}
-
-.time {
-  margin: 2px 0 0 5px;
-  float: right;
-  font-size: 0.8em;
-  color: #ccc;
-}
-
-.title, .desc {
-  font-size: 0.9em;
-}
-
-/* PWA safe areas */
-@supports (padding: env(safe-area-inset-top)) {
-  #head {
-    padding-top: calc(15px + env(safe-area-inset-top));
-  }
-}
-
-/* Context - persistent spatial view (legacy, hidden) */
-#context {
-  display: none !important;
-}
-
-/* Context card - pinned at top */
-#context-card {
-  background: #f8f9fa;
-  margin: 10px 15px;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-#context-card .context-summary {
-  padding: 12px 16px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-
-
-#context-card .context-full {
-  display: none;
-  padding: 14px 16px;
-  padding-top: 0;
-  line-height: 1.8;
-}
-
-#context-card.expanded .context-summary {
-  display: none;
-}
-
-#context-card .stale {
-  color: #d93025;
-  font-size: 0.85em;
-}
-
-#context-card .fresh {
-  color: #5f6368;
-  font-size: 0.85em;
-}
-
-#context-card .acquiring {
-  animation: pulse 1s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-#context-card.expanded .context-full {
-  display: block;
-  padding-top: 14px;
-}
-
-#context-card a {
-  color: #1a73e8;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-#context-card a:hover {
-  text-decoration: underline;
-}
-
-/* Cards - timeline events */
+/* === CARDS (unified) === */
 .card {
+  margin: 0 15px;
   padding: 10px 16px;
-  margin: 4px 15px;
-  position: relative;
-  background: #f8f9fa;
   border-radius: 8px;
+  background: #f8f9fa;
 }
 
-.card .card-time {
+.card-time {
   display: block;
   font-size: 11px;
   color: #888;
@@ -298,237 +89,72 @@ ul li {
 
 .card a {
   color: #1a73e8;
-  font-weight: 600;
-  text-decoration: none;
+  font-weight: 500;
 }
 
-.card a:hover {
-  text-decoration: underline;
-}
-
-.card.card-location,
-.card.card-transport,
-.card.card-weather,
-.card.card-prayer {
-  /* No special styling - clean uniform look */
-}
-
-.card.card-user {
+/* User messages - no background */
+.card-user {
   background: transparent;
-  color: #5f6368;
 }
 
-.card.card-movement {
+/* Movement - minimal */
+.card-movement {
   background: transparent;
-  border: none;
-  padding: 4px 15px;
+  padding: 4px 16px;
   font-size: 12px;
   color: #888;
 }
+.card-movement .card-time { display: none; }
 
-.card.card-movement .card-time {
-  display: none;
-}
-
-.card.card-reminder {
-  background: #f8f9fa;
+/* Reminder - left accent */
+.card-reminder {
   border-left: 3px solid #5f6368;
   font-style: italic;
 }
 
-/* Status indicator */
-#status {
-  display: none;
-  padding: 8px 15px;
-  margin: 0 10px;
-  font-size: 12px;
-  color: #666;
-}
-
-#status.active {
-  display: block;
-}
-
-#status::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #4a9eff;
-  margin-right: 8px;
-  animation: pulse 1s infinite;
-}
-
-/* Place details - inline expansion */
-.place-details {
-  margin-top: 8px;
-  padding: 10px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.place-details a {
-  color: #4a9eff;
-}
-
-/* Action links */
-.article-link,
-.map-link,
-.web-link,
-.directions-link {
-  color: #1a73e8 !important;
-  font-weight: 500;
-  font-size: 12px;
-  text-decoration: none;
-}
-
-.article-link:hover,
-.map-link:hover,
-.web-link:hover,
-.directions-link:hover {
-  text-decoration: underline !important;
-}
-
-/* Enable location button */
-.enable-location-btn {
-  display: inline-block;
-  padding: 10px 20px;
-  background: #4a9eff;
-  color: #fff !important;
-  border-radius: 8px;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.enable-location-btn:hover {
-  background: #3a8eef;
-}
-
-.enable-location-btn.acquiring {
-  opacity: 0.6;
-  pointer-events: none;
-  cursor: wait;
-}
-
-/* Q+A Cards - question with answer */
-.card.card-qa {
-  /* Clean style - no accent border */
-}
-
-.card-question {
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.card-answer {
-  color: #4d5156;
-}
-
-.card-answer.card-loading {
-  color: #999;
-  font-style: italic;
-}
-
-.date-separator {
-  text-align: center;
-  color: #999;
-  font-size: 12px;
-  padding: 10px 0;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.card-q {
-  color: #666;
-  font-size: 13px;
-  margin-bottom: 6px;
-}
-.card-a {
-  color: #333;
-}
-
-
-
-#loading {
-  text-align: center;
-  padding: 10px;
-  color: #999;
-  display: none;
-}
-
-/* Command line style */
-.command-line {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-  font-size: 13px;
-  color: #5f6368;
-  padding: 4px 0;
-  margin-bottom: 4px;
-}
-
-.command-prompt {
-  color: #1a73e8;
-  font-weight: 600;
-}
-
-.command-item {
-  margin-bottom: 4px;
-}
-
-/* Command palette autocomplete */
-#command-palette {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  max-height: 250px;
-  overflow-y: auto;
-  box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
-  z-index: 100;
-}
-
-#command-palette .command-title {
-  padding: 10px 16px;
-  font-weight: 600;
-  color: #333;
-  background: #fff;
-  border-bottom: 1px solid #e0e0e0;
-  font-size: 13px;
-}
-
-#command-palette .command-item {
+/* === CONTEXT CARD === */
+#context-card {
+  margin: 10px 15px;
   padding: 12px 16px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  border: 1px solid #e8e8e8;
+  font-size: 13px;
   cursor: pointer;
-  border-bottom: 1px solid #f0f0f0;
-  margin: 0;
 }
 
-#command-palette .command-item:hover {
-  background: #f5f5f5;
+#context-card .context-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-#command-palette .cmd {
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-  font-weight: 600;
-  color: #1a73e8;
+#context-card .context-full {
+  display: none;
+  padding-top: 12px;
+  line-height: 1.8;
 }
 
-#command-palette .desc {
-  color: #5f6368;
-  margin-left: 8px;
+#context-card.expanded .context-summary { display: none; }
+#context-card.expanded .context-full { display: block; }
+
+.context-age {
+  font-size: 12px;
+  color: #888;
+  margin-left: auto;
+  padding-left: 8px;
 }
 
-/* Check-in buttons */
+.stale { color: #d93025; }
+.fresh { color: #5f6368; }
+.acquiring { animation: pulse 1s infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* === CHECK-IN BUTTONS === */
 .checkin-option {
   display: block;
   width: 100%;
@@ -540,7 +166,6 @@ ul li {
   text-align: left;
   font-size: 15px;
   cursor: pointer;
-  transition: background 0.2s;
 }
 
 .checkin-option:hover {
@@ -551,10 +176,6 @@ ul li {
 .checkin-option.saved {
   background: #fef7e0;
   border-color: #f9ab00;
-}
-
-.checkin-option.saved:hover {
-  background: #feefc3;
 }
 
 .checkin-option .dist {
@@ -578,49 +199,89 @@ ul li {
   background: #f8f9fa;
 }
 
-/* Daily reminder card - subtle, matches other cards */
-.reminder-card {
-  background: #f8f9fa;
-  border-left: 3px solid #5f6368;
-  padding: 12px 14px;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.5;
+/* === COMMAND PALETTE === */
+#command-palette {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  max-height: 250px;
+  overflow-y: auto;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
+  z-index: 100;
+}
+
+#command-palette .command-title {
+  padding: 10px 16px;
+  font-weight: 600;
   color: #333;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 13px;
 }
 
-.reminder-verse {
-  font-style: italic;
-  margin-bottom: 6px;
+#command-palette .command-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
 }
 
-.reminder-ref {
+#command-palette .command-item:hover {
+  background: #f5f5f5;
+}
+
+#command-palette .cmd {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-weight: 600;
+  color: #1a73e8;
+}
+
+#command-palette .desc {
+  color: #5f6368;
+  margin-left: 8px;
+}
+
+/* === BUTTONS === */
+.enable-location-btn {
+  display: inline-block;
+  padding: 10px 20px;
+  background: #1a73e8;
+  color: #fff !important;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.enable-location-btn:hover {
+  background: #1557b0;
+  text-decoration: none;
+}
+
+/* === LOADING === */
+#loading {
+  text-align: center;
+  padding: 10px;
+  color: #999;
+  display: none;
+}
+
+#status {
+  display: none;
+  padding: 8px 15px;
   font-size: 12px;
   color: #666;
 }
 
-.reminder-name-title {
-  font-weight: 500;
-  margin-bottom: 6px;
+#status.active { display: block; }
+
+/* === PWA SAFE AREAS === */
+@supports (padding: env(safe-area-inset-top)) {
+  #head {
+    padding-top: calc(15px + env(safe-area-inset-top));
+  }
 }
 
-.reminder-name-desc {
-  font-size: 13px;
-  color: #555;
-  line-height: 1.5;
-}
-
-.context-age {
-    font-size: 12px;
-    color: #888;
-    margin-left: auto;
-    padding-left: 8px;
-    flex-shrink: 0;
-}
-
-#context-card .context-full .context-age {
-    float: right;
-    margin-bottom: 8px;
-    margin-left: 0;
-    padding-left: 0;
-}
+/* === LEGACY (hidden) === */
+#context, #desc, #present, #chars, #private, #side, .iframe, .image, .animation { display: none; }
