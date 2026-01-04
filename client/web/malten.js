@@ -104,6 +104,7 @@ var state = {
                 this.savedPlaces = s.savedPlaces || {};
                 this.steps = s.steps || { count: 0, date: null };
                 this.reminderDate = s.reminderDate || null;
+                this.duhaReminderDate = s.duhaReminderDate || null;
                 // Prune old cards on load (24 hour retention)
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
@@ -135,7 +136,8 @@ var state = {
             checkedIn: this.checkedIn,
             savedPlaces: this.savedPlaces,
             steps: this.steps,
-            reminderDate: this.reminderDate
+            reminderDate: this.reminderDate,
+            duhaReminderDate: this.duhaReminderDate
         }));
     },
     hasSeenNews: function(newsText) {
@@ -346,7 +348,8 @@ var state = {
     checkedIn: null,  // {name, lat, lon, time} - manual location override
     savedPlaces: {},  // Private named places: { "Home": {lat, lon}, "Work": {lat, lon} }
     steps: { count: 0, date: null },  // Daily step counter
-    reminderDate: null,  // Last date reminder was shown (YYYY-MM-DD)
+    reminderDate: null,  // Last date daily reminder was shown (YYYY-MM-DD)
+    duhaReminderDate: null,  // Last date Duha reminder was shown (YYYY-MM-DD)
     motionDetected: false,  // Movement detected via accelerometer while GPS stuck
     
     // Check if user has manually checked in to a location
@@ -1043,21 +1046,45 @@ function startLocationWatch() {
 // Fetch and display daily reminder (once per day)
 function fetchReminder() {
     var today = new Date().toISOString().split('T')[0];
-    if (state.reminderDate === today) return; // Already shown today
     
-    $.post(commandUrl, { prompt: '/reminder', stream: getStream() }).done(function(response) {
-        try {
-            var r = JSON.parse(response);
-            if (!r || !r.verse) return;
-            
-            // Mark as shown
-            state.reminderDate = today;
-            state.save();
-            
-            // Display reminder card
-            displayReminderCard(r);
-        } catch(e) {}
-    });
+    // Daily reminder - shows once per day on first open
+    if (state.reminderDate !== today) {
+        $.post(commandUrl, { prompt: '/reminder', stream: getStream() }).done(function(response) {
+            try {
+                var r = JSON.parse(response);
+                if (!r || !r.verse) return;
+                
+                // Mark as shown
+                state.reminderDate = today;
+                state.save();
+                
+                // Display reminder card
+                displayReminderCard(r);
+            } catch(e) {}
+        });
+    }
+    
+    // Duha reminder - shows during Duha time (after sunrise, before Dhuhr)
+    // Roughly 10:00-11:30am local time
+    var hour = new Date().getHours();
+    var minutes = new Date().getMinutes();
+    var isDuhaTime = (hour === 10) || (hour === 11 && minutes <= 30);
+    
+    if (isDuhaTime && state.duhaReminderDate !== today) {
+        $.post(commandUrl, { prompt: '/reminder duha', stream: getStream() }).done(function(response) {
+            try {
+                var r = JSON.parse(response);
+                if (!r || !r.verse) return;
+                
+                // Mark as shown
+                state.duhaReminderDate = today;
+                state.save();
+                
+                // Display reminder card
+                displayReminderCard(r);
+            } catch(e) {}
+        });
+    }
 }
 
 function displayReminderCard(r) {
