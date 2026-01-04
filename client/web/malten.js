@@ -673,19 +673,9 @@ function submitCommand() {
     
     if (prompt.length === 0) return false;
 
-    // Handle goto command locally (deprecated but keep for compatibility)
-    var gotoMatch = prompt.match(/^\/?goto\s+#?(.+)$/i);
-    if (gotoMatch) {
-        form.elements["prompt"].value = '';
-        return false;
-    }
-
-    // "new" command disabled - streams are geo-based now
-    if (prompt.match(/^\/?new(\s|$)/i)) {
-        form.elements["prompt"].value = '';
-        addToTimeline('Stream creation disabled - location determines your stream');
-        return false;
-    }
+    // ========================================
+    // CLIENT-ONLY COMMANDS (browser/localStorage)
+    // ========================================
     
     // Handle refresh command - force reload latest version
     if (prompt.match(/^\/?refresh$/i)) {
@@ -766,25 +756,20 @@ function submitCommand() {
         return false;
     }
     
-    // Handle checkin command - check into saved place or current location with name
+    // Handle checkin command - check saved places first, else send to server
     var checkinMatch = prompt.match(/^\/?checkin\s+(.+)$/i);
     if (checkinMatch) {
-        form.elements["prompt"].value = '';
         var placeName = checkinMatch[1].trim();
         
-        // Check if it's a saved place
-        if (state.savedPlaces[placeName]) {
+        // Check if it's a saved place - handle locally
+        if (state.savedPlaces && state.savedPlaces[placeName]) {
+            form.elements["prompt"].value = '';
             var place = state.savedPlaces[placeName];
             state.checkIn(placeName, place.lat, place.lon);
-            addToTimeline('📍 Checked in to ' + placeName);
-        } else if (state.hasLocation()) {
-            // Use current location with this name
-            state.checkIn(placeName, state.lat, state.lon);
-            addToTimeline('📍 Checked in to ' + placeName);
-        } else {
-            addToTimeline('❌ Need location to check in');
+            addToTimeline('📍 Checked in to ' + placeName + ' ⭐');
+            return false;
         }
-        return false;
+        // Otherwise let it fall through to server
     }
     
     // Handle export command - download state as JSON
@@ -882,7 +867,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 97';
+        info += 'JS version: 98';
         addToTimeline(info);
         return false;
     }
@@ -911,9 +896,12 @@ function submitCommand() {
         return false;
     }
 
-    // Handle nearby - send fresh location before query
-    var nearbyMatch = prompt.match(/^\/?nearby\s+/i);
-    if (nearbyMatch && state.hasLocation()) {
+    // ========================================
+    // SERVER COMMANDS (everything else)
+    // ========================================
+    
+    // Send fresh location for nearby queries
+    if (prompt.match(/^\/?nearby\s+/i) && state.hasLocation()) {
         sendFreshLocation();
     }
 
@@ -2333,17 +2321,24 @@ function showCheckInPrompt() {
             var list = state.context.places[cat];
             if (list && list.length) {
                 list.slice(0, 2).forEach(function(p) {
-                    places.push(p.name);
+                    places.push({ name: p.name, saved: false });
                 });
             }
         });
     }
     
+    // Add saved places at the top
+    var savedPlaces = state.savedPlaces || {};
+    Object.keys(savedPlaces).forEach(function(name) {
+        places.unshift({ name: name, saved: true });
+    });
+    
     var msg = '📍 GPS seems stuck but you\'re moving.\nAre you indoors?\n\n';
     if (places.length > 0) {
         msg += 'Check in to:\n';
-        places.slice(0, 4).forEach(function(name) {
-            msg += '• <a href="javascript:void(0)" class="checkin-link" data-place="' + escapeHTML(name) + '">' + escapeHTML(name) + '</a>\n';
+        places.slice(0, 6).forEach(function(p) {
+            var star = p.saved ? ' ⭐' : '';
+            msg += '• <a href="javascript:void(0)" class="checkin-link" data-place="' + escapeHTML(p.name) + '">' + escapeHTML(p.name) + star + '</a>\n';
         });
         msg += '\nOr type /checkin [place name]';
     } else {
