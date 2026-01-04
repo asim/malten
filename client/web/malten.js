@@ -1066,24 +1066,10 @@ function displayReminderCard(r) {
     var verseRef = verseParts[0] || '';
     var verseText = verseParts.slice(1).join('\n\n') || r.verse;
     
-    // Parse name - format: "Arabic Name - الاسم - English Meaning\n\nDescription"
-    var nameParts = r.name.split('\n\n');
-    var nameTitle = nameParts[0] || '';
-    
-    // Extract just the English meaning
-    var nameMeaning = nameTitle.split(' - ')[2] || nameTitle.split(' - ')[0] || '';
-    var nameArabic = nameTitle.split(' - ')[1] || '';
-    
-    // Build card HTML
+    // Build simple card - just verse and reference
     var html = '<div class="reminder-card">';
-    html += '<div class="reminder-hijri">☪ ' + escapeHTML(r.hijri) + '</div>';
     html += '<div class="reminder-verse">"' + escapeHTML(verseText.trim()) + '"</div>';
     html += '<div class="reminder-ref">— ' + escapeHTML(verseRef) + '</div>';
-    if (nameMeaning) {
-        html += '<div class="reminder-name">' + escapeHTML(nameMeaning);
-        if (nameArabic) html += ' <span class="arabic">' + escapeHTML(nameArabic) + '</span>';
-        html += '</div>';
-    }
     html += '</div>';
     
     var li = document.createElement('li');
