@@ -16,7 +16,7 @@
 
 var commandUrl = "/commands";
 var messageUrl = "/messages";
-var streamUrl = "/streams";
+
 var eventUrl = "/events";
 var limit = 25;
 
@@ -27,10 +27,10 @@ $.ajaxSetup({
 });
 var locationWatchId = null;
 var last = timeAgo();
-var maxChars = 1024;
+
 var maxMessages = 1000;
 var seen = {};
-var streams = {};
+
 var ws = null;
 var currentStream = null;
 var reconnectTimer = null;
@@ -605,18 +605,6 @@ function displayMessages(array, direction) {
     }
 }
 
-function loadMessages() {
-    var stream = getStream();
-    var params = "?direction=1&limit=" + limit + "&last=" + last + "&stream=" + stream;
-
-    $.get(messageUrl + params, function(data) {
-        if (data && data.length > 0) {
-            displayMessages(data, 1);
-            clipMessages();
-            scrollToBottom();
-        }
-    });
-}
 
 function loadMore() {
     var divs = document.getElementsByClassName('time');
@@ -703,14 +691,6 @@ function connectWebSocket() {
     ws.onerror = function(err) {
         console.log("WebSocket error", err);
     };
-}
-
-function loadStream() {
-    connectWebSocket();
-    
-    var form = document.getElementById('form');
-    form.elements["stream"].value = getStream();
-    form.elements["prompt"].focus();
 }
 
 function initialLoad() {
@@ -1720,11 +1700,6 @@ function displayResponse(text) {
 }
 
 // No longer need conversation timeout with new format
-function resetConversationTimeout() {}
-function endConversation() {
-    pendingCommand = null;
-}
-
 function restoreConversation() {
     if (!state.conversation || !state.conversation.messages) return;
     
@@ -1746,27 +1721,6 @@ function restoreConversation() {
         messages.appendChild(li);
     });
     scrollToBottom();
-}
-
-function formatDateSeparator(timestamp) {
-    var date = new Date(timestamp);
-    var today = new Date();
-    var yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    if (date.toDateString() === today.toDateString()) {
-        return ''; // Today - no separator needed
-    } else if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
-    } else {
-        return date.toLocaleDateString([], { weekday: 'long' });
-    }
-}
-
-function displayDateSeparator(text) {
-    var li = document.createElement('li');
-    li.innerHTML = '<div class="date-separator">' + text + '</div>';
-    document.getElementById('messages').appendChild(li);
 }
 
 function getCardType(text) {
