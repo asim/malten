@@ -1532,3 +1532,46 @@ Then the normal context:
 ### The Principle
 
 Utility over creep. Signs over stats. Purpose over points.
+
+## Session: Jan 4, 2026 - Reminders & Timeline Refactor
+
+### Prayer-Time Reminders (DONE)
+- Daily reminder on first open (from reminder.dev `/api/daily`)
+- Prayer-time reminders triggered by `prayer.current` in context:
+  - Fajr → Al-Fajr (89:1-4)
+  - Duha → Ad-Duhaa (93:1-3) - shows 8am-12pm
+  - Dhuhr → Ar-Razzaq (The Provider)
+  - Asr → Al-Musawwir (The Shaper of Beauty)
+  - Maghrib → An-Noor (The Light)
+  - Isha → Al-Layl (92:1-4)
+- `state.prayerReminders` tracks which shown today
+- `/reminder [type]` command for manual access
+
+### Timeline Refactor (DONE)
+ONE path for everything:
+```javascript
+addToTimeline(text, type)   // Save + render - THE way to add anything
+loadTimeline()              // Load from localStorage on startup
+renderTimelineItem(item)    // Render single item to DOM
+getTimelineType(text)       // Determine type from emoji
+```
+
+NEVER:
+- Render directly to DOM without saving
+- Create new display functions
+- Bypass addToTimeline()
+
+### Show Malten's Work (DONE)
+- `📡 Acquiring location...` on first load
+- `📍 Location` + `🤖 Agent status · X places nearby` on first context
+- `🕐 Time · Location · Temp · Next Prayer` on every app reopen (showPresence)
+- Agent info in `/ping` response: `{ id, status, poi_count, last_index }`
+
+### Code Cleanup (DONE)
+Removed ~200 lines:
+- Old display functions (displaySystemMessage, displayQACard, etc.)
+- Unused variables (streamUrl, maxChars, streams)
+- Dead functions (loadMessages, loadStream, parseDate, etc.)
+
+### Known Issue
+Mobile PWA may cache old JS. Fix: Clear app cache or `/clear` command.
