@@ -11,7 +11,10 @@
 1. **Never change data structures** without version migration
 2. **Never delete localStorage keys** - add new ones, deprecate old
 3. **Test on browser** before saying "done" - use browser_take_screenshot
-4. **Bump version numbers** - JS version in both index.html AND malten.js
+4. **Bump version numbers** - JS version in BOTH places:
+   - `index.html`: `malten.js?v=XXX` (cache busting)
+   - `malten.js`: `JS version: XXX` (shown in /debug command)
+   - Keep them in sync!
 5. **Restart via systemctl** - not manual process killing
 
 ### Development Flow
