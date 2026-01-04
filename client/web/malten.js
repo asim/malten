@@ -28,10 +28,10 @@
     }
 })();
 
-var commandUrl = "/streams";
+var commandUrl = "/commands";
 var messageUrl = "/messages";
 
-var eventUrl = "/streams";
+var eventUrl = "/events";
 var limit = 25;
 
 // Debug logging to screen (enable with /debug on)
@@ -877,7 +877,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 94';
+        info += 'JS version: 95';
         addToTimeline(info);
         return false;
     }
@@ -918,7 +918,7 @@ function submitCommand() {
         connectWebSocket();
     }
     
-    // Post to /streams with location - response comes via WebSocket
+    // Post to /commands with location - response comes via WebSocket
     var data = {
         prompt: prompt,
         stream: targetStream
