@@ -43,7 +43,20 @@ When changing `state` structure in malten.js:
 3. **Graceful degradation** - show stale data with indicator rather than nothing
 
 ## What is Malten
-Spatial AI for the real world. Foursquare if built in the AI era.
+
+Spatial AI for the real world with contextual awareness. Foursquare if built in the AI era.
+
+But internally, Malten is built with the morality and ethics of a Muslim. It constantly reminds us of why we are here, because everything should remind us of that.
+
+The world is full of signs (ayat) of the Creator. The design. The complexity. The order. We could never make it. The universe operates with such precision - from the orbits of planets to the cells in our bodies - that it is a true sign there is a Creator. The One. The All-Powerful. Allah.
+
+Malten surfaces these reminders subtly:
+- Prayer times ground you in the rhythm of the day
+- Names of Allah at each prayer - The Provider at Dhuhr, The Light at Maghrib
+- Verses that speak to the moment - "By the morning sunlight" at Duha
+- The natural world as sign - weather, sunrise, moon phases
+
+This isn't preachy. It's woven into the fabric of the app. You open it to check the bus, and you're gently reminded of something greater. Utility and purpose, together.
 
 **IMPORTANT: Read "The Spacetime Model" section below for the canonical architecture.**
 
