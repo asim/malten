@@ -877,7 +877,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 95';
+        info += 'JS version: 96';
         addToTimeline(info);
         return false;
     }
@@ -1371,10 +1371,19 @@ function displayContext(ctx, forceUpdate, needsAction) {
     // Build full HTML with clickable place links
     var fullHtml = buildContextHtml(ctx);
     
+    // Add age indicator to full view too
+    var ageIndicator = '';
+    if (state.contextTime > 0 && !needsAction) {
+        var age = Date.now() - state.contextTime;
+        var ageSecs = Math.floor(age / 1000);
+        var ageStr = ageSecs < 60 ? 'now' : (ageSecs < 3600 ? Math.floor(ageSecs / 60) + 'm ago' : Math.floor(ageSecs / 3600) + 'h ago');
+        ageIndicator = '<div class="context-age">' + ageStr + '</div>';
+    }
+    
     // Update the context card (outside messages list)
     var contextCard = document.getElementById('context-card');
     var cardHtml = '<div class="context-summary">' + summary + '</div>' +
-        '<div class="context-full">' + fullHtml + '</div>';
+        '<div class="context-full">' + ageIndicator + fullHtml + '</div>';
     
     if (!contextCard) {
         // Create context card before messages container

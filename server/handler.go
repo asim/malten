@@ -59,16 +59,9 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		input = input[:MaxMessageSize]
 	}
 
-	// Save user message to their session channel (private)
-	// Skip system commands that shouldn't appear in timeline
-	if !strings.HasPrefix(input, "/ping") && !strings.HasPrefix(input, "/context") && !strings.HasPrefix(input, "/checkin") {
-		select {
-		case Default.Events <- NewChannelMessage(input, stream, "@"+token):
-		case <-time.After(time.Second):
-			JsonError(w, "timed out", 504)
-			return
-		}
-	}
+	// Don't broadcast user input - only broadcast responses
+	// The HTTP response goes directly to the client
+	// WebSocket is for server-initiated messages (context changes, AI responses, etc)
 
 
 	// Build context for command dispatch

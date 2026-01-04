@@ -292,8 +292,8 @@ ul li {
 
 /* Cards - timeline events */
 .card {
-  padding: 14px 16px;
-  margin: 10px 0;
+  padding: 10px 16px;
+  margin: 4px 0;
   position: relative;
 }
 
@@ -301,7 +301,7 @@ ul li {
   display: block;
   font-size: 11px;
   color: #888;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .card a {
@@ -319,6 +319,24 @@ ul li {
 .card.card-weather,
 .card.card-prayer {
   /* No special styling - clean uniform look */
+}
+
+.card.card-movement {
+  background: transparent;
+  border: none;
+  padding: 4px 15px;
+  font-size: 12px;
+  color: #888;
+}
+
+.card.card-movement .card-time {
+  display: none;
+}
+
+.card.card-reminder {
+  background: #f8f9fa;
+  border-left: 3px solid #5f6368;
+  font-style: italic;
 }
 
 /* Status indicator */
@@ -595,4 +613,11 @@ ul li {
   font-size: 13px;
   color: #555;
   line-height: 1.5;
+}
+
+.context-age {
+    float: right;
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 8px;
 }
