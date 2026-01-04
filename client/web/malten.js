@@ -1928,7 +1928,6 @@ function requestLocationForContext() {
                         }
                         addToTimeline(agentMsg);
                     }
-                    }
                     state.setContext(ctx);
                     displayContext(ctx);
                 }
