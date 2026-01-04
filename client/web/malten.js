@@ -467,7 +467,7 @@ function renderTimelineItem(item) {
     var time = item.time || Date.now();
     
     var li = document.createElement('li');
-    var html = makeClickable(item.text).replace(/\n/g, '<br>');
+    var html = makeCheckInClickable(item.text).replace(/\n/g, '<br>');
     
     li.innerHTML = '<div class="card card-' + type + '" data-timestamp="' + time + '">' +
         '<span class="card-time">' + formatTimeAgo(time) + '</span>' +
@@ -525,11 +525,6 @@ String.prototype.parseHashTag = function() {
 function timeAgo() {
     var ts = new Date().getTime() / 1000;
     return (ts - 86400) * 1e9;
-}
-
-function parseDate(tdate) {
-    var system_date = new Date(tdate / 1e6);
-    return system_date.toLocaleTimeString();
 }
 
 // Timeago format - converts timestamp to "2 min ago", "1 hour ago", etc.
@@ -1590,39 +1585,6 @@ $(document).on('click touchend', '.directions-link', function(e) {
 });
 
 // Show places as a card in the timeline
-function showPlacesInTimeline(data) {
-    var places = data.split(';;');
-    var lines = [];
-    
-    places.forEach(function(placeData) {
-        var parts = placeData.split('|');
-        var name = parts[0] || '';
-        var details = [];
-        var mapUrl = '';
-        
-        for (var i = 1; i < parts.length; i++) {
-            var part = parts[i];
-            if (part.startsWith('http')) {
-                mapUrl = part;
-            } else if (part) {
-                details.push(part);
-            }
-        }
-        
-        var line = '📍 ' + name;
-        if (details.length > 0) {
-            line += '\n   ' + details.join(', ');
-        }
-        if (mapUrl) {
-            line += '\n   ' + mapUrl;
-        }
-        lines.push(line);
-    });
-    
-    var text = lines.join('\n\n');
-    addToTimeline(text);
-    scrollToBottom();
-}
 
 function scrollToBottom() {
     setTimeout(function() {
@@ -1737,17 +1699,6 @@ function disableLocation() {
         navigator.geolocation.clearWatch(locationWatchId);
         locationWatchId = null;
     }
-}
-
-function showStatus(msg) {
-    var el = document.getElementById('status');
-    el.textContent = msg;
-    el.classList.add('active');
-}
-
-function hideStatus() {
-    var el = document.getElementById('status');
-    el.classList.remove('active');
 }
 
 function sendLocation(lat, lon) {
@@ -1875,17 +1826,6 @@ function updateAcquiringIndicator() {
     // Update context card to show acquiring state
     if (state.context) {
         displayContext(state.context, true);
-    }
-}
-
-function refreshContextFromState() {
-    if (state.hasLocation()) {
-        fetchContext();
-    } else if (state.context) {
-        // Keep showing cached context - don't overwrite with empty
-        console.log('No location, keeping cached context');
-    } else {
-        showWelcome();
     }
 }
 
