@@ -145,6 +145,11 @@ input:focus { outline: none; }
   padding-left: 8px;
 }
 
+#context-card .context-full .context-age {
+  float: right;
+  margin-left: 0;
+}
+
 .stale { color: #d93025; }
 .fresh { color: #5f6368; }
 .acquiring { animation: pulse 1s infinite; }
