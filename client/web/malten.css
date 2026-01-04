@@ -318,10 +318,6 @@ ul li {
   color: #5f6368;
 }
 
-.card.card-user .card-time {
-  display: none;
-}
-
 .card.card-movement {
   background: transparent;
   border: none;
