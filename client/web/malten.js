@@ -856,7 +856,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 103';
+        info += 'JS version: 104';
         addToTimeline(info);
         return false;
     }
@@ -2454,11 +2454,23 @@ $(document).on('click', '.checkin-option, .checkin-link', function(e) {
     var isSaved = state.savedPlaces && state.savedPlaces[name];
     addToTimeline('📍 Checked in to ' + name + (isSaved ? ' ⭐' : ''));
     
-    // Remove the prompt card
-    $(this).closest('li').remove();
+    // Remove the prompt card from DOM and state
+    var $li = $(this).closest('li');
+    var cardTime = parseInt($li.find('.card').data('timestamp'));
+    if (cardTime) {
+        state.cards = state.cards.filter(function(c) { return c.time !== cardTime; });
+        state.save();
+    }
+    $li.remove();
 });
 
 $(document).on('click', '.checkin-dismiss', function(e) {
     e.preventDefault();
-    $(this).closest('li').remove();
+    var $li = $(this).closest('li');
+    var cardTime = parseInt($li.find('.card').data('timestamp'));
+    if (cardTime) {
+        state.cards = state.cards.filter(function(c) { return c.time !== cardTime; });
+        state.save();
+    }
+    $li.remove();
 });
