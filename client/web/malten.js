@@ -379,7 +379,7 @@ function addToTimeline(text, type) {
     if (!text) return;
     
     // Augment check-in prompts with saved places
-    if (text.indexOf('Where are you?') >= 0) {
+    if (text.indexOf('Where are you?') >= 0 || text.indexOf('GPS seems stuck') >= 0) {
         text = augmentCheckInPrompt(text);
     }
     
@@ -856,7 +856,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 104';
+        info += 'JS version: 105';
         addToTimeline(info);
         return false;
     }
@@ -1494,7 +1494,7 @@ function augmentCheckInPrompt(text) {
 
 // Make check-in options clickable buttons
 function makeCheckInClickable(text) {
-    if (text.indexOf('Where are you?') < 0) {
+    if (text.indexOf('Where are you?') < 0 && text.indexOf('GPS seems stuck') < 0) {
         return makeClickable(text);
     }
     
@@ -2270,37 +2270,36 @@ function checkMotionGpsStuck() {
 }
 
 function showCheckInPrompt() {
+    // Build message in same format as server so makeCheckInClickable converts to buttons
+    var msg = '📍 GPS seems stuck but you\'re moving.\nAre you indoors?\n\n';
+    
     // Get nearby places from context
     var places = [];
     if (state.context && state.context.places) {
-        // Collect places from all categories
         Object.keys(state.context.places).forEach(function(cat) {
             var list = state.context.places[cat];
             if (list && list.length) {
                 list.slice(0, 2).forEach(function(p) {
-                    places.push({ name: p.name, saved: false });
+                    if (p.lat && p.lon) {
+                        var dist = state.distance({lat: state.lat, lon: state.lon}, p) * 1000;
+                        places.push({ name: p.name, dist: Math.round(dist), saved: false });
+                    }
                 });
             }
         });
     }
     
-    // Add saved places at the top
-    var savedPlaces = state.savedPlaces || {};
-    Object.keys(savedPlaces).forEach(function(name) {
-        places.unshift({ name: name, saved: true });
+    // Sort by distance
+    places.sort(function(a, b) { return a.dist - b.dist; });
+    
+    // Format as "• Place (123m)" - makeCheckInClickable will convert to buttons
+    places.slice(0, 5).forEach(function(p) {
+        msg += '• ' + p.name + ' (' + p.dist + 'm)\n';
     });
     
-    var msg = '📍 GPS seems stuck but you\'re moving.\nAre you indoors?\n\n';
-    if (places.length > 0) {
-        msg += 'Check in to:\n';
-        places.slice(0, 6).forEach(function(p) {
-            var star = p.saved ? ' ⭐' : '';
-            msg += '• <a href="javascript:void(0)" class="checkin-link" data-place="' + escapeHTML(p.name) + '">' + escapeHTML(p.name) + star + '</a>\n';
-        });
-        msg += '\nOr type /checkin [place name]';
-    } else {
-        msg += 'Type /checkin [place name] to set your location manually.';
-    }
+    // Saved places handled by augmentCheckInPrompt (adds ⭐)
+    
+    msg += '\nReply with the name to check in, or ignore.';
     
     addToTimeline(msg);
 }
