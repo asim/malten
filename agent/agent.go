@@ -358,7 +358,7 @@ func Prompt(systemPrompt string, messages []Message, userPrompt string) (string,
 
 	// For non-context questions, use basic system prompt without location
 	log.Printf("[AI] Non-context question, using basic prompt")
-	basicPrompt := "You are Malten, a helpful AI assistant. Be concise."
+	basicPrompt := "You are Malten, a spatial AI assistant that helps people understand what's around them - weather, transport, places, prayer times. You provide context-aware information based on location. Be concise."
 	return directResponse(basicPrompt, messages, userPrompt)
 }
 
@@ -382,7 +382,7 @@ func isContextQuestion(prompt string) bool {
 	
 	// Always-in-context: location, weather, buses, prayer
 	alwaysContext := []string{
-		"where am i", "my location", "what is this", "what's this",
+		"where am i", "my location", "what street", "what area",
 		"next bus", "bus time", "when is the bus", "train time",
 		"weather", "temperature", "cold", "hot", "rain",
 		"prayer", "fajr", "dhuhr", "asr", "maghrib", "isha",
