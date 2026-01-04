@@ -391,13 +391,18 @@ function addToTimeline(text, type) {
         lon: state.lon
     };
     
-    // Save to state
-    state.cards.push(item);
+    // Don't persist transient status messages
+    var isTransient = text.indexOf('Acquiring location') >= 0;
     
-    // Prune old items (24 hour retention)
-    var cutoff = Date.now() - (24 * 60 * 60 * 1000);
-    state.cards = state.cards.filter(function(c) { return c.time > cutoff; });
-    state.save();
+    if (!isTransient) {
+        // Save to state
+        state.cards.push(item);
+        
+        // Prune old items (24 hour retention)
+        var cutoff = Date.now() - (24 * 60 * 60 * 1000);
+        state.cards = state.cards.filter(function(c) { return c.time > cutoff; });
+        state.save();
+    }
     
     // Render
     renderTimelineItem(item);
@@ -877,7 +882,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 96';
+        info += 'JS version: 97';
         addToTimeline(info);
         return false;
     }
