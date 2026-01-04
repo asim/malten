@@ -810,8 +810,7 @@ function submitCommand() {
             try {
                 var r = JSON.parse(response);
                 if (r && r.verse) {
-                    displayReminderCard(r, true); // atBottom=true for command
-                    scrollToBottom();
+                    displayReminderCard(r);
                 }
             } catch(e) {
                 displaySystemMessage(response);
@@ -1061,7 +1060,7 @@ function fetchReminder() {
     });
 }
 
-function displayReminderCard(r, atBottom) {
+function displayReminderCard(r) {
     // Parse verse - format: "Surah Name - English Name - Chapter:Verse\n\nText"
     var verseParts = r.verse.split('\n\n');
     var verseRef = verseParts[0] || '';
@@ -1091,17 +1090,8 @@ function displayReminderCard(r, atBottom) {
     li.innerHTML = html;
     
     var messages = document.getElementById('messages');
-    if (atBottom) {
-        // Append at bottom (for /reminder command)
-        messages.appendChild(li);
-    } else {
-        // Insert at top (for first-open-of-day)
-        if (messages.firstChild) {
-            messages.insertBefore(li, messages.firstChild);
-        } else {
-            messages.appendChild(li);
-        }
-    }
+    messages.appendChild(li);
+    scrollToBottom();
 }
 
 function fetchContext() {
