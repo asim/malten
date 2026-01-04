@@ -806,10 +806,15 @@ function submitCommand() {
     // Handle reminder command - show today's reminder
     if (prompt.match(/^\/?reminder$/i)) {
         form.elements["prompt"].value = '';
-        $.get('/reminder').done(function(r) {
-            if (r && r.verse) {
-                displayReminderCard(r);
-                scrollToBottom();
+        $.post(commandUrl, { prompt: '/reminder', stream: getStream() }).done(function(response) {
+            try {
+                var r = JSON.parse(response);
+                if (r && r.verse) {
+                    displayReminderCard(r);
+                    scrollToBottom();
+                }
+            } catch(e) {
+                displaySystemMessage(response);
             }
         });
         return false;
@@ -1041,15 +1046,18 @@ function fetchReminder() {
     var today = new Date().toISOString().split('T')[0];
     if (state.reminderDate === today) return; // Already shown today
     
-    $.get('/reminder').done(function(r) {
-        if (!r || !r.verse) return;
-        
-        // Mark as shown
-        state.reminderDate = today;
-        state.save();
-        
-        // Display reminder card
-        displayReminderCard(r);
+    $.post(commandUrl, { prompt: '/reminder', stream: getStream() }).done(function(response) {
+        try {
+            var r = JSON.parse(response);
+            if (!r || !r.verse) return;
+            
+            // Mark as shown
+            state.reminderDate = today;
+            state.save();
+            
+            // Display reminder card
+            displayReminderCard(r);
+        } catch(e) {}
     });
 }
 

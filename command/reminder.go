@@ -1,211 +1,24 @@
 package command
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"net/http"
-	"strings"
-	"time"
-)
 
-const reminderCacheTTL = 5 * time.Minute
+	"malten.ai/spatial"
+)
 
 func init() {
 	Register(&Command{
 		Name:        "reminder",
-		Description: "Get daily Islamic reminder",
-		Usage:       "/reminder",
-		Handler:     reminderHandler,
-	})
-
-}
-
-type ReminderResponse struct {
-	Verse   string `json:"verse"`
-	Hadith  string `json:"hadith"`
-	Name    string `json:"name"`
-	Message string `json:"message"`
-	Links   struct {
-		Verse  string `json:"verse"`
-		Hadith string `json:"hadith"`
-		Name   string `json:"name"`
-	} `json:"links"`
-}
-
-type SearchResponse struct {
-	Answer     string `json:"answer"`
-	References []struct {
-		Text     string `json:"text"`
-		Metadata struct {
-			Chapter string `json:"chapter"`
-			Verse   string `json:"verse"`
-			Name    string `json:"name"`
-			Source  string `json:"source"`
-			Book    string `json:"book"`
-			Volume  string `json:"volume"`
-			Meaning string `json:"meaning"`
-			English string `json:"english"`
-		} `json:"metadata"`
-	} `json:"references"`
-}
-
-func reminderHandler(ctx *Context, args []string) (string, error) {
-	// If args provided, do search
-	if len(args) > 0 {
-		return searchHandler(args)
-	}
-
-	// Otherwise return daily reminder
-	if cached, ok := GlobalCache.Get("reminder:latest"); ok {
-		return cached, nil
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get("https://reminder.dev/api/latest")
-	if err != nil {
-		return "Error fetching reminder", err
-	}
-	defer resp.Body.Close()
-
-	var data ReminderResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return "Error parsing response", err
-	}
-
-	// Format output with clear sections and links
-	const baseURL = "https://reminder.dev"
-	var result strings.Builder
-
-	// Verse section
-	if data.Verse != "" {
-		result.WriteString("📖 QURAN\n")
-		result.WriteString(data.Verse)
-		if data.Links.Verse != "" {
-			result.WriteString(fmt.Sprintf("\n\n%s%s", baseURL, data.Links.Verse))
-		}
-	}
-
-	// Hadith section
-	if data.Hadith != "" {
-		if result.Len() > 0 {
-			result.WriteString("\n\n---\n\n")
-		}
-		result.WriteString("📜 HADITH\n")
-		result.WriteString(data.Hadith)
-		if data.Links.Hadith != "" {
-			result.WriteString(fmt.Sprintf("\n\n%s%s", baseURL, data.Links.Hadith))
-		}
-	}
-
-	// Name of Allah section
-	if data.Name != "" {
-		if result.Len() > 0 {
-			result.WriteString("\n\n---\n\n")
-		}
-		result.WriteString("✨ NAME OF ALLAH\n")
-		result.WriteString(data.Name)
-		if data.Links.Name != "" {
-			result.WriteString(fmt.Sprintf("\n\n%s%s", baseURL, data.Links.Name))
-		}
-	}
-
-	finalResult := result.String()
-	GlobalCache.Set("reminder:latest", finalResult, reminderCacheTTL)
-
-	return finalResult, nil
-}
-
-func searchHandler(args []string) (string, error) {
-	query := strings.Join(args, " ")
-	
-	// Check cache
-	cacheKey := "reminder:search:" + query
-	if cached, ok := GlobalCache.Get(cacheKey); ok {
-		return cached, nil
-	}
-
-	// Call reminder.dev search API
-	reqBody, _ := json.Marshal(map[string]string{"q": query})
-	
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Post("https://reminder.dev/api/search", "application/json", bytes.NewBuffer(reqBody))
-	if err != nil {
-		return "Error searching", err
-	}
-	defer resp.Body.Close()
-
-	var data SearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return "Error parsing response", err
-	}
-
-	if data.Answer == "" && len(data.References) == 0 {
-		return "No results found", nil
-	}
-
-	// Format: answer + top 3 references with links
-	var result strings.Builder
-	
-	if data.Answer != "" {
-		answer := stripHTML(data.Answer)
-		result.WriteString(answer)
-	}
-
-	if len(data.References) > 0 {
-		max := 3
-		if len(data.References) < max {
-			max = len(data.References)
-		}
-		for i := 0; i < max; i++ {
-			ref := data.References[i]
-			switch ref.Metadata.Source {
-			case "quran":
-				// Use path format to avoid # fragment parsing issues
-				result.WriteString(fmt.Sprintf("\n%s %s:%s - https://reminder.dev/quran/%s/%s", 
-					ref.Metadata.Name, ref.Metadata.Chapter, ref.Metadata.Verse,
-					ref.Metadata.Chapter, ref.Metadata.Verse))
-			case "bukhari":
-				result.WriteString(fmt.Sprintf("\nBukhari %s - https://reminder.dev/hadith", ref.Metadata.Book))
-			case "names":
-				name := ref.Metadata.Name
-				if name == "" {
-					name = ref.Metadata.Meaning + " (" + ref.Metadata.English + ")"
-				}
-				result.WriteString(fmt.Sprintf("\n%s - https://reminder.dev/names", name))
+		Description: "Daily verse and reminder",
+		Handler: func(ctx *Context, args []string) (string, error) {
+			r := spatial.GetDailyReminder()
+			if r == nil {
+				return "Reminder unavailable", nil
 			}
-		}
-	}
-
-	finalResult := result.String()
-	GlobalCache.Set(cacheKey, finalResult, reminderCacheTTL)
-
-	return finalResult, nil
-}
-
-func stripHTML(s string) string {
-	// Simple HTML tag stripper
-	var result strings.Builder
-	inTag := false
-	for _, r := range s {
-		if r == '<' {
-			inTag = true
-			continue
-		}
-		if r == '>' {
-			inTag = false
-			continue
-		}
-		if !inTag {
-			result.WriteRune(r)
-		}
-	}
-	// Also handle HTML entities
-	s = result.String()
-	s = strings.ReplaceAll(s, "&ldquo;", "\"")
-	s = strings.ReplaceAll(s, "&rdquo;", "\"")
-	s = strings.ReplaceAll(s, "&lsquo;", "'")
-	s = strings.ReplaceAll(s, "&rsquo;", "'")
-	s = strings.ReplaceAll(s, "&amp;", "&")
-	return s
+			
+			// Return as JSON for client to render as card
+			data, _ := json.Marshal(r)
+			return string(data), nil
+		},
+	})
 }
