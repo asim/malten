@@ -3,11 +3,18 @@ package spatial
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // SessionContext tracks last context sent to each session
+type sessionEntry struct {
+	ctx      *ContextData
+	lastPush time.Time
+	lastLoc  string // Last location pushed (to dedup)
+}
+
 var (
-	sessionContexts   = make(map[string]*ContextData)
+	sessionContexts   = make(map[string]*sessionEntry)
 	sessionContextsMu sync.RWMutex
 )
 
@@ -80,6 +87,16 @@ func DetectChanges(old, new *ContextData) *ContextChanges {
 func GetSessionContext(session string) *ContextData {
 	sessionContextsMu.RLock()
 	defer sessionContextsMu.RUnlock()
+	if e := sessionContexts[session]; e != nil {
+		return e.ctx
+	}
+	return nil
+}
+
+// getSessionEntry gets the full session entry
+func getSessionEntry(session string) *sessionEntry {
+	sessionContextsMu.RLock()
+	defer sessionContextsMu.RUnlock()
 	return sessionContexts[session]
 }
 
@@ -87,12 +104,19 @@ func GetSessionContext(session string) *ContextData {
 func SetSessionContext(session string, ctx *ContextData) {
 	sessionContextsMu.Lock()
 	defer sessionContextsMu.Unlock()
-	sessionContexts[session] = ctx
+	if sessionContexts[session] == nil {
+		sessionContexts[session] = &sessionEntry{}
+	}
+	sessionContexts[session].ctx = ctx
 }
 
 // GetContextWithChanges returns context and any meaningful changes to push
 func GetContextWithChanges(session string, lat, lon float64) (*ContextData, []string) {
-	old := GetSessionContext(session)
+	entry := getSessionEntry(session)
+	var old *ContextData
+	if entry != nil {
+		old = entry.ctx
+	}
 	new := GetContextData(lat, lon)
 	
 	changes := DetectChanges(old, new)
@@ -100,8 +124,24 @@ func GetContextWithChanges(session string, lat, lon float64) (*ContextData, []st
 	
 	var messages []string
 	
+	// Dedup location: don't push same location within 30 seconds
 	if changes.LocationChanged && changes.NewLocation != "" {
-		messages = append(messages, fmt.Sprintf("📍 %s", changes.NewLocation))
+		shouldPush := true
+		if entry != nil && entry.lastLoc == changes.NewLocation {
+			if time.Since(entry.lastPush) < 30*time.Second {
+				shouldPush = false
+			}
+		}
+		if shouldPush {
+			messages = append(messages, fmt.Sprintf("📍 %s", changes.NewLocation))
+			// Update last push
+			sessionContextsMu.Lock()
+			if sessionContexts[session] != nil {
+				sessionContexts[session].lastLoc = changes.NewLocation
+				sessionContexts[session].lastPush = time.Now()
+			}
+			sessionContextsMu.Unlock()
+		}
 	}
 	
 	if changes.PrayerChanged && changes.NewPrayer != "" {

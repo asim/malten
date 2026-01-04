@@ -848,7 +848,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 99';
+        info += 'JS version: 100';
         addToTimeline(info);
         return false;
     }
@@ -1919,25 +1919,15 @@ function requestLocationForContext() {
                         try { ctx = JSON.parse(data); } catch(e) { ctx = { html: data }; }
                     }
                     
-                    // First location of session - show location and agent
-                    if (wasFirstLocation) {
-                        var loc = state.extractLocation(ctx);
-                        if (loc) {
-                            addToTimeline('📍 ' + loc);
+                    // Server pushes location changes via WebSocket
+                    // Client just updates context display
+                    if (wasFirstLocation && ctx.agent) {
+                        var agentMsg = '🤖 Agent ' + ctx.agent.status;
+                        if (ctx.agent.poi_count > 0) {
+                            agentMsg += ' · ' + ctx.agent.poi_count + ' places nearby';
                         }
-                        if (ctx.agent) {
-                            var agentMsg = '🤖 Agent ' + ctx.agent.status;
-                            if (ctx.agent.poi_count > 0) {
-                                agentMsg += ' · ' + ctx.agent.poi_count + ' places nearby';
-                            }
-                            addToTimeline(agentMsg);
-                        }
-                    } else if (wasStale) {
-                        // Context was stale, show refresh
-                        var loc = state.extractLocation(ctx);
-                        if (loc) {
-                            addToTimeline('📍 ' + loc + ' · refreshed');
-                        }
+                        addToTimeline(agentMsg);
+                    }
                     }
                     state.setContext(ctx);
                     displayContext(ctx);
