@@ -153,7 +153,9 @@ func formatRouteSummary(distMeters, durSeconds float64) string {
 		dist = fmt.Sprintf("%.0f m", distMeters)
 	}
 	
-	mins := int(durSeconds / 60)
+	// Calculate walking time at 5 km/h (~83 m/min) instead of trusting OSRM
+	// OSRM demo server returns driving-speed times even for foot profile
+	mins := int(distMeters / 83)
 	if mins < 1 {
 		return fmt.Sprintf("🚶 %s · less than 1 min", dist)
 	} else if mins < 60 {
