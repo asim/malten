@@ -35,7 +35,7 @@ var eventUrl = "/events";
 var limit = 25;
 
 // Debug logging to screen (enable with /debug on)
-window.debugMode = false;
+window.debugMode = localStorage.getItem('malten_debug') === 'true';
 function debugLog(msg) {
     console.log('[debug]', msg);
     if (window.debugMode) {
@@ -842,6 +842,7 @@ function submitCommand() {
     if (debugMatch) {
         form.elements["prompt"].value = '';
         window.debugMode = debugMatch[1].toLowerCase() === 'on';
+        localStorage.setItem('malten_debug', window.debugMode);
         addToTimeline('🔧 Debug mode ' + (window.debugMode ? 'ON' : 'OFF'));
         return false;
     }
@@ -856,7 +857,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 223';
+        info += 'JS version: 224';
         addToTimeline(info);
         return false;
     }
