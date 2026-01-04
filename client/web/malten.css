@@ -233,17 +233,7 @@ ul li {
   align-items: center;
 }
 
-#context-card .context-summary::after {
-  content: '▼';
-  font-size: 10px;
-  color: #999;
-  margin-left: 8px;
-  flex-shrink: 0;
-}
 
-#context-card.expanded .context-summary::after {
-  content: '▲';
-}
 
 #context-card .context-full {
   display: none;
@@ -616,8 +606,16 @@ ul li {
 }
 
 .context-age {
-    float: right;
     font-size: 12px;
     color: #888;
+    margin-left: auto;
+    padding-left: 8px;
+    flex-shrink: 0;
+}
+
+#context-card .context-full .context-age {
+    float: right;
     margin-bottom: 8px;
+    margin-left: 0;
+    padding-left: 0;
 }

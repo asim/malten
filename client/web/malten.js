@@ -849,7 +849,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 101';
+        info += 'JS version: 102';
         addToTimeline(info);
         return false;
     }
@@ -1323,41 +1323,26 @@ function displayContext(ctx, forceUpdate, needsAction) {
     // Build summary line from structured data or HTML
     var summary = buildContextSummary(ctx, needsAction);
     
-    // Always show when context was updated (but not for welcome/action-needed)
-    if (state.contextTime > 0 && !needsAction) {
-        var age = Date.now() - state.contextTime;
-        var ageSecs = Math.floor(age / 1000);
-        var ageStr;
-        if (ageSecs < 60) {
-            ageStr = 'now';
-        } else if (ageSecs < 3600) {
-            ageStr = Math.floor(ageSecs / 60) + 'm';
-        } else {
-            ageStr = Math.floor(ageSecs / 3600) + 'h';
-        }
-        var staleClass = ageSecs > 300 ? 'stale' : 'fresh';
-        if (isAcquiringLocation) {
-            summary += ' · <span class="acquiring">📡</span>';
-        } else {
-            summary += ' · <span class="' + staleClass + '">' + ageStr + '</span>';
-        }
-    }
-    
     // Build full HTML with clickable place links
     var fullHtml = buildContextHtml(ctx);
     
-    // Add age indicator to full view too
+    // Age indicator (same for both collapsed and expanded)
     var ageIndicator = '';
     if (state.contextTime > 0 && !needsAction) {
         var age = Date.now() - state.contextTime;
         var ageSecs = Math.floor(age / 1000);
-        var ageStr = ageSecs < 60 ? 'now' : (ageSecs < 3600 ? Math.floor(ageSecs / 60) + 'm ago' : Math.floor(ageSecs / 3600) + 'h ago');
-        ageIndicator = '<div class="context-age">' + ageStr + '</div>';
+        var ageStr = ageSecs < 60 ? 'now' : (ageSecs < 3600 ? Math.floor(ageSecs / 60) + 'm' : Math.floor(ageSecs / 3600) + 'h');
+        var staleClass = ageSecs > 300 ? 'stale' : 'fresh';
+        if (isAcquiringLocation) {
+            ageIndicator = '<span class="context-age acquiring">📡</span>';
+        } else {
+            ageIndicator = '<span class="context-age ' + staleClass + '">' + ageStr + '</span>';
+        }
     }
     
     // Update the context card (outside messages list)
     var contextCard = document.getElementById('context-card');
-    var cardHtml = '<div class="context-summary">' + summary + '</div>' +
+    var cardHtml = '<div class="context-summary"><span class="context-content">' + summary + '</span>' + ageIndicator + '</div>' +
         '<div class="context-full">' + ageIndicator + fullHtml + '</div>';
     
     if (!contextCard) {
@@ -1415,33 +1400,27 @@ function buildContextSummary(ctx, needsAction) {
     
     var parts = [];
     
-    // Location from structured data or HTML
-    if (ctx.location && ctx.location.name) {
-        var locName = ctx.location.name.split(',')[0];
-        parts.push('📍 ' + locName);
-    }
+    // Date/time
+    var now = new Date();
+    var dateStr = now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    parts.push(dateStr);
     
-    // Weather - only if we have actual temp (not 0 which might be default)
+    // Temperature
     if (ctx.weather && ctx.weather.condition) {
-        // Extract just temp from condition like "⛅ 2°C"
         var tempMatch = ctx.weather.condition.match(/-?\d+°C/);
         if (tempMatch) parts.push(tempMatch[0]);
     }
     
-    // Prayer - extract short version from display
+    // Prayer - short version
     if (ctx.prayer && ctx.prayer.display) {
-        // display is like "🕌 Maghrib now · Isha 17:50" - take first part
         var prayerShort = ctx.prayer.display.replace('🕌 ', '').split(' · ')[0];
         parts.push('🕌 ' + prayerShort);
     }
     
     // Fallback to parsing HTML if no structured data
-    if (parts.length === 0) {
-        var locMatch = html.match(/📍 ([^,\n]+)/);
-        if (locMatch) parts.push('📍 ' + locMatch[1]);
-        
+    if (parts.length <= 1) {
         var tempMatch = html.match(/-?\d+°C/);
-        if (tempMatch) parts.push(tempMatch[0]);
+        if (tempMatch && parts.indexOf(tempMatch[0]) < 0) parts.push(tempMatch[0]);
     }
     
     return parts.length > 0 ? parts.join(' · ') : 'Tap to expand';
