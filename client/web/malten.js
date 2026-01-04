@@ -14,11 +14,34 @@
  *   renderTimelineItem(item)   - Render single item to DOM (internal)
  */
 
+// FORCE KILL SERVICE WORKER AND CACHE - version 85
+(function() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+            regs.forEach(function(r) { r.unregister(); });
+        });
+    }
+    if ('caches' in window) {
+        caches.keys().then(function(names) {
+            names.forEach(function(name) { caches.delete(name); });
+        });
+    }
+})();
+
 var commandUrl = "/commands";
 var messageUrl = "/messages";
 
 var eventUrl = "/events";
 var limit = 25;
+
+// Debug logging to screen (enable with /debug on)
+window.debugMode = false;
+function debugLog(msg) {
+    console.log('[debug]', msg);
+    if (window.debugMode) {
+        addToTimeline('🔧 ' + msg);
+    }
+}
 
 // Enable credentials for all jQuery AJAX requests (needed for session cookies)
 $.ajaxSetup({
@@ -36,6 +59,21 @@ var currentStream = null;
 var reconnectTimer = null;
 var pendingMessages = {};
 var isAcquiringLocation = false;
+var lastAcquiringShown = 0;
+
+// Set acquiring state - always shows in timeline
+function setAcquiring(acquiring) {
+    if (acquiring && !isAcquiringLocation) {
+        // Only show in timeline if not shown in last 30 seconds
+        var now = Date.now();
+        if (now - lastAcquiringShown > 30000) {
+            addToTimeline('📡 Acquiring location...');
+            lastAcquiringShown = now;
+        }
+    }
+    isAcquiringLocation = acquiring;
+    updateAcquiringIndicator();
+}
 
 // Geohash for stream ID from location
 function geohash(lat, lon, precision) {
@@ -402,19 +440,39 @@ var state = {
 state.load();
 
 // =============================================================================
+// =============================================================================
 // TIMELINE - Your worldline through spacetime
-// Everything that happens flows through here
+// =============================================================================
+//
+// EVERYTHING goes through addToTimeline(). No exceptions.
+//
+// - Location updates? addToTimeline()
+// - Directions? addToTimeline()
+// - Errors? addToTimeline()
+// - AI responses? addToTimeline()
+// - Status changes? addToTimeline()
+//
+// NEVER:
+// - document.createElement() and append to #messages directly
+// - innerHTML on #messages
+// - Any other way of showing content to the user
+//
+// Why: addToTimeline() saves to localStorage. Direct DOM = lost on reload.
 // =============================================================================
 
 var displayedItems = {}; // Deduplication tracker
 
-// Add item to timeline (saves to localStorage + renders to DOM)
-function addToTimeline(text, type) {
+// THE way to add anything to the timeline (saves + renders)
+function addToTimeline(text, type, skipDedup) {
     if (!text) return;
     
-    // Dedupe by first 100 chars
+    // Dedupe by first 100 chars (unless skipDedup)
     var key = text.substring(0, 100);
-    if (displayedItems[key]) return;
+    if (!skipDedup && displayedItems[key]) {
+        // Don't log dedup to avoid recursion - just use console
+        console.log('[dedup]', key.substring(0, 50));
+        return;
+    }
     displayedItems[key] = true;
     
     // Augment check-in prompts with saved places
@@ -496,11 +554,12 @@ function renderTimelineItem(item) {
 // Determine item type from text
 function getTimelineType(text) {
     if (!text) return 'default';
+    if (text.indexOf('🚶') >= 0 || text.indexOf('🚗') >= 0 || text.indexOf('📍 Entered') >= 0) return 'movement';
     if (text.indexOf('🚏') >= 0 || text.indexOf('🚌') >= 0) return 'transport';
     if (text.indexOf('🌧️') >= 0 || text.indexOf('☀️') >= 0 || text.indexOf('⛅') >= 0) return 'weather';
     if (text.indexOf('🕌') >= 0) return 'prayer';
     if (text.indexOf('📍') >= 0) return 'location';
-    if (text.indexOf('📖') >= 0 || text.indexOf('📿') >= 0) return 'reminder';
+    if (text.indexOf('📖') >= 0 || text.indexOf('💿') >= 0) return 'reminder';
     return 'default';
 }
 
@@ -706,6 +765,8 @@ function submitCommand() {
     var form = document.getElementById('form');
     var prompt = form.elements["prompt"].value.trim();
     
+    debugLog('submitCommand: ' + prompt);
+    
     if (prompt.length === 0) return false;
 
     // Handle goto command locally (deprecated but keep for compatibility)
@@ -763,23 +824,25 @@ function submitCommand() {
         }
         state.savedPlaces[placeName] = { lat: state.lat, lon: state.lon };
         state.save();
-        addToTimeline('📍 Saved "' + placeName + '"');
+        addToTimeline('📍 Saved "' + placeName + '"', null, true);
         return false;
     }
     
     // Handle places command - list saved places
     if (prompt.match(/^\/?places$/i)) {
+        debugLog('places matched');
         form.elements["prompt"].value = '';
         var names = Object.keys(state.savedPlaces || {});
+        debugLog('savedPlaces: ' + names.join(', '));
         if (names.length === 0) {
-            addToTimeline('📍 No saved places.\nUse /save Home to save current location.');
+            addToTimeline('📍 No saved places.\nUse /save Home to save current location.', null, true);
         } else {
             var msg = '📍 Saved places:\n';
             names.forEach(function(name) {
                 msg += '• ' + name + '\n';
             });
             msg += '\nUse /checkin [name] or /delete [name]';
-            addToTimeline(msg);
+            addToTimeline(msg, null, true);
         }
         return false;
     }
@@ -896,17 +959,27 @@ function submitCommand() {
         return false;
     }
     
+    // Handle debug on/off - toggle screen logging
+    var debugMatch = prompt.match(/^\/?debug\s+(on|off)$/i);
+    if (debugMatch) {
+        form.elements["prompt"].value = '';
+        window.debugMode = debugMatch[1].toLowerCase() === 'on';
+        addToTimeline('🔧 Debug mode ' + (window.debugMode ? 'ON' : 'OFF'), null, true);
+        return false;
+    }
+    
     // Handle debug command locally
     if (prompt.match(/^\/?debug$/i)) {
         form.elements["prompt"].value = '';
         var info = '🔧 DEBUG\n';
         info += 'Stream: ' + getStream() + '\n';
         info += 'Location: ' + (state.hasLocation() ? state.lat.toFixed(4) + ', ' + state.lon.toFixed(4) : 'none') + '\n';
-        info += 'Context cached: ' + (state.context ? state.context.length + ' chars' : 'none') + '\n';
+        info += 'Context cached: ' + (state.context ? 'yes' : 'none') + '\n';
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
+        info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 71';
-        addToTimeline(info);
+        info += 'JS version: 91';
+        addToTimeline(info, null, true);
         return false;
     }
 
@@ -1048,6 +1121,106 @@ var lastPingLat = 0;
 var lastPingLon = 0;
 var lastPingTime = 0;
 
+// Movement tracking
+var movementTracker = {
+    startLat: null,
+    startLon: null,
+    startTime: null,
+    totalDistance: 0,
+    lastHeartbeat: 0,
+    isMoving: false,
+    
+    reset: function() {
+        this.startLat = state.lat;
+        this.startLon = state.lon;
+        this.startTime = Date.now();
+        this.totalDistance = 0;
+    },
+    
+    update: function(lat, lon) {
+        if (!this.startLat) {
+            this.startLat = lat;
+            this.startLon = lon;
+            this.startTime = Date.now();
+            return;
+        }
+        
+        var dist = haversineDistance(state.lat || lat, state.lon || lon, lat, lon);
+        if (dist > 2) { // Ignore GPS jitter < 2m
+            this.totalDistance += dist;
+            this.isMoving = true;
+        }
+    },
+    
+    getStatus: function() {
+        if (!this.startTime) return null;
+        var elapsed = (Date.now() - this.startTime) / 1000 / 60; // minutes
+        if (elapsed < 0.5) return null;
+        
+        var speed = this.totalDistance / (elapsed * 60); // m/s
+        var mode = speed > 10 ? 'driving' : (speed > 1.5 ? 'walking' : 'stationary');
+        
+        return {
+            distance: Math.round(this.totalDistance),
+            minutes: Math.round(elapsed),
+            speed: speed,
+            mode: mode
+        };
+    },
+    
+    // Show heartbeat if moving and enough time passed
+    heartbeat: function() {
+        var now = Date.now();
+        var status = this.getStatus();
+        
+        // Only show heartbeat if moving
+        if (!status || status.mode === 'stationary') return;
+        
+        // Show heartbeat every 60 seconds while moving
+        if (now - this.lastHeartbeat < 60000) return;
+        this.lastHeartbeat = now;
+        
+        var msg = '';
+        if (status.mode === 'walking') {
+            msg = '🚶 ' + status.distance + 'm';
+        } else if (status.mode === 'driving') {
+            msg = '🚗 ' + status.distance + 'm';
+        }
+        
+        // Add direction if we have enough data
+        var heading = getHeading();
+        if (heading) {
+            msg += ' ' + heading;
+        }
+        
+        if (msg) {
+            addToTimeline(msg, 'movement');
+        }
+    }
+};
+
+// Get compass heading from recent locations
+function getHeading() {
+    if (!state.locationHistory || state.locationHistory.length < 2) return null;
+    var recent = state.locationHistory.slice(-5);
+    if (recent.length < 2) return null;
+    
+    var first = recent[0];
+    var last = recent[recent.length - 1];
+    
+    var dLon = (last.lon - first.lon) * Math.PI / 180;
+    var y = Math.sin(dLon) * Math.cos(last.lat * Math.PI / 180);
+    var x = Math.cos(first.lat * Math.PI / 180) * Math.sin(last.lat * Math.PI / 180) -
+            Math.sin(first.lat * Math.PI / 180) * Math.cos(last.lat * Math.PI / 180) * Math.cos(dLon);
+    var bearing = Math.atan2(y, x) * 180 / Math.PI;
+    bearing = (bearing + 360) % 360;
+    
+    // Convert to compass direction
+    var directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    var index = Math.round(bearing / 45) % 8;
+    return '→' + directions[index];
+}
+
 // Adaptive ping interval based on speed
 // Driving (>10 m/s): 5s, Walking (2-10 m/s): 10s, Stationary: 30s
 function getPingInterval() {
@@ -1097,11 +1270,18 @@ function startLocationWatch() {
     if (locationWatchId) {
         navigator.geolocation.clearWatch(locationWatchId);
     }
+    
+    // Reset movement tracker when starting watch
+    movementTracker.reset();
+    
     locationWatchId = navigator.geolocation.watchPosition(
         function(pos) {
             var lat = pos.coords.latitude;
             var lon = pos.coords.longitude;
             var now = Date.now();
+            
+            // Update movement tracker (before updating state)
+            movementTracker.update(lat, lon);
             
             // Always update local state immediately
             var moved = false;
@@ -1112,6 +1292,9 @@ function startLocationWatch() {
             
             // Update local state
             state.setLocation(lat, lon);
+            
+            // Check for movement heartbeat
+            movementTracker.heartbeat();
             
             // If significant movement, ping immediately
             if (moved || !lastPingSent) {
@@ -1355,14 +1538,18 @@ function buildContextSummary(ctx, needsAction) {
         parts.push('📍 ' + locName);
     }
     
-    // Weather
-    if (ctx.weather && ctx.weather.temp) {
-        parts.push(ctx.weather.temp + '°C');
+    // Weather - only if we have actual temp (not 0 which might be default)
+    if (ctx.weather && ctx.weather.condition) {
+        // Extract just temp from condition like "⛅ 2°C"
+        var tempMatch = ctx.weather.condition.match(/-?\d+°C/);
+        if (tempMatch) parts.push(tempMatch[0]);
     }
     
-    // Prayer
+    // Prayer - extract short version from display
     if (ctx.prayer && ctx.prayer.display) {
-        parts.push(ctx.prayer.display);
+        // display is like "🕌 Maghrib now · Isha 17:50" - take first part
+        var prayerShort = ctx.prayer.display.replace('🕌 ', '').split(' · ')[0];
+        parts.push('🕌 ' + prayerShort);
     }
     
     // Fallback to parsing HTML if no structured data
@@ -1370,7 +1557,7 @@ function buildContextSummary(ctx, needsAction) {
         var locMatch = html.match(/📍 ([^,\n]+)/);
         if (locMatch) parts.push('📍 ' + locMatch[1]);
         
-        var tempMatch = html.match(/(\d+)°C/);
+        var tempMatch = html.match(/-?\d+°C/);
         if (tempMatch) parts.push(tempMatch[0]);
     }
     
@@ -1467,6 +1654,12 @@ function makeClickable(text) {
     html = html.replace(/\{enable_location\}/g, 
         '<a href="javascript:void(0)" class="enable-location-btn">📍 Enable location</a>');
     
+    // Convert [Directions:name:lat:lon] to clickable link
+    html = html.replace(/\[Directions:([^:]+):([^:]+):([^\]]+)\]/g, function(match, name, lat, lon) {
+        return '<a href="javascript:void(0)" class="directions-link" data-name="' + 
+            escapeAttr(name) + '" data-lat="' + lat + '" data-lon="' + lon + '">Directions</a>';
+    });
+    
     // Convert URLs to clickable links
     html = html.replace(/(https?:\/\/[A-Za-z0-9-_.]+\.[A-Za-z0-9-_:%&~\?\/.=#,@+]+)/g, function(url) {
         if (url.includes('google.com/maps') || url.includes('maps.google.com')) {
@@ -1476,6 +1669,11 @@ function makeClickable(text) {
     });
     
     return html;
+}
+
+// Escape for HTML attributes
+function escapeAttr(str) {
+    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // Handle enable location button click
@@ -1494,9 +1692,7 @@ function resetLocationButton() {
     $('.enable-location-btn').text('📍 Enable location').removeClass('acquiring');
 }
 
-// Handle clicks on place links - add places to timeline
-// Clicking place links shows places in timeline
-// Clicking place links shows places from structured context data
+// Handle clicks on place links - show places (ephemeral, not persisted)
 $(document).on('click touchend', '.place-link', function(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -1521,11 +1717,12 @@ $(document).on('click touchend', '.place-link', function(e) {
         if (p.phone) info.push('📞' + p.phone);
         if (info.length) line += '\n   ' + info.join(', ');
         
-        // Add Map and Directions links - include name and coordinates
-        var mapUrl = 'https://www.google.com/maps/search/' + encodeURIComponent(p.name) + '/@' + p.lat + ',' + p.lon + ',17z';
+        // Add Map and Directions links as HTML (rendered directly, not stored)
+        var encodedName = encodeURIComponent(p.name).replace(/'/g, '%27');
+        var mapUrl = 'https://www.google.com/maps/search/' + encodedName + '/@' + p.lat + ',' + p.lon + ',17z';
         var links = [];
         links.push('<a href="' + mapUrl + '" target="_blank" class="map-link">Map</a>');
-        links.push('<a href="javascript:void(0)" class="directions-link" data-name="' + p.name.replace(/"/g, '&quot;') + '" data-lat="' + p.lat + '" data-lon="' + p.lon + '">Directions</a>');
+        links.push('<a href="javascript:void(0)" class="directions-link" data-name="' + escapeAttr(p.name) + '" data-lat="' + p.lat + '" data-lon="' + p.lon + '">Directions</a>');
         line += '\n   ' + links.join(' · ');
         
         lines.push(line);
@@ -1533,7 +1730,7 @@ $(document).on('click touchend', '.place-link', function(e) {
     
     var text = lines.join('\n\n');
     
-    // Add directly to DOM
+    // Add directly to DOM (ephemeral - place expansion doesn't need to persist)
     var li = document.createElement('li');
     var html = text.replace(/\n/g, '<br>');
     li.innerHTML = '<div class="card card-location"><span class="card-time">Just now</span>' + html + '</div>';
@@ -1558,11 +1755,8 @@ $(document).on('click touchend', '.directions-link', function(e) {
         return false;
     }
     
-    // Show loading
-    var li = document.createElement('li');
-    li.innerHTML = '<div class="card"><span class="card-time">Just now</span>🚶 Getting directions to ' + name + '...</div>';
-    document.getElementById('messages').appendChild(li);
-    scrollToBottom();
+    // Show loading in timeline
+    addToTimeline('🚶 Getting directions to ' + name + '...');
     
     // Call server for directions
     $.post(commandUrl, {
@@ -1573,12 +1767,10 @@ $(document).on('click touchend', '.directions-link', function(e) {
         toLat: toLat,
         toLon: toLon
     }).done(function(response) {
-        // Replace loading with response
-        var html = response.replace(/\n/g, '<br>').replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" class="map-link">Open in Maps</a>');
-        li.innerHTML = '<div class="card"><span class="card-time">Just now</span>' + html + '</div>';
-        scrollToBottom();
+        // Add response to timeline (persisted)
+        addToTimeline(response);
     }).fail(function() {
-        li.innerHTML = '<div class="card"><span class="card-time">Just now</span>❌ Couldn\'t get directions</div>';
+        addToTimeline('❌ Couldn\'t get directions to ' + name);
     });
     
     return false;
@@ -1612,13 +1804,53 @@ function hideLoading() {
     if (el) el.style.display = 'none';
 }
 
+// Command metadata from server (loaded on startup)
+var commandMeta = {};
+
+// Load command metadata from server
+function loadCommandMeta() {
+    $.get('/commands/meta').done(function(data) {
+        if (Array.isArray(data)) {
+            data.forEach(function(cmd) {
+                commandMeta[cmd.name] = cmd;
+            });
+        }
+    });
+}
+
+// Convert /commands to human-readable display text using server metadata
+function humanizeCommand(text) {
+    // Parse command: /name args
+    var m = text.match(/^\/?([a-z]+)(?:\s+(.*))?$/i);
+    if (!m) return text;
+    
+    var cmdName = m[1].toLowerCase();
+    var args = m[2] || '';
+    var cmd = commandMeta[cmdName];
+    
+    if (cmd && cmd.emoji && cmd.loading) {
+        // Use server-provided format: "Getting directions to %s..."
+        var loadingText = cmd.loading.replace('%s', args);
+        return cmd.emoji + ' ' + loadingText;
+    }
+    
+    // Fallback: just remove the slash
+    if (text.startsWith('/')) {
+        return text.substring(1);
+    }
+    
+    return text;
+}
+
 // Display user command as a terminal-style line (not a card)
 function displayUserMessage(text) {
     var ts = Date.now();
+    var displayText = humanizeCommand(text);
+    
     var li = document.createElement('li');
     li.className = 'command-item';
     li.innerHTML = '<div class="command-line" data-timestamp="' + ts + '">' +
-        '<span class="command-prompt">❯</span> ' + escapeHTML(text) +
+        escapeHTML(displayText) +
         '</div>';
     
     var messages = document.getElementById('messages');
@@ -1628,11 +1860,11 @@ function displayUserMessage(text) {
     // Track pending command for response matching
     pendingCommand = { element: li, text: text, ts: ts };
     
-    // Save to conversation state
+    // Save to conversation state (save display text, not raw command)
     if (!state.conversation) {
         state.conversation = { time: ts, messages: [] };
     }
-    state.conversation.messages.push({ role: 'user', text: text });
+    state.conversation.messages.push({ role: 'user', text: displayText });
     state.save();
 }
 
@@ -1640,19 +1872,10 @@ var pendingCommand = null;
 
 // Display AI response as a card below the command
 function displayResponse(text) {
-    var ts = Date.now();
-    var html = makeClickable(text).replace(/\n/g, '<br>');
-    var cardType = getCardType(text);
+    // Add to timeline (persisted) - this is the ONE way
+    addToTimeline(text);
     
-    var li = document.createElement('li');
-    li.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + ts + '">' +
-        html + '</div>';
-    
-    var messages = document.getElementById('messages');
-    messages.appendChild(li);
-    scrollToBottom();
-    
-    // Save to conversation state
+    // Also save to conversation for context
     if (state.conversation) {
         state.conversation.messages.push({ role: 'assistant', text: text });
         state.save();
@@ -1674,7 +1897,7 @@ function restoreConversation() {
         if (msg.role === 'user') {
             li.className = 'command-item';
             li.innerHTML = '<div class="command-line" data-timestamp="' + ts + '">' +
-                '<span class="command-prompt">❯</span> ' + escapeHTML(msg.text) + '</div>';
+                escapeHTML(msg.text) + '</div>';
         } else {
             var html = makeClickable(msg.text).replace(/\n/g, '<br>');
             var cardType = getCardType(msg.text);
@@ -1705,10 +1928,13 @@ function sendLocation(lat, lon) {
     var oldStream = currentStream;
     state.setLocation(lat, lon);
     
-    // Silently switch stream if geohash changed
+    // Detect stream/area change
     var newStream = getStream();
-    if (newStream !== oldStream) {
-        connectWebSocket(); // Reconnect to new stream silently
+    var areaChanged = oldStream && newStream !== oldStream;
+    if (areaChanged) {
+        connectWebSocket(); // Reconnect to new stream
+        // Reset movement tracker for new area
+        movementTracker.reset();
     }
     
     $.post(commandUrl, {
@@ -1720,6 +1946,15 @@ function sendLocation(lat, lon) {
         if (data && data.length > 0) {
             state.setContext(data);
             displayContext(data);
+            
+            // Note area change in timeline
+            if (areaChanged) {
+                var ctx = typeof data === 'string' ? JSON.parse(data) : data;
+                if (ctx && ctx.location) {
+                    var areaName = ctx.location.name.split(',')[0];
+                    addToTimeline('📍 Entered ' + areaName, 'movement');
+                }
+            }
         }
     });
 }
@@ -1740,13 +1975,14 @@ function getLocationAndContext() {
                     showLocationNeeded('denied');
                 }
             } else if (result.state === 'prompt') {
-                // Will prompt - show welcome while waiting
+                // Browser will prompt - show "acquiring" not "enable button"
+                // The enable button is only for when denied
                 if (!state.context) {
-                    showWelcome();
+                    showAcquiring();
                 }
-            }
-            // For 'granted' or 'prompt', proceed to get location
-            if (result.state !== 'denied') {
+                requestLocationForContext();
+            } else {
+                // granted - just get location
                 requestLocationForContext();
             }
         }).catch(function() {
@@ -1759,21 +1995,23 @@ function getLocationAndContext() {
     }
 }
 
+// Show acquiring state (browser will prompt for permission)
+function showAcquiring() {
+    var msg = '📡 Acquiring location...\n\n';
+    msg += 'Your browser will ask for permission.\n';
+    msg += 'Please allow location access.';
+    displayContext({ html: msg, places: {} }, true);
+}
+
 function requestLocationForContext() {
-    // Show acquiring state if context is stale (> 5 min old)
-    var contextAge = state.contextTime ? Date.now() - state.contextTime : Infinity;
+    // Always show acquiring state - it's an event
+    setAcquiring(true);
+    
     var isFirstLocation = !state.hasLocation();
-    if (contextAge > 5 * 60 * 1000 || isFirstLocation) {
-        isAcquiringLocation = true;
-        updateAcquiringIndicator();
-        if (isFirstLocation) {
-            addToTimeline('📡 Acquiring location...');
-        }
-    }
     
     navigator.geolocation.getCurrentPosition(
         function(pos) {
-            isAcquiringLocation = false;
+            setAcquiring(false);
             var oldStream = currentStream;
             var wasStale = state.contextTime && (Date.now() - state.contextTime > 10 * 60 * 1000);
             var wasFirstLocation = isFirstLocation;
@@ -1826,8 +2064,7 @@ function requestLocationForContext() {
             startLocationWatch();
         },
         function(err) {
-            isAcquiringLocation = false;
-            updateAcquiringIndicator();
+            setAcquiring(false);
             resetLocationButton();
             console.log("Location error:", err.code, err.message);
             // If we have cached context, show it but also note the error
@@ -2030,11 +2267,7 @@ function loadListeners() {
     }
 }
 
-// Register service worker
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
-        .catch(err => console.log('SW registration failed:', err));
-}
+// NO SERVICE WORKER - killed at top of file
 
 // Update all card timestamps periodically
 function updateTimestamps() {
@@ -2212,6 +2445,9 @@ $(document).ready(function() {
     loadListeners();
     initialLoad();
     
+    // Load command metadata from server
+    loadCommandMeta();
+    
     // Load persisted cards and conversation from localStorage
     loadTimeline();
     restoreConversation();
@@ -2270,34 +2506,36 @@ function showCachedContext() {
 
 // Show brief presence acknowledgment on app reopen
 function showPresence() {
-    if (!state.context) return;
-    
-    var ctx = state.context;
-    var parts = [];
-    
-    // Time
     var now = new Date();
     var time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    parts.push('🕐 ' + time);
     
-    // Location
-    if (ctx.location && ctx.location.name) {
-        var loc = ctx.location.name.split(',')[0]; // Just street name
-        parts.push(loc);
-    }
-    
-    // Weather
-    if (ctx.weather && ctx.weather.temp !== undefined) {
-        parts.push(ctx.weather.temp + '°C');
-    }
-    
-    // Prayer
-    if (ctx.prayer && ctx.prayer.next && ctx.prayer.next_time) {
-        parts.push(ctx.prayer.next + ' ' + ctx.prayer.next_time);
-    }
-    
-    if (parts.length > 1) {
+    // Always show something on reopen
+    if (state.context && state.context.location) {
+        var ctx = state.context;
+        var parts = ['🕐 ' + time];
+        
+        // Location - just street name
+        if (ctx.location.name) {
+            var loc = ctx.location.name.split(',')[0];
+            parts.push(loc);
+        }
+        
+        // Weather - extract from condition string
+        if (ctx.weather && ctx.weather.condition) {
+            var tempMatch = ctx.weather.condition.match(/-?\d+°C/);
+            if (tempMatch) parts.push(tempMatch[0]);
+        }
+        
+        // Prayer - extract short version
+        if (ctx.prayer && ctx.prayer.display) {
+            var prayerShort = ctx.prayer.display.replace('🕌 ', '').split(' · ')[0];
+            parts.push('🕌 ' + prayerShort);
+        }
+        
         addToTimeline(parts.join(' · '));
+    } else {
+        // No cached context - show we're working on it  
+        addToTimeline('🕐 ' + time + ' · 📡 Getting location...');
     }
 }
 
