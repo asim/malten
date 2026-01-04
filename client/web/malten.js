@@ -460,20 +460,9 @@ state.load();
 // Why: addToTimeline() saves to localStorage. Direct DOM = lost on reload.
 // =============================================================================
 
-var displayedItems = {}; // Deduplication tracker
-
 // THE way to add anything to the timeline (saves + renders)
-function addToTimeline(text, type, skipDedup) {
+function addToTimeline(text, type) {
     if (!text) return;
-    
-    // Dedupe by first 100 chars (unless skipDedup)
-    var key = text.substring(0, 100);
-    if (!skipDedup && displayedItems[key]) {
-        // Don't log dedup to avoid recursion - just use console
-        console.log('[dedup]', key.substring(0, 50));
-        return;
-    }
-    displayedItems[key] = true;
     
     // Augment check-in prompts with saved places
     if (text.indexOf('Where are you?') >= 0) {
@@ -510,10 +499,6 @@ function loadTimeline() {
     
     sorted.forEach(function(item) {
         if (item.text) {
-            // Mark as displayed (for deduplication)
-            var key = item.text.substring(0, 100);
-            displayedItems[key] = true;
-            // Render without saving (already in storage)
             renderTimelineItem(item);
         }
     });
@@ -824,7 +809,7 @@ function submitCommand() {
         }
         state.savedPlaces[placeName] = { lat: state.lat, lon: state.lon };
         state.save();
-        addToTimeline('📍 Saved "' + placeName + '"', null, true);
+        addToTimeline('📍 Saved "' + placeName + '"');
         return false;
     }
     
@@ -835,14 +820,14 @@ function submitCommand() {
         var names = Object.keys(state.savedPlaces || {});
         debugLog('savedPlaces: ' + names.join(', '));
         if (names.length === 0) {
-            addToTimeline('📍 No saved places.\nUse /save Home to save current location.', null, true);
+            addToTimeline('📍 No saved places.\nUse /save Home to save current location.');
         } else {
             var msg = '📍 Saved places:\n';
             names.forEach(function(name) {
                 msg += '• ' + name + '\n';
             });
             msg += '\nUse /checkin [name] or /delete [name]';
-            addToTimeline(msg, null, true);
+            addToTimeline(msg);
         }
         return false;
     }
@@ -964,7 +949,7 @@ function submitCommand() {
     if (debugMatch) {
         form.elements["prompt"].value = '';
         window.debugMode = debugMatch[1].toLowerCase() === 'on';
-        addToTimeline('🔧 Debug mode ' + (window.debugMode ? 'ON' : 'OFF'), null, true);
+        addToTimeline('🔧 Debug mode ' + (window.debugMode ? 'ON' : 'OFF'));
         return false;
     }
     
@@ -978,8 +963,8 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 91';
-        addToTimeline(info, null, true);
+        info += 'JS version: 92';
+        addToTimeline(info);
         return false;
     }
 
