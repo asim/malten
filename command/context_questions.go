@@ -10,6 +10,8 @@ func init() {
 	Register(&Command{
 		Name:        "weather",
 		Description: "Get current weather",
+		Emoji:       "⛅",
+		LoadingText: "Checking weather...",
 		Match: func(input string) (bool, []string) {
 			lower := strings.ToLower(input)
 			patterns := []string{"weather", "temperature", "how cold", "how hot", "is it cold", "is it hot", "will it rain"}
@@ -39,6 +41,8 @@ func init() {
 	Register(&Command{
 		Name:        "location",
 		Description: "Get current location",
+		Emoji:       "📍",
+		LoadingText: "Getting location...",
 		Match: func(input string) (bool, []string) {
 			lower := strings.ToLower(input)
 			patterns := []string{"where am i", "my location", "what street", "what road"}
@@ -69,6 +73,8 @@ func init() {
 	Register(&Command{
 		Name:        "bus",
 		Description: "Get next bus times",
+		Emoji:       "🚌",
+		LoadingText: "Checking bus times...",
 		Match: func(input string) (bool, []string) {
 			lower := strings.ToLower(input)
 			patterns := []string{"next bus", "bus time", "when is the bus", "buses"}
@@ -109,6 +115,8 @@ func init() {
 	Register(&Command{
 		Name:        "prayer",
 		Description: "Get prayer times",
+		Emoji:       "🕌",
+		LoadingText: "Getting prayer times...",
 		Match: func(input string) (bool, []string) {
 			lower := strings.ToLower(input)
 			patterns := []string{"prayer", "salah", "fajr", "dhuhr", "asr", "maghrib", "isha", "sunrise"}
@@ -137,6 +145,8 @@ func init() {
 	Register(&Command{
 		Name:        "summary",
 		Description: "Quick location summary",
+		Emoji:       "📍",
+		LoadingText: "Getting summary...",
 		Match: func(input string) (bool, []string) {
 			trimmed := strings.TrimSpace(input)
 			return trimmed == "." || trimmed == ".." || strings.ToLower(trimmed) == "summary", nil

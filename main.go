@@ -99,6 +99,97 @@ func handleGoGet(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, goGetTemplate, subPkg, repoSuffix, subPkg, repoSuffix, repoSuffix, repoSuffix, subPkg)
 }
 
+// buildPushNotification creates a push notification for a user's location
+func buildPushNotification(lat, lon float64) *server.PushNotification {
+	// Get fresh context data
+	ctx := spatial.GetContextData(lat, lon)
+	if ctx == nil {
+		return nil
+	}
+
+	// Build notification based on what's relevant
+	// Priority: bus times > prayer approaching > weather warning
+
+	// Check for bus times
+	if ctx.Bus != nil && len(ctx.Bus.Arrivals) > 0 {
+		// Arrivals are strings like "185 → Victoria in 3m"
+		return &server.PushNotification{
+			Title: "🚌 " + ctx.Bus.StopName,
+			Body:  ctx.Bus.Arrivals[0],
+			Tag:   "bus",
+		}
+	}
+
+	// Check for prayer approaching
+	if ctx.Prayer != nil && ctx.Prayer.NextTime != "" {
+		return &server.PushNotification{
+			Title: "🕌 " + ctx.Prayer.Next,
+			Body:  "at " + ctx.Prayer.NextTime,
+			Tag:   "prayer",
+		}
+	}
+
+	// Check for rain warning
+	if ctx.Weather != nil && ctx.Weather.RainWarning != "" {
+		return &server.PushNotification{
+			Title: "🌧️ Rain",
+			Body:  ctx.Weather.RainWarning,
+			Tag:   "weather",
+		}
+	}
+
+	return nil
+}
+
+// buildWeatherNotification creates morning weather notification
+func buildWeatherNotification(lat, lon float64) *server.PushNotification {
+	ctx := spatial.GetContextData(lat, lon)
+	if ctx == nil || ctx.Weather == nil {
+		return nil
+	}
+
+	body := ctx.Weather.Condition
+	if ctx.Weather.RainWarning != "" {
+		body += " · " + ctx.Weather.RainWarning
+	}
+
+	return &server.PushNotification{
+		Title: "🌅 Good morning",
+		Body:  body,
+		Tag:   "morning",
+	}
+}
+
+// buildPrayerNotification creates prayer reminder if prayer is ~10 min away
+func buildPrayerNotification(lat, lon float64, now time.Time) *server.PushNotification {
+	ctx := spatial.GetContextData(lat, lon)
+	if ctx == nil || ctx.Prayer == nil || ctx.Prayer.NextTime == "" {
+		return nil
+	}
+
+	// Parse next prayer time (format: "HH:MM")
+	prayerTime, err := time.Parse("15:04", ctx.Prayer.NextTime)
+	if err != nil {
+		return nil
+	}
+
+	// Set prayer time to today
+	prayerTime = time.Date(now.Year(), now.Month(), now.Day(), 
+		prayerTime.Hour(), prayerTime.Minute(), 0, 0, now.Location())
+
+	// Check if prayer is 8-12 minutes away (window for "10 min" reminder)
+	untilPrayer := prayerTime.Sub(now)
+	if untilPrayer >= 8*time.Minute && untilPrayer <= 12*time.Minute {
+		return &server.PushNotification{
+			Title: "🕌 " + ctx.Prayer.Next + " soon",
+			Body:  "in about 10 minutes (" + ctx.Prayer.NextTime + ")",
+			Tag:   "prayer-" + strings.ToLower(ctx.Prayer.Next),
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	flag.Parse()
 	
@@ -118,6 +209,13 @@ func main() {
 
 	// Initialize spatial DB (triggers agent recovery)
 	spatial.Get()
+
+	// Initialize push notifications
+	pm := server.GetPushManager()
+	command.UpdatePushLocation = pm.UpdateLocation
+	server.SetNotificationBuilder(buildPushNotification)
+	server.SetWeatherNotificationBuilder(buildWeatherNotification)
+	server.SetPrayerNotificationBuilder(buildPrayerNotification)
 
 	// Initialize AI agent
 	if err := agent.Init(); err != nil {
@@ -216,6 +314,11 @@ func main() {
 			server.JsonError(w, "method not allowed", 405)
 		}
 	})
+
+	// Push notification endpoints
+	http.HandleFunc("/push/subscribe", server.HandleSubscribe)
+	http.HandleFunc("/push/unsubscribe", server.HandleUnsubscribe)
+	http.HandleFunc("/push/vapid-key", server.HandleVAPIDKey)
 
 	h := server.WithCors(http.DefaultServeMux)
 

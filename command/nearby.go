@@ -1319,6 +1319,9 @@ func handlePing(ctx *Context, args []string) (string, error) {
 	
 	// Note: SetLocation already called by handler.go for all commands with lat/lon
 	
+	// Update push manager with current location (for background notifications)
+	UpdatePushLocation(ctx.Session, ctx.Lat, ctx.Lon)
+	
 	// Use check-in location if set, otherwise GPS
 	contextLat, contextLon := ctx.Lat, ctx.Lon
 	if checkIn := GetCheckIn(ctx.Session); checkIn != nil {
@@ -1343,4 +1346,7 @@ func handlePing(ctx *Context, args []string) (string, error) {
 	return string(b), nil
 }
 
+// UpdatePushLocation is called by handlePing to update push manager
+// Defined as variable so server package can set it (avoids import cycle)
+var UpdatePushLocation = func(sessionID string, lat, lon float64) {}
 

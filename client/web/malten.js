@@ -14,19 +14,7 @@
  *   renderTimelineItem(item)   - Render single item to DOM (internal)
  */
 
-// FORCE KILL SERVICE WORKER AND CACHE - version 85
-(function() {
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(regs) {
-            regs.forEach(function(r) { r.unregister(); });
-        });
-    }
-    if ('caches' in window) {
-        caches.keys().then(function(names) {
-            names.forEach(function(name) { caches.delete(name); });
-        });
-    }
-})();
+// Service worker used for push notifications (see sw.js)
 
 var commandUrl = "/commands";
 var messageUrl = "/messages";
@@ -384,6 +372,15 @@ function addToTimeline(text, type) {
     // Augment check-in prompts with saved places
     if (text.indexOf('Where are you?') >= 0 || text.indexOf('GPS seems stuck') >= 0) {
         text = augmentCheckInPrompt(text);
+    }
+    
+    // Dedupe: skip if same text added in last 60 seconds
+    if (state.cards && state.cards.length > 0) {
+        var lastCard = state.cards[state.cards.length - 1];
+        var isDupe = lastCard.text === text && (Date.now() - lastCard.time) < 60000;
+        if (isDupe) {
+            return; // Skip duplicate
+        }
     }
     
     var item = {
@@ -860,7 +857,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 227';
+        info += 'JS version: 232';
         addToTimeline(info);
         return false;
     }
@@ -1450,6 +1447,9 @@ function buildContextHtml(ctx) {
     html = html.replace(/\{enable_location\}/g, 
         '<a href="javascript:void(0)" class="enable-location-btn">📍 Enable location</a>');
     
+    // Add notifications button at the end
+    html += '\n' + getNotificationButton();
+    
     // Replace place counts with clickable links
     var categoryIcons = {
         'cafe': '☕',
@@ -1830,43 +1830,64 @@ function sendLocation(lat, lon) {
 }
 
 // Get location and refresh context
-// Check if we moved since last ping - only refresh if needed
+// Check if we should refresh on foreground
 function checkIfMoved() {
-    // If very stale (>10 min), just refresh
-    var isStale = state.contextTime && Date.now() - state.contextTime > 10 * 60 * 1000;
-    if (isStale) {
-        debugLog('Context stale, refreshing');
-        getLocationAndContext();
-        return;
-    }
+    var ageMs = state.contextTime ? Date.now() - state.contextTime : Infinity;
+    var ageSecs = Math.round(ageMs / 1000);
     
-    // If we detected steps while foregrounded, refresh
+    // If we detected movement (steps), only refresh if >2min old
     if (stepDetector.stepsSinceLastPing > 50) {
-        debugLog('Movement detected (' + stepDetector.stepsSinceLastPing + ' steps), refreshing');
-        stepDetector.stepsSinceLastPing = 0;
+        if (ageMs > 2 * 60 * 1000) {
+            debugLog('Moved (' + stepDetector.stepsSinceLastPing + ' steps) + stale (' + ageSecs + 's), refreshing');
+            stepDetector.stepsSinceLastPing = 0;
+            silentLocationRefresh();
+        } else {
+            debugLog('Moved but context fresh (' + ageSecs + 's), skipping refresh');
+        }
+        return;
+    }
+    
+    // Stationary (no steps) - refresh if >1min old (bus stop scenario)
+    // Bus times change every minute, need fresh data
+    if (ageMs > 60 * 1000) {
+        debugLog('Stationary + context ' + ageSecs + 's old, refreshing for bus times');
+        silentLocationRefresh();
+        return;
+    }
+    
+    debugLog('Context fresh (' + ageSecs + 's), no refresh needed');
+}
+
+// Refresh location without showing "Acquiring" message
+function silentLocationRefresh() {
+    if (!navigator.geolocation || !state.hasLocation()) {
         getLocationAndContext();
         return;
     }
     
-    // Silently check GPS to see if we moved significantly
-    if (navigator.geolocation && state.hasLocation()) {
-        navigator.geolocation.getCurrentPosition(
-            function(pos) {
-                var dist = state.distance(
-                    { lat: state.lat, lon: state.lon },
-                    { lat: pos.coords.latitude, lon: pos.coords.longitude }
-                ) * 1000; // km to m
-                debugLog('GPS check: moved ' + Math.round(dist) + 'm');
-                if (dist > 100) { // Moved more than 100m
-                    getLocationAndContext();
+    navigator.geolocation.getCurrentPosition(
+        function(pos) {
+            state.setLocation(pos.coords.latitude, pos.coords.longitude);
+            // Ping server for fresh context
+            $.post(commandUrl, {
+                prompt: '/ping',
+                stream: getStream(),
+                lat: state.lat,
+                lon: state.lon
+            }).done(function(data) {
+                if (data) {
+                    var ctx = typeof data === 'string' ? JSON.parse(data) : data;
+                    state.setContext(ctx);
+                    displayContext(ctx);
                 }
-            },
-            function(err) {
-                debugLog('GPS check failed', err.message);
-            },
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
-        );
-    }
+            });
+            startLocationWatch();
+        },
+        function(err) {
+            debugLog('Silent refresh failed', err.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
 }
 
 function getLocationAndContext() {
@@ -2354,8 +2375,150 @@ function showCheckInPrompt() {
     addToTimeline(msg);
 }
 
+// Push notification state
+var pushState = {
+    supported: 'serviceWorker' in navigator && 'PushManager' in window,
+    subscribed: false,
+    denied: false,
+    vapidKey: null
+};
+
+// Get notification button HTML based on state
+function getNotificationButton() {
+    if (!pushState.supported) {
+        return ''; // Don't show button if not supported
+    }
+    
+    // Check actual permission state
+    if (Notification.permission === 'denied') {
+        return '<div class="notification-status">🔕 Notifications blocked</div>';
+    }
+    
+    if (pushState.subscribed) {
+        return '<a href="javascript:void(0)" class="notification-btn subscribed" onclick="unsubscribePush()">🔔 Notifications on</a>';
+    }
+    return '<a href="javascript:void(0)" class="notification-btn" onclick="subscribePush()">🔔 Enable notifications</a>';
+}
+
+// Subscribe to push notifications
+function subscribePush() {
+    if (!pushState.supported || !pushState.vapidKey) {
+        debugLog('Push not supported or no VAPID key');
+        return;
+    }
+    
+    navigator.serviceWorker.ready.then(function(registration) {
+        return registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(pushState.vapidKey)
+        });
+    }).then(function(subscription) {
+        // Send subscription to server
+        return fetch('/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(subscription.toJSON())
+        });
+    }).then(function(response) {
+        if (response.ok) {
+            pushState.subscribed = true;
+            debugLog('Push subscribed');
+            refreshContextDisplay();
+        }
+    }).catch(function(err) {
+        debugLog('Push subscribe failed', err);
+        if (Notification.permission === 'denied') {
+            pushState.denied = true;
+            refreshContextDisplay();
+        }
+    });
+}
+
+// Unsubscribe from push notifications
+function unsubscribePush() {
+    navigator.serviceWorker.ready.then(function(registration) {
+        return registration.pushManager.getSubscription();
+    }).then(function(subscription) {
+        if (subscription) {
+            return subscription.unsubscribe();
+        }
+    }).then(function() {
+        return fetch('/push/unsubscribe', { method: 'POST' });
+    }).then(function() {
+        pushState.subscribed = false;
+        debugLog('Push unsubscribed');
+        refreshContextDisplay();
+    }).catch(function(err) {
+        debugLog('Push unsubscribe failed', err);
+    });
+}
+
+// Check current push subscription state
+function checkPushState() {
+    if (!pushState.supported) return Promise.resolve();
+    
+    // Check if permission denied
+    if (Notification.permission === 'denied') {
+        pushState.denied = true;
+        return Promise.resolve();
+    }
+    
+    // Get VAPID key from server
+    var vapidPromise = fetch('/push/vapid-key').then(function(r) { return r.json(); }).then(function(data) {
+        pushState.vapidKey = data.key;
+    }).catch(function() {
+        debugLog('Could not get VAPID key');
+    });
+    
+    // Check if already subscribed
+    var subPromise = navigator.serviceWorker.ready.then(function(registration) {
+        return registration.pushManager.getSubscription();
+    }).then(function(subscription) {
+        pushState.subscribed = !!subscription;
+        debugLog('Push subscribed:', pushState.subscribed);
+    });
+    
+    return Promise.all([vapidPromise, subPromise]);
+}
+
+// Refresh context display (to update notification button)
+function refreshContextDisplay() {
+    if (state.context) {
+        displayContext(state.context);
+    }
+}
+
+// Convert base64 VAPID key to Uint8Array
+function urlBase64ToUint8Array(base64String) {
+    var padding = '='.repeat((4 - base64String.length % 4) % 4);
+    var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    var rawData = window.atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
 // Initialize
 $(document).ready(function() {
+    // Register service worker for push notifications
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            debugLog('Service worker registered');
+        }).catch(function(err) {
+            debugLog('Service worker failed', err);
+        });
+    }
+    
+    // Check push notification state, then show context
+    checkPushState().then(function() {
+        // Show cached context after we know push state
+        showCachedContext();
+    }).catch(function() {
+        showCachedContext();
+    });
+    
     loadListeners();
     initialLoad();
     
@@ -2371,9 +2534,6 @@ $(document).ready(function() {
     
     // Scroll to bottom after loading persisted content
     scrollToBottom();
-    
-    // Show cached context immediately - this is the primary experience
-    showCachedContext();
     
     // Only get fresh location if we don't have one or it's very stale (>10 min)
     var needsFreshLocation = !state.hasLocation() || 

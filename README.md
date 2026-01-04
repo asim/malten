@@ -17,6 +17,12 @@ Move → it updates automatically. No searching, no typing. Just awareness.
 
 Ask anything → AI with spatial context answers.
 
+**Push notifications**: Enable notifications and get updates even when backgrounded:
+- 🚌 Bus times when you're at a stop
+- 🕌 Prayer reminders 10 min before
+- ☀️ Morning weather at 7am
+- ☀️ Ad-Duha reminder at 10am
+
 ## The Model
 
 See `ARCHITECTURE.md` and `claude.md` for the full spacetime model.

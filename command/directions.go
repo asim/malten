@@ -132,6 +132,8 @@ func init() {
 		Name:        "directions",
 		Description: "Get walking directions to a place",
 		Usage:       "/directions <place name>",
+		Emoji:       "🚶",
+		LoadingText: "Getting directions to %s...",
 		Handler: func(ctx *Context, args []string) (string, error) {
 			if len(args) == 0 {
 				return "Usage: /directions <place name>", nil

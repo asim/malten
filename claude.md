@@ -1691,3 +1691,94 @@ Server:
 - `/messages` endpoint could merge into `/streams?history=true`
 - `/agents` stays separate (infrastructure CRUD)
 - Consider removing old `/events` and `/commands` endpoints after client migration
+
+## Push Notifications (Jan 4, 2026)
+
+### Purpose
+Background updates when app is backgrounded - bus times, prayer times, weather alerts.
+
+### Flow
+1. User enables notifications via button in context card
+2. Browser prompts for permission
+3. Subscription sent to `/push/subscribe`
+4. Server tracks user's last known location
+5. When user hasn't pinged in 2-30 min (backgrounded), server pushes updates
+6. Push includes: bus times, prayer approaching, rain warnings
+
+### Rate Limiting
+- Max 1 push per 5 minutes per user
+- Quiet hours: 10pm-7am (local time, estimated from longitude)
+- No push if user was active in last 2 min (app is open)
+- No push after 30 min of inactivity (user has left the area)
+
+### Files
+- `server/push.go` - Push manager, subscription handling, background loop
+- `client/web/sw.js` - Service worker to receive push events
+- `client/web/malten.js` - Push subscription UI (`subscribePush()`, `unsubscribePush()`)
+
+### Endpoints
+- `GET /push/vapid-key` - Get VAPID public key for subscription
+- `POST /push/subscribe` - Save push subscription
+- `POST /push/unsubscribe` - Remove push subscription
+
+### Environment
+- `VAPID_PUBLIC_KEY` - Public key for web push
+- `VAPID_PRIVATE_KEY` - Private key for signing
+
+### What Gets Pushed
+1. **Bus times** (priority) - "🚌 Hampton Station: 111 → Kingston in 3m"
+2. **Prayer approaching** - "🕌 Maghrib at 16:05"
+3. **Rain warning** - "🌧️ Rain starting in 20 min"
+
+### Callback Pattern
+To avoid import cycles between server and spatial:
+- `server.SetNotificationBuilder(func)` sets callback in main.go
+- `command.UpdatePushLocation` is a var set by main.go
+- This allows server to build notifications using spatial data
+
+## Session: Push Notifications (Jan 4, 2026 - Evening)
+
+### What Was Built
+Complete web push notification system for background updates.
+
+**Server-side (`server/push.go`):**
+- `PushManager` singleton manages subscriptions
+- Persists to `push_subscriptions.json` (survives restarts)
+- Background loop every 1 minute:
+  - Checks backgrounded users (2-30 min since last ping)
+  - Checks scheduled notifications (morning weather, Duha, prayer reminders)
+- Rate limiting: max 1 push per 5 min, quiet hours 10pm-7am
+
+**Client-side:**
+- Service worker (`sw.js`) receives push events
+- `subscribePush()` / `unsubscribePush()` in malten.js
+- Button in context card: "🔔 Enable notifications"
+- State persisted via browser's push subscription (checked on load)
+
+**Notification types:**
+| Type | When | Content |
+|------|------|---------|
+| Bus times | Backgrounded 2-30 min | Fresh arrivals |
+| Morning weather | 7am local | Weather + rain warning |
+| Ad-Duha | 10am local | Surah 93:1-2 |
+| Prayer reminder | 10 min before | "Dhuhr in 10 minutes" |
+
+### Files Changed
+- `server/push.go` - New: complete push system
+- `client/web/sw.js` - New: service worker
+- `client/web/malten.js` - Push subscription UI, removed SW kill code
+- `client/web/malten.css` - Notification button styling
+- `main.go` - Push routes, notification builders
+- `command/nearby.go` - UpdatePushLocation callback
+- `.env` - VAPID keys added
+
+### Environment Variables
+```
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+```
+
+### Other Fixes
+- Foreground refresh: stationary >1min refreshes (bus stop), moving >2min
+- Timeline deduplication: same text within 60s skipped
+- Check-ins persist in localStorage (already worked, verified)
