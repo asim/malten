@@ -319,7 +319,7 @@ var state = {
             time: Date.now()
         };
         this.save();
-        addToTimeline('📍 Checked in: ' + name);
+        // Don't add to timeline here - callers handle it
     },
     
     // Clear check-in (when GPS moves significantly)
@@ -766,7 +766,14 @@ function submitCommand() {
         if (state.savedPlaces && state.savedPlaces[placeName]) {
             form.elements["prompt"].value = '';
             var place = state.savedPlaces[placeName];
-            state.checkIn(placeName, place.lat, place.lon);
+            // Update state without adding to timeline (we'll do it ourselves with ⭐)
+            state.checkedIn = {
+                name: placeName,
+                lat: place.lat,
+                lon: place.lon,
+                time: Date.now()
+            };
+            state.save();
             addToTimeline('📍 Checked in to ' + placeName + ' ⭐');
             return false;
         }
@@ -849,7 +856,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 102';
+        info += 'JS version: 103';
         addToTimeline(info);
         return false;
     }
@@ -2442,8 +2449,10 @@ $(document).on('click', '.checkin-option, .checkin-link', function(e) {
         lon: lon
     });
     
-    // Update local state
+    // Update local state and add to timeline
     state.checkIn(name, lat, lon);
+    var isSaved = state.savedPlaces && state.savedPlaces[name];
+    addToTimeline('📍 Checked in to ' + name + (isSaved ? ' ⭐' : ''));
     
     // Remove the prompt card
     $(this).closest('li').remove();
