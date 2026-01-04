@@ -810,7 +810,7 @@ function submitCommand() {
             try {
                 var r = JSON.parse(response);
                 if (r && r.verse) {
-                    displayReminderCard(r);
+                    displayReminderCard(r, true); // atBottom=true for command
                     scrollToBottom();
                 }
             } catch(e) {
@@ -829,7 +829,7 @@ function submitCommand() {
         info += 'Context cached: ' + (state.context ? state.context.length + ' chars' : 'none') + '\n';
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 70';
+        info += 'JS version: 71';
         displaySystemMessage(info);
         return false;
     }
@@ -1061,7 +1061,7 @@ function fetchReminder() {
     });
 }
 
-function displayReminderCard(r) {
+function displayReminderCard(r, atBottom) {
     // Parse verse - format: "Surah Name - English Name - Chapter:Verse\n\nText"
     var verseParts = r.verse.split('\n\n');
     var verseRef = verseParts[0] || '';
@@ -1090,12 +1090,17 @@ function displayReminderCard(r) {
     var li = document.createElement('li');
     li.innerHTML = html;
     
-    // Insert at top of messages
     var messages = document.getElementById('messages');
-    if (messages.firstChild) {
-        messages.insertBefore(li, messages.firstChild);
-    } else {
+    if (atBottom) {
+        // Append at bottom (for /reminder command)
         messages.appendChild(li);
+    } else {
+        // Insert at top (for first-open-of-day)
+        if (messages.firstChild) {
+            messages.insertBefore(li, messages.firstChild);
+        } else {
+            messages.appendChild(li);
+        }
     }
 }
 
