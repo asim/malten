@@ -311,6 +311,11 @@ ul li {
   /* No special styling - clean uniform look */
 }
 
+.card.card-user {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
 .card.card-movement {
   background: transparent;
   border: none;

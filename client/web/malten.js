@@ -856,7 +856,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 105';
+        info += 'JS version: 106';
         addToTimeline(info);
         return false;
     }
@@ -1717,8 +1717,8 @@ function displayUserMessage(text) {
     var displayText = humanizeCommand(text);
     
     var li = document.createElement('li');
-    li.className = 'command-item';
-    li.innerHTML = '<div class="command-line" data-timestamp="' + ts + '">' +
+    li.innerHTML = '<div class="card card-user" data-timestamp="' + ts + '">' +
+        '<span class="card-time">' + formatTimeAgo(ts) + '</span>' +
         escapeHTML(displayText) +
         '</div>';
     
@@ -1764,8 +1764,8 @@ function restoreConversation() {
     state.conversation.messages.forEach(function(msg) {
         var li = document.createElement('li');
         if (msg.role === 'user') {
-            li.className = 'command-item';
-            li.innerHTML = '<div class="command-line" data-timestamp="' + ts + '">' +
+            li.innerHTML = '<div class="card card-user" data-timestamp="' + ts + '">' +
+                '<span class="card-time">' + formatTimeAgo(ts) + '</span>' +
                 escapeHTML(msg.text) + '</div>';
         } else {
             var html = makeClickable(msg.text).replace(/\n/g, '<br>');
