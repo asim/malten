@@ -1317,8 +1317,7 @@ func handlePing(ctx *Context, args []string) (string, error) {
 		return "📍 Location not provided", nil
 	}
 	
-	// SetLocation tracks history, detects stuck GPS
-	SetLocation(ctx.Session, ctx.Lat, ctx.Lon)
+	// Note: SetLocation already called by handler.go for all commands with lat/lon
 	
 	// Use check-in location if set, otherwise GPS
 	contextLat, contextLon := ctx.Lat, ctx.Lon
