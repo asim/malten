@@ -1762,9 +1762,13 @@ function getLocationAndContext() {
 function requestLocationForContext() {
     // Show acquiring state if context is stale (> 5 min old)
     var contextAge = state.contextTime ? Date.now() - state.contextTime : Infinity;
-    if (contextAge > 5 * 60 * 1000) {
+    var isFirstLocation = !state.hasLocation();
+    if (contextAge > 5 * 60 * 1000 || isFirstLocation) {
         isAcquiringLocation = true;
         updateAcquiringIndicator();
+        if (isFirstLocation) {
+            addToTimeline('📡 Acquiring location...');
+        }
     }
     
     navigator.geolocation.getCurrentPosition(
@@ -1772,6 +1776,7 @@ function requestLocationForContext() {
             isAcquiringLocation = false;
             var oldStream = currentStream;
             var wasStale = state.contextTime && (Date.now() - state.contextTime > 10 * 60 * 1000);
+            var wasFirstLocation = isFirstLocation;
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
             
             // Reconnect WebSocket if stream changed
@@ -1793,8 +1798,22 @@ function requestLocationForContext() {
                     if (typeof data === 'string') {
                         try { ctx = JSON.parse(data); } catch(e) { ctx = { html: data }; }
                     }
-                    // If context was stale (>10 min) and just refreshed, create a card
-                    if (wasStale) {
+                    
+                    // First location of session - show location and agent
+                    if (wasFirstLocation) {
+                        var loc = state.extractLocation(ctx);
+                        if (loc) {
+                            addToTimeline('📍 ' + loc);
+                        }
+                        if (ctx.agent) {
+                            var agentMsg = '🤖 Agent ' + ctx.agent.status;
+                            if (ctx.agent.poi_count > 0) {
+                                agentMsg += ' · ' + ctx.agent.poi_count + ' places nearby';
+                            }
+                            addToTimeline(agentMsg);
+                        }
+                    } else if (wasStale) {
+                        // Context was stale, show refresh
                         var loc = state.extractLocation(ctx);
                         if (loc) {
                             addToTimeline('📍 ' + loc + ' · refreshed');

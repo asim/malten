@@ -26,6 +26,14 @@ type ContextData struct {
 	Prayer   *PrayerInfo        `json:"prayer"`   // Prayer times
 	Bus      *BusInfo           `json:"bus"`      // Nearest bus
 	Places   map[string][]Place `json:"places"`   // Nearby places by category
+	Agent    *AgentInfo         `json:"agent"`    // Agent for this area
+}
+
+type AgentInfo struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`     // active, indexing, idle
+	POICount  int    `json:"poi_count"` // Places indexed
+	LastIndex string `json:"last_index,omitempty"` // When last indexed
 }
 
 type LocationInfo struct {
@@ -67,7 +75,26 @@ func GetContextData(lat, lon float64) *ContextData {
 	agent := db.FindAgent(lat, lon, AgentRadius)
 	if agent == nil {
 		log.Printf("[context] Creating new agent for %.4f,%.4f", lat, lon)
-		db.FindOrCreateAgent(lat, lon)
+		agent = db.FindOrCreateAgent(lat, lon)
+	}
+	
+	// Agent info
+	if agent != nil {
+		// Count POIs in agent's area
+		poiCount := len(db.Query(agent.Lat, agent.Lon, AgentRadius, EntityPlace, 500))
+		status := "active"
+		if s, ok := agent.Data["status"].(string); ok {
+			status = s
+		}
+		ctx.Agent = &AgentInfo{
+			ID:       agent.ID,
+			Status:   status,
+			POICount: poiCount,
+		}
+		// Last index time from UpdatedAt
+		if !agent.UpdatedAt.IsZero() {
+			ctx.Agent.LastIndex = agent.UpdatedAt.Format("15:04")
+		}
 	}
 
 	// Location
