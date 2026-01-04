@@ -312,8 +312,7 @@ ul li {
 }
 
 .card.card-user {
-  background: #e3f2fd;
-  color: #1565c0;
+  background: transparent;
 }
 
 .card.card-movement {
