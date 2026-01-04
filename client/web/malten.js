@@ -2235,6 +2235,8 @@ $(document).ready(function() {
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
             updateTimestamps();
+            // Show presence on reopen
+            showPresence();
             // Refresh location and context when app reopens
             getLocationAndContext();
         }
@@ -2263,6 +2265,39 @@ function showCachedContext() {
     } else {
         // Nothing cached - show welcome
         showWelcome();
+    }
+}
+
+// Show brief presence acknowledgment on app reopen
+function showPresence() {
+    if (!state.context) return;
+    
+    var ctx = state.context;
+    var parts = [];
+    
+    // Time
+    var now = new Date();
+    var time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    parts.push('🕐 ' + time);
+    
+    // Location
+    if (ctx.location && ctx.location.name) {
+        var loc = ctx.location.name.split(',')[0]; // Just street name
+        parts.push(loc);
+    }
+    
+    // Weather
+    if (ctx.weather && ctx.weather.temp !== undefined) {
+        parts.push(ctx.weather.temp + '°C');
+    }
+    
+    // Prayer
+    if (ctx.prayer && ctx.prayer.next && ctx.prayer.next_time) {
+        parts.push(ctx.prayer.next + ' ' + ctx.prayer.next_time);
+    }
+    
+    if (parts.length > 1) {
+        addToTimeline(parts.join(' · '));
     }
 }
 
