@@ -104,7 +104,7 @@ var state = {
                 this.savedPlaces = s.savedPlaces || {};
                 this.steps = s.steps || { count: 0, date: null };
                 this.reminderDate = s.reminderDate || null;
-                this.duhaReminderDate = s.duhaReminderDate || null;
+                this.prayerReminders = s.prayerReminders || {};
                 // Prune old cards on load (24 hour retention)
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
@@ -137,7 +137,7 @@ var state = {
             savedPlaces: this.savedPlaces,
             steps: this.steps,
             reminderDate: this.reminderDate,
-            duhaReminderDate: this.duhaReminderDate
+            prayerReminders: this.prayerReminders
         }));
     },
     hasSeenNews: function(newsText) {
@@ -257,6 +257,9 @@ var state = {
                 this.createCard(newDisrupt[0]);
             }
         }
+        
+        // Check for prayer-time reminder
+        checkPrayerReminder();
     },
     hasRecentCard: function(text, minutes) {
         // Check if a card with similar text exists within last N minutes
@@ -349,7 +352,7 @@ var state = {
     savedPlaces: {},  // Private named places: { "Home": {lat, lon}, "Work": {lat, lon} }
     steps: { count: 0, date: null },  // Daily step counter
     reminderDate: null,  // Last date daily reminder was shown (YYYY-MM-DD)
-    duhaReminderDate: null,  // Last date Duha reminder was shown (YYYY-MM-DD)
+    prayerReminders: {},  // Track which prayer reminders shown today: {fajr: '2026-01-04', ...}
     motionDetected: false,  // Movement detected via accelerometer while GPS stuck
     
     // Check if user has manually checked in to a location
@@ -1052,7 +1055,7 @@ function fetchReminder() {
         $.post(commandUrl, { prompt: '/reminder', stream: getStream() }).done(function(response) {
             try {
                 var r = JSON.parse(response);
-                if (!r || !r.verse) return;
+                if (!r || (!r.verse && !r.name)) return;
                 
                 // Mark as shown
                 state.reminderDate = today;
@@ -1064,27 +1067,55 @@ function fetchReminder() {
         });
     }
     
-    // Duha reminder - shows during Duha time (after sunrise, before Dhuhr)
-    // Roughly 10:00-11:30am local time
-    var hour = new Date().getHours();
-    var minutes = new Date().getMinutes();
-    var isDuhaTime = (hour === 10) || (hour === 11 && minutes <= 30);
+    // Prayer-time reminders - check context for current prayer
+    checkPrayerReminder();
+}
+
+// Check if we should show a prayer-time reminder based on current prayer
+function checkPrayerReminder() {
+    var ctx = state.context;
+    if (!ctx || !ctx.prayer || !ctx.prayer.current) return;
     
-    if (isDuhaTime && state.duhaReminderDate !== today) {
-        $.post(commandUrl, { prompt: '/reminder duha', stream: getStream() }).done(function(response) {
-            try {
-                var r = JSON.parse(response);
-                if (!r || !r.verse) return;
-                
-                // Mark as shown
-                state.duhaReminderDate = today;
-                state.save();
-                
-                // Display reminder card
-                displayReminderCard(r);
-            } catch(e) {}
-        });
+    var today = new Date().toISOString().split('T')[0];
+    var currentPrayer = ctx.prayer.current.toLowerCase();
+    
+    // Map prayer names to reminder keys
+    var prayerToReminder = {
+        'fajr': 'fajr',
+        'dhuhr': 'dhuhr',
+        'asr': 'asr',
+        'maghrib': 'maghrib',
+        'isha': 'isha'
+    };
+    
+    var reminderKey = prayerToReminder[currentPrayer];
+    if (!reminderKey) return;
+    
+    // Check if already shown today
+    if (state.prayerReminders[reminderKey] === today) return;
+    
+    // Special case: during Duha time (between Fajr end and Dhuhr), show Duha reminder
+    // This is when there's no "current" prayer but we're in the morning
+    var hour = new Date().getHours();
+    if (!ctx.prayer.current && hour >= 9 && hour < 12) {
+        reminderKey = 'duha';
+        if (state.prayerReminders['duha'] === today) return;
     }
+    
+    // Fetch and display the prayer reminder
+    $.post(commandUrl, { prompt: '/reminder ' + reminderKey, stream: getStream() }).done(function(response) {
+        try {
+            var r = JSON.parse(response);
+            if (!r || (!r.verse && !r.name)) return;
+            
+            // Mark as shown
+            state.prayerReminders[reminderKey] = today;
+            state.save();
+            
+            // Display reminder card
+            displayReminderCard(r);
+        } catch(e) {}
+    });
 }
 
 function displayReminderCard(r) {

@@ -233,7 +233,7 @@ var timeReminders = map[string]TimeBasedReminder{
 	// Evening - The Light
 	"maghrib": {
 		Type:   "name",
-		Number: 93, // An-Nur (The Light) - actually let's use As-Samad
+		Number: 93, // An-Nur (The Light)
 		Reason: "As day turns to night",
 	},
 	// Night
