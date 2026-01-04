@@ -626,6 +626,7 @@ function connectWebSocket() {
             
             // Show response as a card
             hideLoading();
+            if (!ev.Text || ev.Text.trim() === '') return; // Skip empty messages
             if (pendingCommand) {
                 displayResponse(ev.Text);
             } else {
@@ -848,7 +849,7 @@ function submitCommand() {
         info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 100';
+        info += 'JS version: 101';
         addToTimeline(info);
         return false;
     }
@@ -2349,9 +2350,7 @@ $(document).ready(function() {
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
             updateTimestamps();
-            // Show presence on reopen
-            showPresence();
-            // Refresh location and context when app reopens
+            // Server pushes updates via /ping, no need for client-side showPresence
             getLocationAndContext();
         }
     });
