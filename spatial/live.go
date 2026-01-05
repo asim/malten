@@ -90,7 +90,7 @@ func fetchWeather(lat, lon float64) *Entity {
 	name := fmt.Sprintf("%s %d°C", weatherIcon(data.Current.WeatherCode), tempRounded)
 	
 	expiry := time.Now().Add(weatherTTL)
-	return &Entity{
+	entity := &Entity{
 		ID:   GenerateID(EntityWeather, lat, lon, "weather"),
 		Type: EntityWeather,
 		Name: name,
@@ -103,6 +103,9 @@ func fetchWeather(lat, lon float64) *Entity {
 		},
 		ExpiresAt: &expiry,
 	}
+	// Insert under lock to prevent race
+	db.Insert(entity)
+	return entity
 }
 
 // computePrayerDisplay calculates current/next prayer from stored timings at query time
@@ -275,7 +278,7 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 	}
 	
 	expiry := time.Now().Add(prayerTTL)
-	return &Entity{
+	entity := &Entity{
 		ID:   GenerateID(EntityPrayer, lat, lon, "prayer"),
 		Type: EntityPrayer,
 		Name: name,
@@ -288,6 +291,9 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 		},
 		ExpiresAt: &expiry,
 	}
+	// Insert under lock to prevent race
+	db.Insert(entity)
+	return entity
 }
 
 // fetchBusArrivals is deprecated, use fetchTransportArrivals
@@ -394,7 +400,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 		}
 		
 		expiry := time.Now().Add(arrivalTTL)
-		entities = append(entities, &Entity{
+		entity := &Entity{
 			ID:   GenerateID(EntityArrival, stop.Lat, stop.Lon, stop.NaptanID),
 			Type: EntityArrival,
 			Name: fmt.Sprintf("%s %s", icon, stop.CommonName),
@@ -407,7 +413,10 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 				"arrivals":   arrivals,
 			},
 			ExpiresAt: &expiry,
-		})
+		}
+		// Insert under lock to prevent race
+		db.Insert(entity)
+		entities = append(entities, entity)
 	}
 	
 	return entities
@@ -556,7 +565,7 @@ func fetchLocation(lat, lon float64) *Entity {
 	
 	// Cache for 1 hour - locations don't change
 	expiry := time.Now().Add(1 * time.Hour)
-	return &Entity{
+	entity := &Entity{
 		ID:        GenerateID(EntityLocation, lat, lon, "location"),
 		Type:      EntityLocation,
 		Name:      name,
@@ -565,6 +574,9 @@ func fetchLocation(lat, lon float64) *Entity {
 		Data:      map[string]interface{}{"road": road, "area": area, "postcode": data.Address.Postcode},
 		ExpiresAt: &expiry,
 	}
+	// Insert under lock to prevent race
+	db.Insert(entity)
+	return entity
 }
 
 // getNearestStopWithArrivals returns the nearest stop and its arrivals

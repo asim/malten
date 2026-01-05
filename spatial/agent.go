@@ -173,13 +173,11 @@ func updateLiveData(agent *Entity) {
 	db := Get()
 	
 	// Location name (reverse geocode) - only if not cached
-	if loc := fetchLocation(agent.Lat, agent.Lon); loc != nil {
-		db.Insert(loc)
-	}
+	// fetchLocation inserts under lock, returns entity or nil
+	fetchLocation(agent.Lat, agent.Lon)
 	
-	// Weather
+	// Weather - fetchWeather inserts under lock
 	if weather := fetchWeather(agent.Lat, agent.Lon); weather != nil {
-		db.Insert(weather)
 		// Check for notable weather
 		if weather.Data != nil {
 			if rain, ok := weather.Data["rain_forecast"].(string); ok && rain != "" {
@@ -189,21 +187,17 @@ func updateLiveData(agent *Entity) {
 		}
 	}
 	
-	// Prayer times
-	if prayer := fetchPrayerTimes(agent.Lat, agent.Lon); prayer != nil {
-		db.Insert(prayer)
-	}
+	// Prayer times - fetchPrayerTimes inserts under lock
+	fetchPrayerTimes(agent.Lat, agent.Lon)
 	
 	// Transport arrivals (buses, tubes, trains)
+	// fetchTransportArrivals inserts under lock, returns entities for counting
 	var totalArrivals int
 	
 	// Buses
 	busArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanPublicBusCoachTram", "🚌")
 	if busArrivals != nil {
 		if len(busArrivals) > 0 {
-			for _, arr := range busArrivals {
-				db.Insert(arr)
-			}
 			totalArrivals += len(busArrivals)
 		} else {
 			// API returned empty - extend existing arrivals TTL
@@ -214,21 +208,11 @@ func updateLiveData(agent *Entity) {
 	
 	// Tube stations
 	tubeArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanMetroStation", "🚇")
-	if len(tubeArrivals) > 0 {
-		for _, arr := range tubeArrivals {
-			db.Insert(arr)
-		}
-		totalArrivals += len(tubeArrivals)
-	}
+	totalArrivals += len(tubeArrivals)
 	
 	// Rail stations (Overground, National Rail)
 	railArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanRailStation", "🚆")
-	if len(railArrivals) > 0 {
-		for _, arr := range railArrivals {
-			db.Insert(arr)
-		}
-		totalArrivals += len(railArrivals)
-	}
+	totalArrivals += len(railArrivals)
 	
 	if totalArrivals > 0 {
 		log.Printf("[agent] %s refreshed %d arrivals", agent.Name, totalArrivals)
