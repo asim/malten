@@ -121,66 +121,6 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	go handleAI(input, stream, token)
 }
 
-// sendToSession sends a message to the user's private channel
-func sendToSession(text, stream, token string) {
-	Default.Events <- NewChannelMessage(text, stream, "@"+token)
-}
-
-
-
-// detectNearbyQuery checks if input is a nearby/location query
-// Handles: "cafes near me", "nearby cafes", "Twickenham cafes", "petrol station"
-func detectNearbyQuery(input string) (bool, []string) {
-	input = strings.TrimSpace(input)
-	lower := strings.ToLower(input)
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
-		return false, nil
-	}
-
-	// Remove filler words
-	var cleaned []string
-	for _, p := range parts {
-		l := strings.ToLower(p)
-		if l == "near" || l == "nearby" || l == "me" || l == "in" || l == "around" {
-			continue
-		}
-		cleaned = append(cleaned, p)
-	}
-
-	// Check for multi-word types first (e.g., "petrol station")
-	multiType, remaining := command.CheckMultiWordType(cleaned)
-	if multiType != "" {
-		// Found multi-word type, return it with any remaining location words
-		result := append([]string{multiType}, remaining...)
-		return true, result
-	}
-
-	// Check if any word is a valid place type
-	hasPlaceType := false
-	for _, p := range cleaned {
-		if command.IsValidPlaceType(strings.ToLower(p)) {
-			hasPlaceType = true
-			break
-		}
-	}
-
-	if !hasPlaceType {
-		return false, nil
-	}
-
-	// Check if it looks like a nearby query
-	// Either starts with nearby/near, contains "near me", or is just "<location> <type>"
-	if strings.HasPrefix(lower, "near") ||
-		strings.Contains(lower, "near me") ||
-		strings.Contains(lower, "around me") ||
-		len(cleaned) >= 1 {
-		return true, cleaned
-	}
-
-	return false, nil
-}
-
 func handleAI(prompt, stream, token string) {
 	if agent.Client == nil {
 		Default.Events <- NewChannelMessage("AI not available", stream, "@"+token)
@@ -336,36 +276,6 @@ func GetStreamsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, string(b))
 }
 
-func NewStreamHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-
-	stream := r.Form.Get("stream")
-	private, _ := strconv.ParseBool(r.Form.Get("private"))
-	ttl, _ := strconv.Atoi(r.Form.Get("ttl"))
-
-	if len(stream) == 0 {
-		stream = Random(8)
-	}
-
-	if ttl <= 0 {
-		ttl = int(StreamTTL.Seconds())
-	}
-
-	if err := Default.New(stream, "", private, ttl); err != nil {
-		JsonError(w, "cannot create stream", 500)
-		return
-	}
-
-	data := map[string]interface{}{
-		"stream":  stream,
-		"private": private,
-		"ttl":     ttl,
-	}
-	b, _ := json.Marshal(data)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(b)
-}
 
 func PostHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()

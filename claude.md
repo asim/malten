@@ -1812,3 +1812,22 @@ VAPID_PRIVATE_KEY=...
 - `spatial/context.go` - recalculate weather display from raw temp
 - `spatial/live.go` - proper temp rounding
 - `claude.md` - updated docs
+
+### Cleanup Continued
+
+**Removed unused code:**
+- `spatial/vibe.go` - 230 lines of atmosphere inference (never used)
+- `server/place.go` - PlaceHandler endpoint (never wired)
+- `server/location.go` - HandlePingCommand, HandleNearbyCommand (replaced by command registry)
+- `server/handler.go` - sendToSession, detectNearbyQuery, NewStreamHandler (dead code)
+
+**Added:**
+- `/status` command shows server memory, entity counts, uptime
+- `/debug` shows both client state and server status
+
+**Current codebase:**
+- `malten.js`: 2,665 lines
+- `malten.css`: 323 lines  
+- Go server: ~8,900 lines across 34 files
+- Memory: ~140 MB typical
+- Entities: ~12,000 (places, weather, prayer, arrivals, agents)
