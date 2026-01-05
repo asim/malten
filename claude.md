@@ -2582,3 +2582,62 @@ README says                          Reality
 4. **Timeline integration** - Awareness items should appear in timeline automatically
 
 ### JS Version: 273
+
+---
+
+## Session Checkpoint: Jan 5, 2026 - Bus Data Fix
+
+### Problem
+Bus times would intermittently disappear from context despite being cached.
+
+### Root Causes Found
+
+1. **Duplicate arrival entries** - Same stop had multiple entries with different IDs because:
+   - ID was generated using user's coordinates instead of stop's coordinates
+   - Name included dynamic arrival times, causing ID to change on each refresh
+
+2. **Expired data accumulation** - Old arrivals weren't being cleaned up, cluttering the spatial index
+
+### Fixes Applied
+
+1. **ID generation fix** (`spatial/live.go`):
+   ```go
+   // Before (wrong - uses user location)
+   ID: GenerateID(EntityArrival, lat, lon, stopID)
+   
+   // After (correct - uses stop location)  
+   ID: GenerateID(EntityArrival, arr.Lat, arr.Lon, stopID)
+   ```
+
+2. **Name fix** - Don't include dynamic arrivals in entity name:
+   ```go
+   // Before
+   Name: fmt.Sprintf("%s %s: %s", icon, stop.CommonName, arrivals)
+   
+   // After
+   Name: fmt.Sprintf("%s %s", icon, stop.CommonName)
+   ```
+
+3. **Background cleanup** (`spatial/db.go`):
+   - `StartBackgroundCleanup(interval)` - runs every 5 minutes
+   - `cleanupExpiredArrivals()` - only removes expired arrivals, not places/agents
+   - Started in `main.go` on server startup
+
+4. **Manual cleanup command** (`command/cleanup.go`):
+   - `/cleanup` - runs in background, cleans expired + duplicates from store
+
+### Key Insight
+
+The quadtree doesn't need TTL support. TTL is application-specific (arrivals expire in 5min, places never). The DB wrapper handles it via `ExpiresAt` field and `QueryWithMaxAge()`.
+
+### Files Changed
+- `spatial/live.go` - ID generation fix, name fix
+- `spatial/db.go` - Added `StartBackgroundCleanup`, `cleanupExpiredArrivals`
+- `command/cleanup.go` - Manual cleanup command (runs in background)
+- `main.go` - Start background cleanup on server start
+
+### Testing
+```bash
+curl -s -X POST 'http://localhost:9090/commands' -d 'prompt=/ping&lat=51.4179&lon=-0.3706' | jq -r '.html'
+# Should show bus times consistently
+```

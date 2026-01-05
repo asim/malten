@@ -382,7 +382,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 		entities = append(entities, &Entity{
 			ID:   GenerateID(EntityArrival, stop.Lat, stop.Lon, stop.NaptanID),
 			Type: EntityArrival,
-			Name: fmt.Sprintf("%s %s: %s", icon, stop.CommonName, strings.Join(times, ", ")),
+			Name: fmt.Sprintf("%s %s", icon, stop.CommonName),
 			Lat:  stop.Lat,
 			Lon:  stop.Lon,
 			Data: map[string]interface{}{
@@ -613,7 +613,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 				if arrs := fetchStopArrivals(stopID); len(arrs) > 0 {
 					expiry := time.Now().Add(arrivalTTL)
 					db.Insert(&Entity{
-						ID:        GenerateID(EntityArrival, lat, lon, stopID),
+						ID:        GenerateID(EntityArrival, arr.Lat, arr.Lon, stopID),
 						Type:      EntityArrival,
 						Name:      fmt.Sprintf("🚌 %s", stopName),
 						Lat:       arr.Lat,

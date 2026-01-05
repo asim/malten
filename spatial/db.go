@@ -435,3 +435,208 @@ func (d *DB) CountByAgentID(agentID string, entityType EntityType) int {
 	}
 	return count
 }
+
+// CleanupExpired removes all expired entities from the database
+func (d *DB) CleanupExpired() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	now := time.Now()
+	var toDelete []string
+
+	for id, point := range d.entities {
+		entity, ok := point.Data().(*Entity)
+		if !ok {
+			continue
+		}
+		if entity.ExpiresAt != nil && now.After(*entity.ExpiresAt) {
+			toDelete = append(toDelete, id)
+		}
+	}
+
+	for _, id := range toDelete {
+		if point, ok := d.entities[id]; ok {
+			d.tree.Remove(point)
+			delete(d.entities, id)
+			d.store.Delete(id)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		log.Printf("[db] Cleaned up %d expired entities", len(toDelete))
+	}
+
+	return len(toDelete)
+}
+
+// CleanupDuplicateArrivals removes duplicate arrival entries for the same stop
+func (d *DB) CleanupDuplicateArrivals() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Group arrivals by stop_id
+	byStop := make(map[string][]*Entity)
+	for _, point := range d.entities {
+		entity, ok := point.Data().(*Entity)
+		if !ok || entity.Type != EntityArrival {
+			continue
+		}
+		stopID, _ := entity.Data["stop_id"].(string)
+		if stopID == "" {
+			continue
+		}
+		byStop[stopID] = append(byStop[stopID], entity)
+	}
+
+	var toDelete []string
+	for _, entities := range byStop {
+		if len(entities) <= 1 {
+			continue
+		}
+		// Keep the newest, delete the rest
+		var newest *Entity
+		for _, e := range entities {
+			if newest == nil || e.UpdatedAt.After(newest.UpdatedAt) {
+				newest = e
+			}
+		}
+		for _, e := range entities {
+			if e.ID != newest.ID {
+				toDelete = append(toDelete, e.ID)
+			}
+		}
+	}
+
+	for _, id := range toDelete {
+		if point, ok := d.entities[id]; ok {
+			d.tree.Remove(point)
+			delete(d.entities, id)
+			d.store.Delete(id)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		log.Printf("[db] Cleaned up %d duplicate arrivals", len(toDelete))
+	}
+
+	return len(toDelete)
+}
+
+// CleanupStore removes expired and duplicate entries from the persistent store
+func (d *DB) CleanupStore() (expired int, duplicates int, err error) {
+	points, err := d.store.List()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	now := time.Now()
+	var toDelete []string
+	byStopID := make(map[string][]struct{ id string; updated time.Time })
+
+	for id, point := range points {
+		data := point.Data()
+		m, ok := data.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		b, _ := json.Marshal(m)
+		var entity Entity
+		if err := json.Unmarshal(b, &entity); err != nil {
+			continue
+		}
+
+		// Check if expired
+		if entity.ExpiresAt != nil && now.After(*entity.ExpiresAt) {
+			toDelete = append(toDelete, id)
+			expired++
+			continue
+		}
+
+		// Track arrivals by stop_id for duplicate detection
+		if entity.Type == EntityArrival {
+			stopID, _ := entity.Data["stop_id"].(string)
+			if stopID != "" {
+				byStopID[stopID] = append(byStopID[stopID], struct{ id string; updated time.Time }{id, entity.UpdatedAt})
+			}
+		}
+	}
+
+	// Find duplicate arrivals (keep newest per stop)
+	for _, entries := range byStopID {
+		if len(entries) <= 1 {
+			continue
+		}
+		// Find newest
+		var newestID string
+		var newestTime time.Time
+		for _, e := range entries {
+			if e.updated.After(newestTime) {
+				newestTime = e.updated
+				newestID = e.id
+			}
+		}
+		// Mark others for deletion
+		for _, e := range entries {
+			if e.id != newestID {
+				toDelete = append(toDelete, e.id)
+				duplicates++
+			}
+		}
+	}
+
+	// Delete from store
+	for _, id := range toDelete {
+		d.store.Delete(id)
+	}
+
+	log.Printf("[db] Store cleanup: removed %d expired, %d duplicates", expired, duplicates)
+	return expired, duplicates, nil
+}
+
+// StartBackgroundCleanup starts a goroutine that periodically cleans expired arrivals
+func (d *DB) StartBackgroundCleanup(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			d.cleanupExpiredArrivals()
+		}
+	}()
+}
+
+// cleanupExpiredArrivals removes only expired arrival entities
+func (d *DB) cleanupExpiredArrivals() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	now := time.Now()
+	var toDelete []string
+
+	for id, point := range d.entities {
+		entity, ok := point.Data().(*Entity)
+		if !ok {
+			continue
+		}
+		// Only clean arrivals - other entities (places, agents) don't expire
+		if entity.Type != EntityArrival {
+			continue
+		}
+		if entity.ExpiresAt != nil && now.After(*entity.ExpiresAt) {
+			toDelete = append(toDelete, id)
+		}
+	}
+
+	for _, id := range toDelete {
+		if point, ok := d.entities[id]; ok {
+			d.tree.Remove(point)
+			delete(d.entities, id)
+			d.store.Delete(id)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		log.Printf("[db] Background cleanup: removed %d expired arrivals", len(toDelete))
+	}
+}

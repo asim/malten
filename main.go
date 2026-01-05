@@ -209,6 +209,9 @@ func main() {
 	// Initialize spatial DB (triggers agent recovery)
 	spatial.Get()
 
+	// Start background cleanup every 5 minutes (only cleans expired arrivals)
+	spatial.Get().StartBackgroundCleanup(5 * time.Minute)
+
 	// Initialize push notifications
 	pm := server.GetPushManager()
 	command.UpdatePushLocation = pm.UpdateLocation
