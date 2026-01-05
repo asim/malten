@@ -55,6 +55,12 @@ Update live data every 30 seconds. Re-index static POIs daily.`
 
 // CreateAgent creates a new agent with a prompt
 func (d *DB) CreateAgent(lat, lon, radius float64, name string) *Entity {
+	// Safety check: don't create if one already exists within 1km
+	if existing := d.FindAgent(lat, lon, 1000); existing != nil {
+		log.Printf("[agent] Not creating %s - agent %s already covers this area", name, existing.Name)
+		return existing
+	}
+	
 	agent := &Entity{
 		ID:   GenerateID(EntityAgent, lat, lon, name),
 		Type: EntityAgent,
@@ -85,13 +91,12 @@ func (d *DB) FindOrCreateAgent(lat, lon float64) *Entity {
 	return d.FindOrCreateAgentNamed(lat, lon, areaName)
 }
 
-// FindOrCreateAgentNamed finds agent by name or creates one
+// FindOrCreateAgentNamed finds agent by location (within 1km) or creates one
 func (d *DB) FindOrCreateAgentNamed(lat, lon float64, name string) *Entity {
-	// Check if agent with this name exists
-	for _, a := range d.ListAgents() {
-		if a.Name == name {
-			return a
-		}
+	// Check if agent already exists within 1km - prevents duplicates
+	existing := d.FindAgent(lat, lon, 1000)
+	if existing != nil {
+		return existing
 	}
 
 	agent := d.CreateAgent(lat, lon, AgentRadius, name)
