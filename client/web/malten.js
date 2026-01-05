@@ -929,7 +929,7 @@ function submitCommand() {
         info += 'Timeline: ' + (state.timeline ? state.timeline.length : 0) + ' items\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).length + '\n';
         info += 'Checked in: ' + (state.checkedIn ? state.checkedIn.name : 'no') + '\n';
-        info += 'JS: v252';
+        info += 'JS: v273';
         addToTimeline(info);
         // Also fetch server status
         $.get('/debug').done(function(data) {

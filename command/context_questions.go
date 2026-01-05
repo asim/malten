@@ -1,8 +1,11 @@
 package command
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
+
+	"malten.ai/spatial"
 )
 
 func init() {
@@ -86,26 +89,27 @@ func init() {
 			return false, nil
 		},
 		Handler: func(ctx *Context, args []string) (string, error) {
-			userCtx := GetUserContext(ctx.Session)
-			if userCtx == "" {
+			if ctx.Lat == 0 && ctx.Lon == 0 {
 				return "📍 No location. Enable location to get bus times.", nil
 			}
-			// Extract bus section
-			lines := strings.Split(userCtx, "\n")
-			var busLines []string
-			inBus := false
-			for _, line := range lines {
-				if strings.HasPrefix(line, "🚏") {
-					inBus = true
-					busLines = append(busLines, line)
-				} else if inBus && strings.HasPrefix(line, "   ") {
-					busLines = append(busLines, line)
-				} else if inBus {
-					break
+			// Query spatial DB directly for fresh bus data
+			if busInfo := spatial.GetNearestBusArrivals(ctx.Lat, ctx.Lon); busInfo != nil {
+				var lines []string
+				stopLabel := busInfo.StopName
+				if busInfo.Distance >= 30 {
+					stopLabel = fmt.Sprintf("%s (%dm)", busInfo.StopName, busInfo.Distance)
 				}
-			}
-			if len(busLines) > 0 {
-				return strings.Join(busLines, "\n"), nil
+				if busInfo.IsStale {
+					lines = append(lines, fmt.Sprintf("🚏 %s ⏳", stopLabel))
+				} else if busInfo.Distance < 30 {
+					lines = append(lines, fmt.Sprintf("🚏 At %s", busInfo.StopName))
+				} else {
+					lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
+				}
+				for _, arr := range busInfo.Arrivals {
+					lines = append(lines, "   "+arr)
+				}
+				return strings.Join(lines, "\n"), nil
 			}
 			return "No bus times available nearby", nil
 		},
