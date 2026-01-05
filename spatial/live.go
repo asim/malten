@@ -1113,8 +1113,16 @@ func fetchBreakingNews() *Entity {
 	}
 }
 
-// getNearestStopCached returns bus arrivals from cache only, never blocks on TfL
-func getNearestStopCached(lat, lon float64) string {
+// BusArrivalInfo contains structured bus arrival data
+type BusArrivalInfo struct {
+	StopName string
+	Distance int // meters
+	Arrivals []string // formatted arrival strings
+	IsStale  bool
+}
+
+// GetNearestBusArrivals returns structured bus arrival data from cache
+func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 	db := Get()
 	
 	// Query quadtree for arrivals - allow stale data up to 10 minutes past expiry
@@ -1130,21 +1138,9 @@ func getNearestStopCached(lat, lon float64) string {
 		}
 		
 		isStale := arr.ExpiresAt != nil && time.Now().After(*arr.ExpiresAt)
+		dist := int(haversine(lat, lon, arr.Lat, arr.Lon) * 1000)
 		
-		var lines []string
-		dist := haversine(lat, lon, arr.Lat, arr.Lon) * 1000
-		stopLabel := stopName
-		if dist >= 30 {
-			stopLabel = fmt.Sprintf("%s (%.0fm)", stopName, dist)
-		}
-		if isStale {
-			lines = append(lines, fmt.Sprintf("🚏 %s ⏳", stopLabel))
-		} else if dist < 30 {
-			lines = append(lines, fmt.Sprintf("🚏 At %s", stopName))
-		} else {
-			lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
-		}
-		
+		var arrivalStrings []string
 		for i, a := range arrData {
 			if i >= 3 {
 				break
@@ -1154,15 +1150,47 @@ func getNearestStopCached(lat, lon float64) string {
 				dest, _ := amap["destination"].(string)
 				mins, _ := amap["minutes"].(float64)
 				if mins <= 1 {
-					lines = append(lines, fmt.Sprintf("   %s → %s arriving now", line, shortDest(dest)))
+					arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s arriving now", line, shortDest(dest)))
 				} else {
-					lines = append(lines, fmt.Sprintf("   %s → %s in %.0fm", line, shortDest(dest), mins))
+					arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s in %.0fm", line, shortDest(dest), mins))
 				}
 			}
 		}
 		
-		return strings.Join(lines, "\n")
+		return &BusArrivalInfo{
+			StopName: stopName,
+			Distance: dist,
+			Arrivals: arrivalStrings,
+			IsStale:  isStale,
+		}
 	}
 	
-	return ""
+	return nil
+}
+
+// getNearestStopCached returns bus arrivals from cache as formatted string
+func getNearestStopCached(lat, lon float64) string {
+	info := GetNearestBusArrivals(lat, lon)
+	if info == nil {
+		return ""
+	}
+	
+	var lines []string
+	stopLabel := info.StopName
+	if info.Distance >= 30 {
+		stopLabel = fmt.Sprintf("%s (%dm)", info.StopName, info.Distance)
+	}
+	if info.IsStale {
+		lines = append(lines, fmt.Sprintf("🚏 %s ⏳", stopLabel))
+	} else if info.Distance < 30 {
+		lines = append(lines, fmt.Sprintf("🚏 At %s", info.StopName))
+	} else {
+		lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
+	}
+	
+	for _, arr := range info.Arrivals {
+		lines = append(lines, "   "+arr)
+	}
+	
+	return strings.Join(lines, "\n")
 }

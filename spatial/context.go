@@ -200,8 +200,29 @@ func GetContextData(lat, lon float64) *ContextData {
 
 	// Bus arrivals - only use cached data, never block on TfL
 	t2 := time.Now()
-	if busInfo := getNearestStopCached(lat, lon); busInfo != "" {
-		htmlParts = append(htmlParts, busInfo)
+	if busInfo := GetNearestBusArrivals(lat, lon); busInfo != nil {
+		ctx.Bus = &BusInfo{
+			StopName: busInfo.StopName,
+			Distance: busInfo.Distance,
+			Arrivals: busInfo.Arrivals,
+		}
+		// Format for HTML
+		var lines []string
+		stopLabel := busInfo.StopName
+		if busInfo.Distance >= 30 {
+			stopLabel = fmt.Sprintf("%s (%dm)", busInfo.StopName, busInfo.Distance)
+		}
+		if busInfo.IsStale {
+			lines = append(lines, fmt.Sprintf("🚏 %s ⏳", stopLabel))
+		} else if busInfo.Distance < 30 {
+			lines = append(lines, fmt.Sprintf("🚏 At %s", busInfo.StopName))
+		} else {
+			lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
+		}
+		for _, arr := range busInfo.Arrivals {
+			lines = append(lines, "   "+arr)
+		}
+		htmlParts = append(htmlParts, strings.Join(lines, "\n"))
 	}
 	log.Printf("[context] bus arrivals: %v", time.Since(t2))
 
