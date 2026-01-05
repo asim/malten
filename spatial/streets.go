@@ -123,8 +123,12 @@ func IndexStreetsAroundAgent(agent *Entity, maxRoutes int) int {
 	existingStreets := db.Query(agent.Lat, agent.Lon, radius, EntityStreet, 200)
 	existingRoutes := make(map[string]bool)
 	for _, s := range existingStreets {
-		toName, _ := s.Data["to_name"].(string)
-		existingRoutes[toName] = true
+		if streetData := s.GetStreetData(); streetData != nil {
+			existingRoutes[streetData.ToName] = true
+		} else if m, ok := s.Data.(map[string]interface{}); ok {
+			toName, _ := m["to_name"].(string)
+			existingRoutes[toName] = true
+		}
 	}
 
 	var count int
@@ -167,15 +171,10 @@ func IndexStreetsAroundAgent(agent *Entity, maxRoutes int) int {
 			Name: street.Name,
 			Lat:  midLat,
 			Lon:  midLon,
-			Data: map[string]interface{}{
-				"points":   street.PointsToInterface(),
-				"length":   street.Length,
-				"agent_id": agent.ID,
-				"from_lat": agent.Lat,
-				"from_lon": agent.Lon,
-				"to_lat":   place.Lat,
-				"to_lon":   place.Lon,
-				"to_name":  place.Name,
+			Data: &StreetData{
+				Points: street.Points,
+				Length: street.Length,
+				ToName: place.Name,
 			},
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),

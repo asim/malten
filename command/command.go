@@ -37,6 +37,12 @@ type Command struct {
 // Registry holds all registered commands
 var Registry = make(map[string]*Command)
 
+// Bus notification callbacks - set by main.go to avoid import cycle
+var (
+	GetBusNotifyCallback func(sessionID string) bool
+	SetBusNotifyCallback func(sessionID string, enabled bool)
+)
+
 // Register adds a command to the registry
 func Register(cmd *Command) {
 	Registry[cmd.Name] = cmd

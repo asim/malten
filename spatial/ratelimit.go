@@ -18,6 +18,15 @@ var (
 		lastCall:    make(map[string]time.Time),
 		minInterval: 2 * time.Second,
 	}
+	
+	// Per-API minimum intervals (some APIs need longer)
+	apiMinIntervals = map[string]time.Duration{
+		"osm":      5 * time.Second,  // Overpass API is strict
+		"osrm":     2 * time.Second,
+		"tfl":      2 * time.Second,
+		"weather":  2 * time.Second,
+		"location": 1 * time.Second,  // Nominatim
+	}
 )
 
 // LLM rate limiter (separate, longer interval for Fanar)

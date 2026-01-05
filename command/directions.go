@@ -46,8 +46,8 @@ func Directions(destination string, fromLat, fromLon float64) (string, error) {
 		arrivals := db.Query(fromLat, fromLon, 1000, spatial.EntityArrival, 1)
 		if len(arrivals) > 0 {
 			destLat, destLon = arrivals[0].Lat, arrivals[0].Lon
-			if name, ok := arrivals[0].Data["stop_name"].(string); ok {
-				destName = name
+			if arrData := arrivals[0].GetArrivalData(); arrData != nil {
+				destName = arrData.StopName
 			} else {
 				destName = "bus stop"
 			}

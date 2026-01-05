@@ -118,10 +118,8 @@ func createAgent(w http.ResponseWriter, r *http.Request) {
 	db := spatial.Get()
 	agent := db.FindOrCreateAgent(lat, lon)
 	
-	if prompt != "" {
-		agent.Data["prompt"] = prompt
-		db.Insert(agent)
-	}
+	// Note: prompt not stored in typed AgentEntityData - stored elsewhere if needed
+	_ = prompt
 	
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(agentToJSON(agent))
@@ -167,25 +165,29 @@ func instructAgent(w http.ResponseWriter, r *http.Request, id string) {
 		}
 	}
 	
+	agentData := agent.GetAgentData()
+	if agentData == nil {
+		agentData = &spatial.AgentEntityData{}
+	}
+	
 	switch action {
 	case "refresh":
-		agent.Data["status"] = "refreshing"
+		agentData.Status = "refreshing"
 	case "move":
 		if lat != 0 || lon != 0 {
 			agent.Lat = lat
 			agent.Lon = lon
 		}
 	case "pause":
-		agent.Data["status"] = "paused"
+		agentData.Status = "paused"
 	case "resume":
-		agent.Data["status"] = "active"
+		agentData.Status = "active"
 	}
 	
-	if prompt != "" {
-		agent.Data["prompt"] = prompt
-		agent.Data["objective"] = prompt
-	}
+	// Note: prompt not stored in AgentEntityData
+	_ = prompt
 	
+	agent.Data = agentData
 	db.Insert(agent)
 	json.NewEncoder(w).Encode(agentToJSON(agent))
 }
@@ -216,24 +218,12 @@ func agentToJSON(a *spatial.Entity) map[string]interface{} {
 		"updatedAt": a.UpdatedAt,
 	}
 	
-	if a.Data != nil {
-		if v, ok := a.Data["status"]; ok {
-			result["status"] = v
-		}
-		if v, ok := a.Data["prompt"]; ok {
-			result["prompt"] = v
-		}
-		if v, ok := a.Data["objective"]; ok {
-			result["objective"] = v
-		}
-		if v, ok := a.Data["radius"]; ok {
-			result["radius"] = v
-		}
-		if v, ok := a.Data["poi_count"]; ok {
-			result["poiCount"] = v
-		}
-		if v, ok := a.Data["last_index"]; ok {
-			result["lastIndex"] = v
+	if agentData := a.GetAgentData(); agentData != nil {
+		result["status"] = agentData.Status
+		result["radius"] = agentData.Radius
+		result["poiCount"] = agentData.POICount
+		if agentData.LastIndex != nil {
+			result["lastIndex"] = agentData.LastIndex.Format("2006-01-02T15:04:05Z")
 		}
 	}
 	

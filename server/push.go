@@ -32,6 +32,7 @@ type PushUser struct {
 	LastPush     time.Time         `json:"last_push"`
 	Timezone     *time.Location    `json:"-"` // Not persisted, recalculated from lon
 	PushHistory  []PushHistoryItem `json:"push_history,omitempty"` // Recent push notifications
+	BusNotify    bool              `json:"bus_notify"`              // Whether to send bus push notifications (default: false)
 }
 
 // PushHistoryItem represents a sent push notification
@@ -316,14 +317,15 @@ func (pm *PushManager) buildNotification(user *PushUser) *PushNotification {
 	if buildNotificationCallback == nil {
 		return nil
 	}
-	return buildNotificationCallback(user.Lat, user.Lon)
+	return buildNotificationCallback(user.Lat, user.Lon, user.BusNotify)
 }
 
 // Callback for building notifications (set by main.go to avoid import cycle)
-var buildNotificationCallback func(lat, lon float64) *PushNotification
+// Third param is whether bus notifications are enabled for this user
+var buildNotificationCallback func(lat, lon float64, busNotify bool) *PushNotification
 
 // SetNotificationBuilder sets the callback for building notifications
-func SetNotificationBuilder(cb func(lat, lon float64) *PushNotification) {
+func SetNotificationBuilder(cb func(lat, lon float64, busNotify bool) *PushNotification) {
 	buildNotificationCallback = cb
 }
 
@@ -423,6 +425,37 @@ func (pm *PushManager) ClearPushHistory(sessionID string) {
 	if user, exists := pm.users[sessionID]; exists {
 		user.PushHistory = nil
 	}
+}
+
+// SetBusNotify sets bus notification preference for a session
+func (pm *PushManager) SetBusNotify(sessionID string, enabled bool) {
+	pm.mu.Lock()
+	
+	user, exists := pm.users[sessionID]
+	if !exists {
+		// Create a user entry even without push subscription
+		// This allows tracking preferences before they enable notifications
+		user = &PushUser{
+			SessionID: sessionID,
+		}
+		pm.users[sessionID] = user
+	}
+	
+	user.BusNotify = enabled
+	pm.mu.Unlock() // Release lock before save (save acquires its own lock)
+	
+	pm.save()
+	log.Printf("[push] Bus notifications %s for session %s", map[bool]string{true: "enabled", false: "disabled"}[enabled], sessionID[:8])
+}
+
+// GetBusNotify gets bus notification preference for a session
+func (pm *PushManager) GetBusNotify(sessionID string) bool {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	if user, exists := pm.users[sessionID]; exists {
+		return user.BusNotify
+	}
+	return false // Default: bus notifications off
 }
 
 // Scheduled notification types

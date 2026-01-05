@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,6 +16,13 @@ import (
 	"malten.ai/command"
 	"malten.ai/spatial"
 )
+
+// generateCommandID creates a unique command ID for async tracking
+func generateCommandID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return "cmd_" + hex.EncodeToString(b)
+}
 
 var (
 	defaultStream = "~"
@@ -96,7 +105,47 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Try command dispatch (handles /commands and natural language)
+	// Check for async mode
+	asyncMode := r.Form.Get("async") == "true"
+	
+	if asyncMode {
+		// Async mode: return immediately, push result via WebSocket
+		cmdID := generateCommandID()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"id":     cmdID,
+			"status": "queued",
+		})
+		
+		// Process command in background
+		go func() {
+			if result, handled := command.Dispatch(ctx); handled {
+				if result != "" {
+					// Push result with command ID
+					Default.Events <- NewCommandResult(cmdID, result, stream, "@"+token)
+				}
+				// Push any context change messages
+				for _, msg := range ctx.PushMessages {
+					Default.Events <- NewChannelMessage(msg, stream, "@"+token)
+				}
+			} else {
+				// AI handling
+				handleAI(input, stream, token)
+			}
+			// Handle location-based prompts
+			if locUpdate != nil {
+				if locUpdate.ShouldPromptCheckIn {
+					sendCheckInPrompt(token, stream, ctx.Lat, ctx.Lon)
+				}
+				if locUpdate.ArrivedAt != "" {
+					sendArrivalPrompt(token, stream, locUpdate.ArrivedAt, ctx.Lat, ctx.Lon)
+				}
+			}
+		}()
+		return
+	}
+	
+	// Sync mode (default): wait for result
 	if result, handled := command.Dispatch(ctx); handled {
 		if result != "" {
 			w.Write([]byte(result))

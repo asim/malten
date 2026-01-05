@@ -14,6 +14,9 @@ var mapHTML []byte
 
 func serveMapHTML(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Write(mapHTML)
 }
 
@@ -107,11 +110,15 @@ func MapHandler(w http.ResponseWriter, r *http.Request) {
 	agents := db.ListAgents()
 	mapAgents := make([]MapAgent, 0, len(agents))
 	for _, a := range agents {
-		status, _ := a.Data["status"].(string)
-		poiCount, _ := a.Data["poi_count"].(float64)
-		agentRadius, _ := a.Data["radius"].(float64)
-		if agentRadius == 0 {
-			agentRadius = 5000
+		var status string
+		var poiCount int
+		agentRadius := 5000.0
+		if agentData := a.GetAgentData(); agentData != nil {
+			status = agentData.Status
+			poiCount = agentData.POICount
+			if agentData.Radius > 0 {
+				agentRadius = agentData.Radius
+			}
 		}
 		mapAgents = append(mapAgents, MapAgent{
 			ID:       a.ID,
@@ -120,7 +127,7 @@ func MapHandler(w http.ResponseWriter, r *http.Request) {
 			Lon:      a.Lon,
 			Radius:   agentRadius,
 			Status:   status,
-			POICount: int(poiCount),
+			POICount: poiCount,
 		})
 	}
 
@@ -128,9 +135,12 @@ func MapHandler(w http.ResponseWriter, r *http.Request) {
 	places := db.Query(centerLat, centerLon, radius, spatial.EntityPlace, 5000)
 	mapPlaces := make([]MapPlace, 0, len(places))
 	for _, p := range places {
-		category, _ := p.Data["category"].(string)
 		if p.Name == "" {
 			continue // Skip unnamed places
+		}
+		var category string
+		if placeData := p.GetPlaceData(); placeData != nil {
+			category = placeData.Category
 		}
 		mapPlaces = append(mapPlaces, MapPlace{
 			ID:       p.ID,
@@ -145,13 +155,15 @@ func MapHandler(w http.ResponseWriter, r *http.Request) {
 	weatherEntities := db.Query(centerLat, centerLon, radius, spatial.EntityWeather, 100)
 	mapWeather := make([]MapWeather, 0, len(weatherEntities))
 	for _, w := range weatherEntities {
-		temp, _ := w.Data["temp_c"].(float64)
-		condition, _ := w.Data["condition"].(string)
+		var temp float64
+		if wd := w.GetWeatherData(); wd != nil {
+			temp = wd.TempC
+		}
 		mapWeather = append(mapWeather, MapWeather{
 			Lat:       w.Lat,
 			Lon:       w.Lon,
 			Temp:      temp,
-			Condition: condition,
+			Condition: w.Name, // Use Name which contains formatted condition
 		})
 	}
 
@@ -159,16 +171,24 @@ func MapHandler(w http.ResponseWriter, r *http.Request) {
 	streetEntities := db.Query(centerLat, centerLon, radius, spatial.EntityStreet, 500)
 	mapStreets := make([]MapStreet, 0, len(streetEntities))
 	for _, s := range streetEntities {
-		points, _ := s.Data["points"].([]interface{})
-		length, _ := s.Data["length"].(float64)
+		var convertedPoints [][]float64
+		var length float64
 		
-		// Convert points from []interface{} to [][]float64
-		convertedPoints := make([][]float64, 0, len(points))
-		for _, p := range points {
-			if pt, ok := p.([]interface{}); ok && len(pt) >= 2 {
-				lon, _ := pt[0].(float64)
-				lat, _ := pt[1].(float64)
-				convertedPoints = append(convertedPoints, []float64{lon, lat})
+		if sd := s.GetStreetData(); sd != nil {
+			convertedPoints = sd.Points
+			length = sd.Length
+		} else if m, ok := s.Data.(map[string]interface{}); ok {
+			// Legacy fallback
+			length, _ = m["length"].(float64)
+			if points, ok := m["points"].([]interface{}); ok {
+				convertedPoints = make([][]float64, 0, len(points))
+				for _, p := range points {
+					if pt, ok := p.([]interface{}); ok && len(pt) >= 2 {
+						lon, _ := pt[0].(float64)
+						lat, _ := pt[1].(float64)
+						convertedPoints = append(convertedPoints, []float64{lon, lat})
+					}
+				}
 			}
 		}
 		

@@ -67,13 +67,10 @@ func (d *DB) CreateAgent(lat, lon, radius float64, name string) *Entity {
 		Name: name,
 		Lat:  lat,
 		Lon:  lon,
-		Data: map[string]interface{}{
-			"radius":      radius,
-			"status":      "active",
-			"prompt":      DefaultAgentPrompt,
-			"poi_count":   0,
-			"last_index":  nil,
-			"last_live":   nil,
+		Data: &AgentEntityData{
+			Radius:   radius,
+			Status:   "active",
+			POICount: 0,
 		},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -83,12 +80,29 @@ func (d *DB) CreateAgent(lat, lon, radius float64, name string) *Entity {
 }
 
 // FindOrCreateAgent finds or creates an agent for a location
+// Uses cached name or generic name to avoid blocking on geocoding
 func (d *DB) FindOrCreateAgent(lat, lon float64) *Entity {
-	areaName := ReverseGeocode(lat, lon)
-	if areaName == "" {
-		areaName = fmt.Sprintf("Area %.2f,%.2f", lat, lon)
+	// Check cache first - avoid any external calls
+	existing := d.FindAgent(lat, lon, 1000)
+	if existing != nil {
+		return existing
 	}
-	return d.FindOrCreateAgentNamed(lat, lon, areaName)
+	
+	// Use generic name immediately - geocode in background
+	areaName := fmt.Sprintf("Area %.2f,%.2f", lat, lon)
+	agent := d.FindOrCreateAgentNamed(lat, lon, areaName)
+	
+	// Update name asynchronously after geocoding
+	go func() {
+		if name := ReverseGeocode(lat, lon); name != "" && name != areaName {
+			agent.Name = name
+			agent.UpdatedAt = time.Now()
+			d.Insert(agent)
+			log.Printf("[agent] Renamed %s to %s", areaName, name)
+		}
+	}()
+	
+	return agent
 }
 
 // FindOrCreateAgentNamed finds agent by location (within 1km) or creates one
@@ -97,6 +111,23 @@ func (d *DB) FindOrCreateAgentNamed(lat, lon float64, name string) *Entity {
 	existing := d.FindAgent(lat, lon, 1000)
 	if existing != nil {
 		return existing
+	}
+	
+	// Also check by base name (without region suffix like ", Greater London")
+	// This catches cases where Nominatim returns different names for similar locations
+	baseName := name
+	if idx := strings.Index(name, ", "); idx > 0 {
+		baseName = name[:idx]
+	}
+	for _, agent := range d.ListAgents() {
+		agentBase := agent.Name
+		if idx := strings.Index(agent.Name, ", "); idx > 0 {
+			agentBase = agent.Name[:idx]
+		}
+		if agentBase == baseName {
+			log.Printf("[agent] Not creating %s - similar agent %s exists", name, agent.Name)
+			return agent
+		}
 	}
 
 	agent := d.CreateAgent(lat, lon, AgentRadius, name)
@@ -172,6 +203,15 @@ func runAgentCycle(agent *Entity) {
 	} else {
 		updateLiveData(agent)
 	}
+	
+	// Exploration mode: agent moves and maps streets (run async to not block)
+	if ExplorationMode {
+		go func() {
+			if ExploreStep(agent) {
+				// Step was taken
+			}
+		}()
+	}
 }
 
 func updateLiveData(agent *Entity) {
@@ -184,10 +224,10 @@ func updateLiveData(agent *Entity) {
 	// Weather - fetchWeather inserts under lock
 	if weather := fetchWeather(agent.Lat, agent.Lon); weather != nil {
 		// Check for notable weather
-		if weather.Data != nil {
-			if rain, ok := weather.Data["rain_forecast"].(string); ok && rain != "" {
+		if wd := weather.GetWeatherData(); wd != nil {
+			if wd.RainForecast != "" {
 				AddWeatherObservation(agent.ID, agent.Name,
-					weather.Data["temp_c"].(float64), weather.Name, rain)
+					wd.TempC, weather.Name, wd.RainForecast)
 			}
 		}
 	}
@@ -224,7 +264,11 @@ func updateLiveData(agent *Entity) {
 	}
 	
 	// Update agent timestamp
-	agent.Data["last_live"] = time.Now().Format(time.RFC3339)
+	if agentData := agent.GetAgentData(); agentData != nil {
+		now := time.Now()
+		agentData.LastLive = &now
+		agent.Data = agentData
+	}
 	db.Insert(agent)
 
 	// Check if awareness processing is due
@@ -252,12 +296,18 @@ func IndexAgent(agent *Entity) {
 
 	log.Printf("[spatial] Indexing %s", agent.Name)
 
-	radius, _ := agent.Data["radius"].(float64)
-	if radius == 0 {
-		radius = AgentRadius
+	agentData := agent.GetAgentData()
+	radius := AgentRadius
+	if agentData != nil && agentData.Radius > 0 {
+		radius = agentData.Radius
 	}
 
-	agent.Data["status"] = "indexing"
+	// Set status to indexing
+	if agentData == nil {
+		agentData = &AgentEntityData{Radius: radius}
+	}
+	agentData.Status = "indexing"
+	agent.Data = agentData
 	Get().Insert(agent)
 
 	categories := []string{
@@ -293,9 +343,16 @@ func IndexAgent(agent *Entity) {
 
 	log.Printf("[spatial] %s indexed %d POIs", agent.Name, totalCount)
 
-	agent.Data["status"] = "active"
-	agent.Data["poi_count"] = totalCount
-	agent.Data["last_index"] = time.Now().Format(time.RFC3339)
+	// Update agent with final stats
+	agentData = agent.GetAgentData()
+	if agentData == nil {
+		agentData = &AgentEntityData{Radius: radius}
+	}
+	agentData.Status = "active"
+	agentData.POICount = totalCount
+	now := time.Now()
+	agentData.LastIndex = &now
+	agent.Data = agentData
 	Get().Insert(agent)
 }
 
@@ -383,13 +440,10 @@ out center 50;
 // ReverseGeocode gets area name from coordinates
 // Returns "Suburb, City" or "Town, County" format for clarity
 func ReverseGeocode(lat, lon float64) string {
-	client := &http.Client{Timeout: 5 * time.Second}
 	url := fmt.Sprintf("%s/reverse?lat=%f&lon=%f&format=json&zoom=14", NominatimURL, lat, lon)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
-
-	resp, err := client.Do(req)
+	resp, err := LocationGet(url)
 	if err != nil {
+		log.Printf("[geocode] reverse geocode failed: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()

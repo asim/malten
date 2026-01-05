@@ -46,6 +46,7 @@ var ws = null;
 var currentStream = null;
 var reconnectTimer = null;
 var pendingMessages = {};
+var pendingAsyncCommands = {};
 var isAcquiringLocation = false;
 var lastAcquiringShown = 0;
 
@@ -675,7 +676,7 @@ function connectWebSocket() {
         var ev = JSON.parse(event.data);
         if (ev.Stream !== currentStream) return;
         
-        if (ev.Type === "message") {
+        if (ev.Type === "message" || ev.Type === "command_result") {
             // Dedupe
             if (ev.Id in seen) return;
             seen[ev.Id] = ev;
@@ -683,6 +684,18 @@ function connectWebSocket() {
             // Skip if it's our own message (already shown)
             if (pendingMessages[ev.Text]) {
                 delete pendingMessages[ev.Text];
+                return;
+            }
+            
+            // Handle async command results
+            if (ev.Type === "command_result" && ev.CommandID) {
+                // Check if we're waiting for this command
+                if (pendingAsyncCommands && pendingAsyncCommands[ev.CommandID]) {
+                    delete pendingAsyncCommands[ev.CommandID];
+                }
+                hideLoading();
+                displayResponse(ev.Text);
+                clipMessages();
                 return;
             }
             
@@ -1040,6 +1053,34 @@ function submitCommand() {
 
     form.elements["prompt"].value = '';
     return false;
+}
+
+// Send a command asynchronously (result comes via WebSocket)
+function sendAsyncCommand(prompt, callback) {
+    var data = {
+        prompt: prompt,
+        stream: getStream(),
+        async: 'true'
+    };
+    if (state.hasLocation()) {
+        data.lat = state.lat;
+        data.lon = state.lon;
+    }
+    
+    $.post(commandUrl, data).done(function(response) {
+        if (response && response.id) {
+            // Track pending command
+            pendingAsyncCommands[response.id] = {
+                prompt: prompt,
+                callback: callback,
+                time: Date.now()
+            };
+            debugLog('Async command queued:', response.id);
+        }
+    }).fail(function(xhr, status, err) {
+        debugLog('Async command failed', status, err);
+        if (callback) callback(null, err);
+    });
 }
 
 // Location functions

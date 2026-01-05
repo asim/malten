@@ -90,8 +90,8 @@ func GetContextData(lat, lon float64) *ContextData {
 		// Count POIs in agent's area
 		poiCount := len(db.Query(agent.Lat, agent.Lon, AgentRadius, EntityPlace, 500))
 		status := "active"
-		if s, ok := agent.Data["status"].(string); ok {
-			status = s
+		if agentData := agent.GetAgentData(); agentData != nil && agentData.Status != "" {
+			status = agentData.Status
 		}
 		ctx.Agent = &AgentInfo{
 			ID:       agent.ID,
@@ -137,30 +137,31 @@ func GetContextData(lat, lon float64) *ContextData {
 		w := weather[0]
 		ctx.Weather = &WeatherInfo{}
 		
-		// Get temp and build condition string (avoid "-0" display)
-		var tempInt int
-		if temp, ok := w.Data["temp_c"].(float64); ok {
-			tempInt = int(math.Round(temp))
-			if tempInt == 0 {
-				tempInt = 0 // Ensure no -0
+		// Get typed weather data or fallback to legacy
+		var tempC float64
+		var weatherCode int
+		if wd := w.GetWeatherData(); wd != nil {
+			tempC = wd.TempC
+			weatherCode = wd.WeatherCode
+			if wd.RainForecast != "" {
+				ctx.Weather.RainWarning = wd.RainForecast
+				rainForecast = wd.RainForecast
 			}
-			ctx.Weather.Temp = tempInt
 		}
 		
-		// Build condition from weather code + temp
-		icon := ""
-		if code, ok := w.Data["weather_code"].(float64); ok {
-			icon = weatherIcon(int(code))
+		// Get temp and build condition string (avoid "-0" display)
+		tempInt := int(math.Round(tempC))
+		if tempInt == 0 {
+			tempInt = 0 // Ensure no -0
 		}
+		ctx.Weather.Temp = tempInt
+		
+		// Build condition from weather code + temp
+		icon := weatherIcon(weatherCode)
 		if icon == "" {
 			icon = "🌡️"
 		}
 		ctx.Weather.Condition = fmt.Sprintf("%s %d°C", icon, tempInt)
-		
-		if rf, ok := w.Data["rain_forecast"].(string); ok && rf != "" {
-			ctx.Weather.RainWarning = rf
-			rainForecast = rf
-		}
 		headerParts = append(headerParts, ctx.Weather.Condition)
 	}
 
@@ -252,28 +253,38 @@ func GetContextData(lat, lon float64) *ContextData {
 					Lat:  p.Lat,
 					Lon:  p.Lon,
 				}
-				if tags, ok := p.Data["tags"].(map[string]interface{}); ok {
+				// Try typed data first, then legacy map
+				var tags map[string]string
+				if placeData := p.GetPlaceData(); placeData != nil {
+					tags = placeData.Tags
+				} else if m, ok := p.Data.(map[string]interface{}); ok {
+					if tagsRaw, ok := m["tags"].(map[string]interface{}); ok {
+						tags = make(map[string]string)
+						for k, v := range tagsRaw {
+							if s, ok := v.(string); ok {
+								tags[k] = s
+							}
+						}
+					}
+				}
+				if len(tags) > 0 {
 					var addr string
-					if num, ok := tags["addr:housenumber"].(string); ok {
+					if num := tags["addr:housenumber"]; num != "" {
 						addr = num
 					}
-					if street, ok := tags["addr:street"].(string); ok {
+					if street := tags["addr:street"]; street != "" {
 						if addr != "" {
 							addr += " "
 						}
 						addr += street
 					}
 					place.Address = addr
-					if pc, ok := tags["addr:postcode"].(string); ok {
-						place.Postcode = pc
-					}
-					if hours, ok := tags["opening_hours"].(string); ok {
-						place.Hours = hours
-					}
-					if phone, ok := tags["phone"].(string); ok {
+					place.Postcode = tags["addr:postcode"]
+					place.Hours = tags["opening_hours"]
+					if phone := tags["phone"]; phone != "" {
 						place.Phone = phone
-					} else if phone, ok := tags["contact:phone"].(string); ok {
-						place.Phone = phone
+					} else {
+						place.Phone = tags["contact:phone"]
 					}
 				}
 				categoryPlaces = append(categoryPlaces, place)

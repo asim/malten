@@ -61,13 +61,14 @@ type Stream struct {
 }
 
 type Message struct {
-	Id       string
-	Text     string
-	Type     string
-	Created  int64 `json:",string"`
-	Stream   string
-	Channel  string // "" = public, "@session" = addressed
-	Metadata *Metadata
+	Id        string
+	Text      string
+	Type      string
+	Created   int64 `json:",string"`
+	Stream    string
+	Channel   string // "" = public, "@session" = addressed
+	CommandID string `json:",omitempty"` // For async command results
+	Metadata  *Metadata
 }
 
 type Observer struct {
@@ -149,6 +150,19 @@ func NewChannelMessage(text, stream, channel string) *Message {
 		Created: time.Now().UnixNano(),
 		Stream:  stream,
 		Channel: channel,
+	}
+}
+
+// NewCommandResult creates a message for an async command result
+func NewCommandResult(cmdID, text, stream, channel string) *Message {
+	return &Message{
+		Id:        uuid.New().String(),
+		Text:      text,
+		Type:      "command_result",
+		Created:   time.Now().UnixNano(),
+		Stream:    stream,
+		Channel:   channel,
+		CommandID: cmdID,
 	}
 }
 

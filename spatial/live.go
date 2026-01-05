@@ -96,10 +96,10 @@ func fetchWeather(lat, lon float64) *Entity {
 		Name: name,
 		Lat:  lat,
 		Lon:  lon,
-		Data: map[string]interface{}{
-			"temp_c":        data.Current.Temperature,
-			"weather_code":  data.Current.WeatherCode,
-			"rain_forecast": rainForecast,
+		Data: &WeatherData{
+			TempC:        data.Current.Temperature,
+			WeatherCode:  data.Current.WeatherCode,
+			RainForecast: rainForecast,
 		},
 		ExpiresAt: &expiry,
 	}
@@ -110,30 +110,17 @@ func fetchWeather(lat, lon float64) *Entity {
 
 // computePrayerDisplay calculates current/next prayer from stored timings at query time
 func computePrayerDisplay(e *Entity) string {
-	if e == nil || e.Data == nil {
+	if e == nil {
 		return ""
 	}
 	
-	timingsRaw, ok := e.Data["timings"]
-	if !ok {
+	prayerData := e.GetPrayerData()
+	if prayerData == nil || len(prayerData.Timings) == 0 {
 		// No timings stored - return cached name (may be stale)
 		return e.Name
 	}
 	
-	// Convert timings to map[string]string
-	timings := make(map[string]string)
-	switch t := timingsRaw.(type) {
-	case map[string]interface{}:
-		for k, v := range t {
-			if s, ok := v.(string); ok {
-				timings[k] = s
-			}
-		}
-	case map[string]string:
-		timings = t
-	default:
-		return e.Name
-	}
+	timings := prayerData.Timings
 	
 	// Prayer times in order (Sunrise is not a prayer but marks end of Fajr)
 	prayers := []string{"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"}
@@ -284,10 +271,10 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 		Name: name,
 		Lat:  lat,
 		Lon:  lon,
-		Data: map[string]interface{}{
-			"timings": data.Data.Timings,
-			"current": current,
-			"next":    next,
+		Data: &PrayerData{
+			Timings: data.Data.Timings,
+			Current: current,
+			Next:    next,
 		},
 		ExpiresAt: &expiry,
 	}
@@ -406,11 +393,11 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 			Name: fmt.Sprintf("%s %s", icon, stop.CommonName),
 			Lat:  stop.Lat,
 			Lon:  stop.Lon,
-			Data: map[string]interface{}{
-				"stop_id":    stop.NaptanID,
-				"stop_name":  stop.CommonName,
-				"stop_type":  stopType,
-				"arrivals":   arrivalsToInterface(arrivals),
+			Data: &ArrivalData{
+				StopID:   stop.NaptanID,
+				StopName: stop.CommonName,
+				StopType: stopType,
+				Arrivals: toBusArrivals(arrivals),
 			},
 			ExpiresAt: &expiry,
 		}
@@ -422,14 +409,28 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	return entities
 }
 
-type busArrival struct {
-	Line        string    `json:"line"`
-	Destination string    `json:"destination"`
-	ArrivalTime time.Time `json:"arrival_time"` // Absolute time bus arrives
+// toBusArrivals converts internal busArrival to typed BusArrival
+func toBusArrivals(arrivals []internalBusArrival) []BusArrival {
+	result := make([]BusArrival, len(arrivals))
+	for i, a := range arrivals {
+		result[i] = BusArrival{
+			Line:        a.Line,
+			Destination: a.Destination,
+			ArrivalTime: a.ArrivalTime,
+		}
+	}
+	return result
+}
+
+// internalBusArrival is used internally during TfL API parsing
+type internalBusArrival struct {
+	Line        string
+	Destination string
+	ArrivalTime time.Time
 }
 
 // MinutesUntil calculates minutes until arrival from now
-func (b busArrival) MinutesUntil() int {
+func (b internalBusArrival) MinutesUntil() int {
 	mins := int(time.Until(b.ArrivalTime).Minutes())
 	if mins < 0 {
 		return 0
@@ -437,21 +438,7 @@ func (b busArrival) MinutesUntil() int {
 	return mins
 }
 
-// arrivalsToInterface converts []busArrival to []interface{} for storage
-// This ensures consistent types whether data comes from JSON or runtime
-func arrivalsToInterface(arrivals []busArrival) []interface{} {
-	result := make([]interface{}, len(arrivals))
-	for i, a := range arrivals {
-		result[i] = map[string]interface{}{
-			"line":         a.Line,
-			"destination":  a.Destination,
-			"arrival_time": a.ArrivalTime.Format(time.RFC3339Nano),
-		}
-	}
-	return result
-}
-
-func fetchStopArrivals(naptanID string) []busArrival {
+func fetchStopArrivals(naptanID string) []internalBusArrival {
 	url := fmt.Sprintf("%s/StopPoint/%s/Arrivals", tflBaseURL, naptanID)
 	
 	resp, err := TfLGet(url)
@@ -475,9 +462,9 @@ func fetchStopArrivals(naptanID string) []busArrival {
 	})
 	
 	now := time.Now()
-	var arrivals []busArrival
+	var arrivals []internalBusArrival
 	for _, d := range data {
-		arrivals = append(arrivals, busArrival{
+		arrivals = append(arrivals, internalBusArrival{
 			Line:        d.LineName,
 			Destination: d.DestinationName,
 			ArrivalTime: now.Add(time.Duration(d.TimeToStation) * time.Second),
@@ -622,10 +609,8 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 	
 	// Find first stop with actual arrivals
 	for _, arr := range arrivals {
-		stopName, _ := arr.Data["stop_name"].(string)
-		arrData, _ := arr.Data["arrivals"].([]interface{})
-		
-		if len(arrData) == 0 {
+		arrData := arr.GetArrivalData()
+		if arrData == nil || len(arrData.Arrivals) == 0 {
 			continue // Skip stops with no arrivals
 		}
 		
@@ -635,64 +620,50 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		// Format arrivals from cached data
 		var lines []string
 		dist := haversine(lat, lon, arr.Lat, arr.Lon) * 1000 // km to m
-		stopLabel := stopName
+		stopLabel := arrData.StopName
 		if dist >= 30 {
-			stopLabel = fmt.Sprintf("%s (%.0fm)", stopName, dist)
+			stopLabel = fmt.Sprintf("%s (%.0fm)", arrData.StopName, dist)
 		}
 		if isStale {
 			lines = append(lines, fmt.Sprintf("🚏 %s ⏳", stopLabel)) // Clock shows data may be stale
 		} else if dist < 30 {
-			lines = append(lines, fmt.Sprintf("🚏 At %s", stopName))
+			lines = append(lines, fmt.Sprintf("🚏 At %s", arrData.StopName))
 		} else {
 			lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
 		}
 		
-		for i, a := range arrData {
+		for i, busArr := range arrData.Arrivals {
 			if i >= 3 {
 				break
 			}
-			if amap, ok := a.(map[string]interface{}); ok {
-				line, _ := amap["line"].(string)
-				dest, _ := amap["destination"].(string)
-				
-				// Calculate minutes from arrival_time (new format) or use minutes (old format)
-				var mins int
-				if arrTimeStr, ok := amap["arrival_time"].(string); ok {
-					if arrTime, err := time.Parse(time.RFC3339Nano, arrTimeStr); err == nil {
-						mins = int(time.Until(arrTime).Minutes())
-						if mins < 0 {
-							continue // Bus already gone
-						}
-					}
-				} else if minsFloat, ok := amap["minutes"].(float64); ok {
-					mins = int(minsFloat)
-				}
-				
-				if mins <= 1 {
-					lines = append(lines, fmt.Sprintf("   %s → %s arriving now", line, shortDest(dest)))
-				} else {
-					lines = append(lines, fmt.Sprintf("   %s → %s in %dm", line, shortDest(dest), mins))
-				}
+			mins := busArr.MinutesUntil()
+			if mins < 0 {
+				continue // Bus already gone
+			}
+			if mins <= 1 {
+				lines = append(lines, fmt.Sprintf("   %s → %s arriving now", busArr.Line, shortDest(busArr.Destination)))
+			} else {
+				lines = append(lines, fmt.Sprintf("   %s → %s in %dm", busArr.Line, shortDest(busArr.Destination), mins))
 			}
 		}
 		
 		// If we used stale data, try to refresh in background
 		if isStale && !hasFresh {
-			go func(stopID string) {
+			go func(stopID, stopName string, stopLat, stopLon float64) {
 				if arrs := fetchStopArrivals(stopID); len(arrs) > 0 {
 					expiry := time.Now().Add(arrivalTTL)
 					db.Insert(&Entity{
-						ID:        GenerateID(EntityArrival, arr.Lat, arr.Lon, stopID),
+						ID:        GenerateID(EntityArrival, stopLat, stopLon, stopID),
 						Type:      EntityArrival,
 						Name:      fmt.Sprintf("🚌 %s", stopName),
-						Lat:       arr.Lat,
-						Lon:       arr.Lon,
-						Data:      map[string]interface{}{"stop_id": stopID, "stop_name": stopName, "arrivals": arrivalsToInterface(arrs)},
+						Lat:       stopLat,
+						Lon:       stopLon,
+						Data:      &ArrivalData{StopID: stopID, StopName: stopName, Arrivals: toBusArrivals(arrs)},
 						ExpiresAt: &expiry,
 					})
 					log.Printf("[arrivals] Background refresh for %s complete", stopName)
 				}
-			}(arr.Data["stop_id"].(string))
+			}(arrData.StopID, arrData.StopName, arr.Lat, arr.Lon)
 		}
 		
 		return strings.Join(lines, "\n")
@@ -756,11 +727,11 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 			Name: fmt.Sprintf("🚌 %s", stop.CommonName),
 			Lat:  stopLat,
 			Lon:  stopLon,
-			Data: map[string]interface{}{
-				"stop_id":    stop.NaptanID,
-				"stop_name":  stop.CommonName,
-				"stop_type":  "NaptanPublicBusCoachTram",
-				"arrivals":   arrivalsToInterface(fetchedArrivals),
+			Data: &ArrivalData{
+				StopID:   stop.NaptanID,
+				StopName: stop.CommonName,
+				StopType: "NaptanPublicBusCoachTram",
+				Arrivals: toBusArrivals(fetchedArrivals),
 			},
 			ExpiresAt: &expiry,
 		}
@@ -934,13 +905,27 @@ out center %d;`, osmTag, radius, lat, lon, osmTag, radius, lat, lon, limit)
 func formatPlaceData(e *Entity) string {
 	parts := []string{e.Name}
 	
-	// Extract from tags
-	if tags, ok := e.Data["tags"].(map[string]interface{}); ok {
+	// Try to get tags from typed data or legacy map
+	var tags map[string]string
+	if placeData := e.GetPlaceData(); placeData != nil {
+		tags = placeData.Tags
+	} else if m, ok := e.Data.(map[string]interface{}); ok {
+		if tagsRaw, ok := m["tags"].(map[string]interface{}); ok {
+			tags = make(map[string]string)
+			for k, v := range tagsRaw {
+				if s, ok := v.(string); ok {
+					tags[k] = s
+				}
+			}
+		}
+	}
+	
+	if len(tags) > 0 {
 		var addr string
-		if num, ok := tags["addr:housenumber"].(string); ok {
+		if num := tags["addr:housenumber"]; num != "" {
 			addr = num
 		}
-		if street, ok := tags["addr:street"].(string); ok {
+		if street := tags["addr:street"]; street != "" {
 			if addr != "" {
 				addr += " "
 			}
@@ -949,15 +934,15 @@ func formatPlaceData(e *Entity) string {
 		if addr != "" {
 			parts = append(parts, addr)
 		}
-		if pc, ok := tags["addr:postcode"].(string); ok {
+		if pc := tags["addr:postcode"]; pc != "" {
 			parts = append(parts, pc)
 		}
-		if hours, ok := tags["opening_hours"].(string); ok {
+		if hours := tags["opening_hours"]; hours != "" {
 			parts = append(parts, "🕒"+hours)
 		}
-		if phone, ok := tags["phone"].(string); ok {
+		if phone := tags["phone"]; phone != "" {
 			parts = append(parts, "📞"+phone)
-		} else if phone, ok := tags["contact:phone"].(string); ok {
+		} else if phone := tags["contact:phone"]; phone != "" {
 			parts = append(parts, "📞"+phone)
 		}
 	}
@@ -1170,11 +1155,8 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 	
 	// Find first stop with actual arrivals
 	for _, arr := range arrivals {
-		stopName, _ := arr.Data["stop_name"].(string)
-		stopID, _ := arr.Data["stop_id"].(string)
-		arrData, _ := arr.Data["arrivals"].([]interface{})
-		
-		if len(arrData) == 0 {
+		arrData := arr.GetArrivalData()
+		if arrData == nil || len(arrData.Arrivals) == 0 {
 			continue
 		}
 		
@@ -1184,41 +1166,27 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 		// Count valid (future) arrivals and collect display strings
 		var arrivalStrings []string
 		validCount := 0
-		for _, a := range arrData {
-			if amap, ok := a.(map[string]interface{}); ok {
-				line, _ := amap["line"].(string)
-				dest, _ := amap["destination"].(string)
-				
-				// Calculate minutes from arrival_time (new format) or use minutes (old format)
-				var mins int
-				if arrTimeStr, ok := amap["arrival_time"].(string); ok {
-					if arrTime, err := time.Parse(time.RFC3339Nano, arrTimeStr); err == nil {
-						mins = int(time.Until(arrTime).Minutes())
-						if mins < 0 {
-							continue // Bus already gone
-						}
-					}
-				} else if minsFloat, ok := amap["minutes"].(float64); ok {
-					// Legacy format - use as-is (will be stale)
-					mins = int(minsFloat)
-				}
-				
-				validCount++
-				if len(arrivalStrings) < 3 {
-					if mins <= 1 {
-						arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s arriving now", line, shortDest(dest)))
-					} else {
-						arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s in %dm", line, shortDest(dest), mins))
-					}
+		for _, busArr := range arrData.Arrivals {
+			mins := busArr.MinutesUntil()
+			if mins < 0 {
+				continue // Bus already gone
+			}
+			
+			validCount++
+			if len(arrivalStrings) < 3 {
+				if mins <= 1 {
+					arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s arriving now", busArr.Line, shortDest(busArr.Destination)))
+				} else {
+					arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s in %dm", busArr.Line, shortDest(busArr.Destination), mins))
 				}
 			}
 		}
 		
 		// If we have few valid arrivals left, trigger background refresh
 		// This ensures we fetch new data before running out completely
-		if validCount <= 1 && stopID != "" {
-			go func(sid, sname string, slat, slon float64) {
-				log.Printf("[bus] Low arrivals for %s (%d left), fetching fresh data", sname, validCount)
+		if validCount <= 1 && arrData.StopID != "" {
+			go func(sid, sname string, slat, slon float64, cnt int) {
+				log.Printf("[bus] Low arrivals for %s (%d left), fetching fresh data", sname, cnt)
 				if arrs := fetchStopArrivals(sid); len(arrs) > 0 {
 					expiry := time.Now().Add(arrivalTTL)
 					db.Insert(&Entity{
@@ -1227,12 +1195,12 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 						Name:      fmt.Sprintf("🚌 %s", sname),
 						Lat:       slat,
 						Lon:       slon,
-						Data:      map[string]interface{}{"stop_id": sid, "stop_name": sname, "arrivals": arrivalsToInterface(arrs)},
+						Data:      &ArrivalData{StopID: sid, StopName: sname, Arrivals: toBusArrivals(arrs)},
 						ExpiresAt: &expiry,
 					})
 					log.Printf("[bus] Refreshed %s with %d arrivals", sname, len(arrs))
 				}
-			}(stopID, stopName, arr.Lat, arr.Lon)
+			}(arrData.StopID, arrData.StopName, arr.Lat, arr.Lon, validCount)
 		}
 		
 		if len(arrivalStrings) == 0 {
@@ -1240,7 +1208,7 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 		}
 		
 		return &BusArrivalInfo{
-			StopName: stopName,
+			StopName: arrData.StopName,
 			Distance: dist,
 			Arrivals: arrivalStrings,
 			IsStale:  isStale,

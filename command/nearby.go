@@ -30,7 +30,7 @@ func Geocode(place string) (float64, float64, error) {
 
 // GeocodeNear geocodes with location bias - prefers results near the given point
 func GeocodeNear(place string, nearLat, nearLon float64) (float64, float64, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Build URL with query params
 	req, _ := http.NewRequest("GET", nominatimURL, nil)
 	q := req.URL.Query()
 	q.Add("q", place)
@@ -44,10 +44,8 @@ func GeocodeNear(place string, nearLat, nearLon float64) (float64, float64, erro
 		q.Add("bounded", "0") // Prefer but don't require results in viewbox
 	}
 	
-	req.URL.RawQuery = q.Encode()
-	req.Header.Set("User-Agent", "Malten/1.0")
-
-	resp, err := client.Do(req)
+	fullURL := nominatimURL + "?" + q.Encode()
+	resp, err := spatial.LocationGet(fullURL)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -705,16 +703,21 @@ func searchByName(name string, lat, lon float64) (string, error) {
 		result.WriteString(fmt.Sprintf("• %s · %s\n", e.Name, mapLink))
 
 		// Add address
-		if tagsData, ok := e.Data["tags"].(map[string]interface{}); ok {
-			tags := make(map[string]string)
-			for k, v := range tagsData {
-				if s, ok := v.(string); ok {
-					tags[k] = s
+		var tags map[string]string
+		if placeData := e.GetPlaceData(); placeData != nil {
+			tags = placeData.Tags
+		} else if m, ok := e.Data.(map[string]interface{}); ok {
+			if tagsData, ok := m["tags"].(map[string]interface{}); ok {
+				tags = make(map[string]string)
+				for k, v := range tagsData {
+					if s, ok := v.(string); ok {
+						tags[k] = s
+					}
 				}
 			}
-			if addr := formatAddress(tags); addr != "" {
-				result.WriteString(fmt.Sprintf("  %s\n", addr))
-			}
+		}
+		if addr := formatAddress(tags); addr != "" {
+			result.WriteString(fmt.Sprintf("  %s\n", addr))
 		}
 		result.WriteString("\n")
 	}
@@ -779,9 +782,8 @@ func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 out center 10;
 `, osmType, radius, lat, lon, osmType, radius, lat, lon)
 
-	client := &http.Client{Timeout: 15 * time.Second}
 	log.Printf("[nearby] Querying OSM for %s around %.4f,%.4f (%.0fm)", osmType, lat, lon, radius)
-	resp, err := client.PostForm(overpassURL, url.Values{"data": {query}})
+	resp, err := spatial.OSMPost(overpassURL, query)
 	if err != nil {
 		log.Printf("[nearby] OSM query failed: %v", err)
 		return "Error searching for places", err
@@ -914,24 +916,26 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 			name = "(unnamed)"
 		}
 
-		// Extract website/phone - try direct (Foursquare) then tags (OSM)
+		// Extract website/phone from typed data or legacy
 		var website, phone string
-		if w, ok := e.Data["website"].(string); ok {
-			website = w
-		}
-		if p, ok := e.Data["phone"].(string); ok {
-			phone = p
-		}
-		
-		// Check OSM tags
 		var tags map[string]string
-		if tagsData, ok := e.Data["tags"].(map[string]interface{}); ok {
-			tags = make(map[string]string)
-			for k, v := range tagsData {
-				if s, ok := v.(string); ok {
-					tags[k] = s
+		if placeData := e.GetPlaceData(); placeData != nil {
+			tags = placeData.Tags
+		} else if m, ok := e.Data.(map[string]interface{}); ok {
+			website, _ = m["website"].(string)
+			phone, _ = m["phone"].(string)
+			if tagsData, ok := m["tags"].(map[string]interface{}); ok {
+				tags = make(map[string]string)
+				for k, v := range tagsData {
+					if s, ok := v.(string); ok {
+						tags[k] = s
+					}
 				}
 			}
+		}
+		
+		// Try to get website/phone from tags if not set directly
+		if len(tags) > 0 {
 			if website == "" {
 				website = tags["website"]
 				if website == "" {
@@ -954,10 +958,14 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 			result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
 		}
 
-		// Address
-		if addr, ok := e.Data["address"].(string); ok && addr != "" {
-			result.WriteString(fmt.Sprintf("  %s\n", addr))
-		} else if tags != nil {
+		// Address - check legacy data first, then tags
+		var address string
+		if m, ok := e.Data.(map[string]interface{}); ok {
+			address, _ = m["address"].(string)
+		}
+		if address != "" {
+			result.WriteString(fmt.Sprintf("  %s\n", address))
+		} else if len(tags) > 0 {
 			if addr := formatAddress(tags); addr != "" {
 				result.WriteString(fmt.Sprintf("  %s\n", addr))
 			}
@@ -1320,53 +1328,56 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 		}
 		return fmt.Sprintf("No %s found nearby", placeName), nil
 	}
-	log.Printf("[place] Found match: %s, Data keys: %v", match.Name, getKeys(match.Data))
+	log.Printf("[place] Found match: %s", match.Name)
 	
 	// Build response with hours
 	var result strings.Builder
 	result.WriteString(fmt.Sprintf("📍 %s\n", match.Name))
 	
-	// Extract data from nested structure (OSM data is in Data["data"]["tags"])
+	// Extract place details from typed data or legacy
 	var hours, phone, addr string
-	if match.Data != nil {
-		// Try direct fields first
-		if h, ok := match.Data["opening_hours"].(string); ok {
-			hours = h
-		}
-		if p, ok := match.Data["phone"].(string); ok {
-			phone = p
-		}
-		if a, ok := match.Data["address"].(string); ok {
-			addr = a
-		}
+	var tags map[string]string
+	if placeData := match.GetPlaceData(); placeData != nil {
+		tags = placeData.Tags
+	} else if m, ok := match.Data.(map[string]interface{}); ok {
+		// Try direct fields first (legacy)
+		hours, _ = m["opening_hours"].(string)
+		phone, _ = m["phone"].(string)
+		addr, _ = m["address"].(string)
 		
-		// Try tags directly (OSM data structure)
-		if tags, ok := match.Data["tags"].(map[string]interface{}); ok {
-			if hours == "" {
-				if h, ok := tags["opening_hours"].(string); ok {
-					hours = h
+		// Try tags (OSM data structure)
+		if tagsRaw, ok := m["tags"].(map[string]interface{}); ok {
+			tags = make(map[string]string)
+			for k, v := range tagsRaw {
+				if s, ok := v.(string); ok {
+					tags[k] = s
 				}
 			}
-			if phone == "" {
-				if p, ok := tags["phone"].(string); ok {
-					phone = p
-				}
+		}
+	}
+	
+	// Fill in from tags if available
+	if len(tags) > 0 {
+		if hours == "" {
+			hours = tags["opening_hours"]
+		}
+		if phone == "" {
+			phone = tags["phone"]
+		}
+		if addr == "" {
+			// Build address from components
+			var parts []string
+			if num := tags["addr:housenumber"]; num != "" {
+				parts = append(parts, num)
 			}
-			if addr == "" {
-				// Build address from components
-				var parts []string
-				if num, ok := tags["addr:housenumber"].(string); ok {
-					parts = append(parts, num)
-				}
-				if street, ok := tags["addr:street"].(string); ok {
-					parts = append(parts, street)
-				}
-				if postcode, ok := tags["addr:postcode"].(string); ok {
-					parts = append(parts, postcode)
-				}
-				if len(parts) > 0 {
-					addr = strings.Join(parts, " ")
-				}
+			if street := tags["addr:street"]; street != "" {
+				parts = append(parts, street)
+			}
+			if postcode := tags["addr:postcode"]; postcode != "" {
+				parts = append(parts, postcode)
+			}
+			if len(parts) > 0 {
+				addr = strings.Join(parts, " ")
 			}
 		}
 	}

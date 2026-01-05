@@ -99,7 +99,7 @@ func handleGoGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildPushNotification creates a push notification for a user's location
-func buildPushNotification(lat, lon float64) *server.PushNotification {
+func buildPushNotification(lat, lon float64, busNotify bool) *server.PushNotification {
 	// Get fresh context data
 	ctx := spatial.GetContextData(lat, lon)
 	if ctx == nil {
@@ -107,10 +107,10 @@ func buildPushNotification(lat, lon float64) *server.PushNotification {
 	}
 
 	// Build notification based on what's relevant
-	// Priority: bus times > prayer approaching > weather warning
+	// Priority: bus times (if enabled) > prayer approaching > weather warning
 
-	// Check for bus times
-	if ctx.Bus != nil && len(ctx.Bus.Arrivals) > 0 {
+	// Check for bus times (only if user enabled bus notifications)
+	if busNotify && ctx.Bus != nil && len(ctx.Bus.Arrivals) > 0 {
 		// Arrivals are strings like "185 → Victoria in 3m"
 		return &server.PushNotification{
 			Title: "🚌 " + ctx.Bus.StopName,
@@ -212,12 +212,19 @@ func main() {
 	// Start background cleanup every 5 minutes (only cleans expired arrivals)
 	spatial.Get().StartBackgroundCleanup(5 * time.Minute)
 
+	// Start the courier agent loop (for connecting areas)
+	spatial.StartCourierLoop()
+
 	// Initialize push notifications
 	pm := server.GetPushManager()
 	command.UpdatePushLocation = pm.UpdateLocation
 	server.SetNotificationBuilder(buildPushNotification)
 	server.SetWeatherNotificationBuilder(buildWeatherNotification)
 	server.SetPrayerNotificationBuilder(buildPrayerNotification)
+	
+	// Wire up bus notification callbacks for command package
+	command.GetBusNotifyCallback = pm.GetBusNotify
+	command.SetBusNotifyCallback = pm.SetBusNotify
 
 	// Awareness push callback
 	spatial.SetAwarenessPushCallback(func(lat, lon float64, items []struct{ Emoji, Message string }) {

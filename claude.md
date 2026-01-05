@@ -2910,3 +2910,382 @@ func (e *Entity) UnmarshalJSON(b []byte) error {
 - Push notification duplicates: history now cleared after fetch
 - `[][]float64` for streets: added `PointsToInterface()`
 - Test files updated for new ArrivalTime field
+
+## Session: Jan 5, 2026 - Entity Type Refactor
+
+### What Was Done
+Refactored `Entity.Data` from untyped `map[string]interface{}` to typed structs for type safety.
+
+### New Typed Data Structures
+
+```go
+// In spatial/entity.go
+
+type ArrivalData struct {
+    StopID   string       `json:"stop_id"`
+    StopName string       `json:"stop_name"`
+    StopType string       `json:"stop_type"`
+    Arrivals []BusArrival `json:"arrivals"`
+}
+
+type WeatherData struct {
+    TempC        float64 `json:"temp_c"`
+    WeatherCode  int     `json:"weather_code"`
+    RainForecast string  `json:"rain_forecast"`
+}
+
+type PrayerData struct {
+    Timings map[string]string `json:"timings"`
+    Current string            `json:"current"`
+    Next    string            `json:"next"`
+}
+
+type PlaceData struct {
+    Category string            `json:"category"`
+    Tags     map[string]string `json:"tags"`
+    AgentID  string            `json:"agent_id"`
+}
+
+type AgentEntityData struct {
+    Radius    float64    `json:"radius"`
+    Status    string     `json:"status"`
+    POICount  int        `json:"poi_count"`
+    LastIndex *time.Time `json:"last_index,omitempty"`
+    LastLive  *time.Time `json:"last_live,omitempty"`
+}
+
+type StreetData struct {
+    Points [][]float64 `json:"points"`
+    Length float64     `json:"length"`
+    ToName string      `json:"to_name"`
+}
+```
+
+### How to Access Data
+
+```go
+// Use typed accessor methods (preferred)
+if arrData := entity.GetArrivalData(); arrData != nil {
+    for _, bus := range arrData.Arrivals {
+        mins := bus.MinutesUntil()
+        // ...
+    }
+}
+
+if wd := entity.GetWeatherData(); wd != nil {
+    temp := wd.TempC
+    rain := wd.RainForecast
+}
+
+// Accessor methods handle both typed and legacy map data
+```
+
+### Backward Compatibility
+
+- Custom `UnmarshalJSON` on `Entity` type converts legacy JSON to typed structs
+- Accessor methods (`GetArrivalData()`, etc.) check for typed data first, fall back to legacy map
+- Existing `spatial.json` files load correctly
+- No migration needed - old data works, new data uses typed structs
+
+### Files Changed
+- `spatial/entity.go` - Typed data structs, accessor methods, custom JSON unmarshaling
+- `spatial/live.go` - Use typed data for weather, prayer, arrivals
+- `spatial/context.go` - Use accessor methods for weather, places
+- `spatial/agent.go` - Use typed AgentEntityData
+- `spatial/db.go` - Use accessor methods in filters
+- `spatial/streets.go` - Use typed StreetData
+- `server/map.go` - Use accessor methods
+- `server/agents.go` - Use typed AgentEntityData
+- `command/agents.go` - Use accessor methods
+- `command/directions.go` - Use accessor methods
+- `command/nearby.go` - Use accessor methods
+- `spatial/live_test.go` - Updated for new types
+
+## Session: Jan 5, 2026 - Bus Notification Toggle
+
+### Feature Added
+`/bus on|off` command to toggle bus push notifications.
+
+### How It Works
+- **Default**: Bus push notifications are OFF
+- **`/bus`**: Shows bus times (always works regardless of notification setting)
+- **`/bus on`**: Enables bus push notifications when app is backgrounded
+- **`/bus off`**: Disables bus push notifications
+- **`/bus status`**: Shows current notification setting
+
+Bus times still appear in the context card regardless of this setting.
+Only push notifications when the app is in the background are affected.
+
+### Implementation
+- `PushUser.BusNotify` field tracks preference per session
+- Preference persists to `push_subscriptions.json`
+- `buildPushNotification` in main.go checks the flag before sending bus notifications
+- Callback pattern used to avoid import cycles between command and server packages
+
+### Files Changed
+- `server/push.go` - Added BusNotify field, SetBusNotify/GetBusNotify methods
+- `command/context_questions.go` - Extended /bus command to handle on/off/status
+- `command/command.go` - Added callback variables for bus notification
+- `main.go` - Updated notification builder signature, wired up callbacks
+
+## Session: Jan 5, 2026 - Entity Refactor + Bus Toggle + UI Fixes
+
+### Entity Type Refactor
+Refactored `Entity.Data` from `map[string]interface{}` to typed structs:
+- `ArrivalData`, `WeatherData`, `PrayerData`, `PlaceData`, `AgentEntityData`, `StreetData`
+- Accessor methods (`GetArrivalData()`, etc.) handle both typed and legacy data
+- Custom `UnmarshalJSON` for backward compatibility
+- All existing `spatial.json` data loads correctly
+
+### Bus Notification Toggle
+- `/bus` - Shows bus times (unchanged)
+- `/bus on` - Enables bus push notifications when backgrounded
+- `/bus off` - Disables bus push notifications (default)
+- `/bus status` - Shows current setting
+- Bus times always show in context card; only push notifications affected
+
+### Android Splash Screen
+- Resized maskable icons to ~40% of canvas (200x200 in 512x512)
+- Requires PWA reinstall to take effect
+
+### Map Legend Mobile Fix
+- Legend toggle button moved up (bottom: 60px) to avoid phone navigation bar cutoff
+- Button made larger (18px font, more padding)
+- z-index increased to 100
+- Legend appears at bottom: 120px when shown
+- Added no-cache headers to /map endpoint
+
+### Files Changed
+- `spatial/entity.go` - Typed data structs
+- `spatial/live.go` - Use typed data
+- `spatial/context.go`, `spatial/agent.go`, `spatial/db.go`, `spatial/streets.go` - Use accessor methods
+- `server/map.go`, `server/map.html` - Legend UI fixes, cache headers
+- `server/push.go` - BusNotify field and methods
+- `server/agents.go` - Use typed AgentEntityData
+- `command/context_questions.go` - `/bus on/off` handling
+- `command/command.go` - Bus notification callbacks
+- `command/agents.go`, `command/directions.go`, `command/nearby.go` - Use accessor methods
+- `main.go` - Wire up bus callbacks, notification builder signature
+- `client/web/icon-*-maskable.png` - Smaller icons for splash screen
+
+
+## Session: Jan 5, 2026 - Duplicate Agent Fix
+
+### Problem
+Multiple agents with similar names for the same location:
+- "Hampton" vs "Hampton, Greater London" (2.4m apart)
+- "Norbiton" vs "Norbiton, Greater London"
+- "Southwark" vs "Southwark, Greater London"
+- "Kilmacud West" vs "Kilmacud West, County Dublin"
+- "Area 51.42,-0.37" overlapping with Hampton
+
+### Root Cause
+1. Nominatim returns different names/coordinates on different days
+2. 1km radius dedupe wasn't catching agents with slightly different coords
+3. No name-based dedupe - "Hampton" and "Hampton, Greater London" weren't matched
+
+### Fix Applied
+
+**Data cleanup:**
+- Merged 5 duplicate agents
+- Transferred 731 places to surviving agents
+- Reduced from 34 to 32 agents
+
+**Code fix (`spatial/agent.go`):**
+- Added base name comparison in `FindOrCreateAgentNamed`
+- Strips region suffix (", Greater London") before comparing
+- Logs when similar agent found
+
+### Prevention
+New agent creation now checks:
+1. Existing agent within 1km radius
+2. Existing agent with same base name (e.g., "Hampton" matches "Hampton, Greater London")
+
+
+## Session: Jan 5/6, 2026 - Performance Fixes, Async Commands, Courier
+
+### Major Performance Fix: Batched Disk Writes
+**Problem:** Every `db.Insert()` was writing the entire 13MB `spatial.json` to disk while holding the DB write lock. This blocked all queries, causing `/ping` to take 200-800ms.
+
+**Solution:** Refactored `FileStore` in quadtree to batch writes:
+- `Save()` marks data as dirty, schedules async save after 5s delay
+- Background goroutine ensures save within 30s max
+- `Close()` flushes immediately
+- Persist happens without holding any locks (copies data first)
+
+**Result:** `/ping` response time: 200-800ms → 9-10ms (20-80x faster)
+
+**Files changed:**
+- `~/quadtree/store.go` - Batched async FileStore
+
+### Other Blocking Fixes
+- `FindOrCreateAgent` now uses generic name immediately, geocodes async
+- `ReverseGeocode` uses rate-limited HTTP client
+- `Geocode` and OSM queries use rate-limited client
+- Added `OSMPost()` for Overpass API queries
+
+---
+
+## Session: Jan 5/6, 2026 - Async Commands, Courier, Map Fixes
+
+### Async Command Mode
+Commands can now be executed asynchronously. Result comes via WebSocket instead of HTTP response.
+
+**Usage:**
+```bash
+# Sync (default) - waits for result
+curl -X POST '/commands' -d 'prompt=/courier'
+# Returns: 🚴 Courier enabled!
+
+# Async - returns immediately
+curl -X POST '/commands' -d 'prompt=/courier&async=true'
+# Returns: {"id":"cmd_abc123","status":"queued"}
+# Result pushed via WebSocket with type="command_result"
+```
+
+**WebSocket message format:**
+```json
+{
+  "Type": "command_result",
+  "CommandID": "cmd_abc123",
+  "Text": "🚴 Courier enabled!",
+  "Stream": "~",
+  "Channel": "@session_token"
+}
+```
+
+**Client-side:**
+- `sendAsyncCommand(prompt, callback)` - sends async and tracks pending
+- `pendingAsyncCommands` - tracks commands waiting for results
+- WebSocket handler processes `command_result` type messages
+
+**Files:**
+- `server/handler.go` - async mode handling
+- `server/server.go` - `NewCommandResult()`, `CommandID` field on Message
+- `client/web/malten.js` - `sendAsyncCommand()`, WebSocket handling (v275)
+
+---
+
+## Session: Jan 5/6, 2026 - Courier, Map Fixes
+
+### Courier Agent
+New system to connect areas by walking routes between them.
+
+**Commands:**
+- `/courier` - Show status
+- `/courier on` - Enable courier
+- `/courier off` - Pause courier
+
+**How it works:**
+1. Starts at Hampton
+2. Picks nearest unconnected agent
+3. Gets walking route via OSRM
+4. Walks the route (~100m steps every 5s)
+5. Indexes street geometry
+6. Indexes POIs along route (async)
+7. Arrives, picks next destination
+
+**Files:**
+- `spatial/courier.go` - Courier logic
+- `command/courier.go` - Command interface
+
+### Pinch Zoom Fix
+Map now zooms around pinch center point instead of screen center.
+- Mouse wheel zoom also centers on cursor
+- Both use same offset adjustment formula
+
+### Async POI Indexing
+Courier's POI indexing is now fully async to avoid blocking when OSM is slow.
+
+---
+
+## Session: Jan 5/6, 2026 - Map Arrow & POI Visibility Fixes
+
+### Issues Fixed
+
+1. **POIs not visible when zoomed out past 12m/px**
+   - Before: POIs only showed at <=12 m/px, completely disappeared otherwise
+   - After: POIs show up to 50 m/px with gradual fade (full opacity at <=12, fades to 30% at 50)
+   - Also reset globalAlpha before drawing to prevent inherited transparency
+
+2. **Arrow 45° off to the right**
+   - Root cause: compass heading (deviceorientation) was unreliable on the user's device
+   - Fix: GPS-based heading now preferred when moving (speed > 1 m/s)
+   - Compass heading only used when stationary
+   - GPS heading requires minimum 3m movement to filter out noise
+   - Added separate tracking: `gpsHeading`, `compassHeading`, `userHeading` (combined)
+
+### Files Changed
+- `server/map.html` (v5) - POI visibility at all zooms, GPS/compass heading priority
+
+### Heading Priority Logic
+```javascript
+// Prefer GPS heading when moving, otherwise use compass
+if (userSpeed > 1 && gpsHeading !== null) {
+    userHeading = gpsHeading;
+} else if (compassHeading !== null) {
+    userHeading = compassHeading;
+} else if (gpsHeading !== null) {
+    userHeading = gpsHeading;
+}
+```
+
+---
+
+## Session: Jan 5, 2026 - Exploring Agents & Map Improvements
+
+### Exploring Agents
+Agents now move through space, mapping streets as they go:
+
+**How it works:**
+1. `/explore on` enables exploration mode
+2. Each agent picks a target (nearby POI or random direction)
+3. Gets walking route via OSRM
+4. Stores street geometry in spatial index
+5. Moves to destination
+6. Indexes POIs along the route
+7. Repeats
+
+**Rate limiting:**
+- Each agent can move every 10 seconds
+- OSRM calls rate-limited to 2s globally
+- OSM calls rate-limited to 5s globally
+
+**Persistence:**
+- Exploration state (home_lat, home_lon, total_steps, steps_today) saved to AgentEntityData
+- Survives server restarts
+- Agent position (lat, lon) also saved
+
+**Commands:**
+- `/explore on` - Enable exploration
+- `/explore off` - Disable exploration
+- `/explore status` - Show exploration stats
+
+**Files:**
+- `spatial/explorer.go` - Exploration logic
+- `spatial/entity.go` - Added exploration fields to AgentEntityData
+- `command/explore.go` - Explore command
+
+### Map Improvements
+
+**Visibility fixes:**
+- Removed large agent coverage circles (were obscuring places)
+- Added `ctx.fillStyle = '#000'` before drawing place emojis (were inheriting transparent blue)
+- Places now fully visible and colorful
+
+**Click handling:**
+- Added drag distance check (only count as drag if moved >3px)
+- Clicks on stationary mouseup now properly detected
+- Increased hit area for places (radius + 10px)
+- Popup shows place/agent details with Map and Directions links
+
+**Live mode:**
+- ▶️ button toggles 5-second auto-refresh
+- 🔄 button for manual refresh
+- Position preserved during refresh
+
+### Current Stats
+- 32 agents
+- ~300 streets mapped
+- ~4,500 places indexed
+- Exploration state persists across restarts

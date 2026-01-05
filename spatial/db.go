@@ -244,8 +244,15 @@ func (d *DB) QueryPlaces(lat, lon, radiusMeters float64, category string, limit 
 		if entity.ExpiresAt != nil && time.Now().After(*entity.ExpiresAt) {
 			return false
 		}
-		cat, _ := entity.Data["category"].(string)
-		return cat == category
+		if placeData := entity.GetPlaceData(); placeData != nil {
+			return placeData.Category == category
+		}
+		// Legacy fallback
+		if m, ok := entity.Data.(map[string]interface{}); ok {
+			cat, _ := m["category"].(string)
+			return cat == category
+		}
+		return false
 	}
 
 	points := d.tree.KNearest(boundary, limit, filter)
@@ -437,8 +444,14 @@ func (d *DB) CountByAgentID(agentID string, entityType EntityType) int {
 		if entity.Type != entityType {
 			continue
 		}
-		if aid, ok := entity.Data["agent_id"].(string); ok && aid == agentID {
-			count++
+		if placeData := entity.GetPlaceData(); placeData != nil {
+			if placeData.AgentID == agentID {
+				count++
+			}
+		} else if m, ok := entity.Data.(map[string]interface{}); ok {
+			if aid, _ := m["agent_id"].(string); aid == agentID {
+				count++
+			}
 		}
 	}
 	return count
@@ -489,7 +502,12 @@ func (d *DB) CleanupDuplicateArrivals() int {
 		if !ok || entity.Type != EntityArrival {
 			continue
 		}
-		stopID, _ := entity.Data["stop_id"].(string)
+		var stopID string
+		if arrData := entity.GetArrivalData(); arrData != nil {
+			stopID = arrData.StopID
+		} else if m, ok := entity.Data.(map[string]interface{}); ok {
+			stopID, _ = m["stop_id"].(string)
+		}
 		if stopID == "" {
 			continue
 		}
@@ -563,7 +581,12 @@ func (d *DB) CleanupStore() (expired int, duplicates int, err error) {
 
 		// Track arrivals by stop_id for duplicate detection
 		if entity.Type == EntityArrival {
-			stopID, _ := entity.Data["stop_id"].(string)
+			var stopID string
+			if arrData := entity.GetArrivalData(); arrData != nil {
+				stopID = arrData.StopID
+			} else if m, ok := entity.Data.(map[string]interface{}); ok {
+				stopID, _ = m["stop_id"].(string)
+			}
 			if stopID != "" {
 				byStopID[stopID] = append(byStopID[stopID], struct{ id string; updated time.Time }{id, entity.UpdatedAt})
 			}

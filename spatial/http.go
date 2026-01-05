@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
+	"strings"
 	"time"
 )
 
@@ -47,6 +49,17 @@ func (c *ExternalClient) Get(apiName, url string) (*http.Response, error) {
 	return c.Do(req)
 }
 
+// Post makes a POST request with the given content type and body
+func (c *ExternalClient) Post(apiName, url, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := NewRequest(apiName, "POST", url)
+	if err != nil {
+		return nil, err
+	}
+	req.Request.Body = io.NopCloser(body)
+	req.Request.Header.Set("Content-Type", contentType)
+	return c.Do(req)
+}
+
 // Do executes the request with rate limiting and stats
 func (c *ExternalClient) Do(req *APIRequest) (*http.Response, error) {
 	apiName := req.APIName
@@ -63,19 +76,33 @@ func (c *ExternalClient) Do(req *APIRequest) (*http.Response, error) {
 		time.Sleep(backoff)
 	}
 	
-	// Rate limit
-	apiLimiter.mu.Lock()
-	if last, ok := apiLimiter.lastCall[apiName]; ok {
-		elapsed := time.Since(last)
-		if elapsed < apiLimiter.minInterval {
-			wait := apiLimiter.minInterval - elapsed
-			apiLimiter.mu.Unlock()
-			time.Sleep(wait)
-			apiLimiter.mu.Lock()
-		}
+	// Get per-API minimum interval (default 2s)
+	minInterval := apiLimiter.minInterval
+	if perAPI, ok := apiMinIntervals[apiName]; ok {
+		minInterval = perAPI
 	}
-	apiLimiter.lastCall[apiName] = time.Now()
-	apiLimiter.mu.Unlock()
+	
+	// Rate limit - serialize calls to the same API
+	// Use a loop to handle contention properly
+	for {
+		apiLimiter.mu.Lock()
+		last, ok := apiLimiter.lastCall[apiName]
+		now := time.Now()
+		
+		if !ok || now.Sub(last) >= minInterval {
+			// We can proceed - mark our call time and release lock
+			apiLimiter.lastCall[apiName] = now
+			apiLimiter.mu.Unlock()
+			break
+		}
+		
+		// Need to wait - calculate wait time while holding lock
+		wait := minInterval - now.Sub(last)
+		apiLimiter.mu.Unlock()
+		
+		// Sleep then retry the loop (another goroutine may have gone)
+		time.Sleep(wait)
+	}
 	
 	// Record call attempt
 	stats.RecordCall(apiName)
@@ -158,6 +185,12 @@ func LocationGet(url string) (*http.Response, error) {
 // OSMGet makes an OpenStreetMap API call
 func OSMGet(url string) (*http.Response, error) {
 	return External.Get("osm", url)
+}
+
+// OSMPost makes an OSM Overpass API POST request
+func OSMPost(url, query string) (*http.Response, error) {
+	return External.Post("osm", url, "application/x-www-form-urlencoded", 
+		strings.NewReader("data="+neturl.QueryEscape(query)))
 }
 
 // TfLGet makes a TfL API call

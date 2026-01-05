@@ -34,8 +34,8 @@ func Agents() string {
 	
 	for _, agent := range agents {
 		status := "idle"
-		if s, ok := agent.Data["status"].(string); ok {
-			status = s
+		if agentData := agent.GetAgentData(); agentData != nil && agentData.Status != "" {
+			status = agentData.Status
 		}
 		
 		// Get last update time

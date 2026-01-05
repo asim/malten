@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- v6 2026-01-06 pinch-zoom-fix -->
 <html>
 <head>
     <meta charset="UTF-8">
@@ -40,26 +41,28 @@
         .legend-item { display: flex; align-items: center; margin: 3px 0; }
         .legend-emoji { width: 18px; text-align: center; margin-right: 6px; font-size: 12px; }
         
-        /* Legend toggle button - hidden by default, shown on mobile */
+        /* Legend toggle button - always visible */
         #legend-toggle {
-            display: none;
+            display: block;
             position: absolute;
-            bottom: 10px;
+            bottom: 60px;
             left: 10px;
             background: rgba(255,255,255,0.95);
             border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 14px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 18px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             cursor: pointer;
+            z-index: 100;
         }
         
-        /* Hide legend on small screens, show toggle button */
-        @media (max-width: 500px) {
-            #legend { display: none; }
-            #legend.show { display: block; bottom: 50px; left: 10px; }
-            #legend-toggle { display: block; }
+        /* Legend hidden by default, shown on toggle */
+        #legend { display: none; }
+        #legend.show { display: block; bottom: 120px; }
+        
+        @media (max-width: 600px) {
+            #stats { font-size: 11px; padding: 8px 12px; }
         }
         #tooltip {
             position: absolute;
@@ -107,6 +110,67 @@
             background: #333;
             margin-top: 4px;
         }
+        #place-popup {
+            position: absolute;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+            padding: 16px;
+            min-width: 220px;
+            max-width: 300px;
+            z-index: 200;
+            display: none;
+        }
+        #place-popup h3 {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #place-popup .category {
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        #place-popup .coords {
+            color: #999;
+            font-size: 11px;
+            margin-bottom: 12px;
+        }
+        #place-popup .actions {
+            display: flex;
+            gap: 8px;
+        }
+        #place-popup .actions a {
+            flex: 1;
+            display: inline-flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 16px;
+            background: #4285f4;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        #place-popup .actions a:hover {
+            background: #3367d6;
+        }
+        #place-popup .close-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: #999;
+        }
     </style>
 </head>
 <body>
@@ -124,11 +188,20 @@
         <div class="legend-item"><span class="legend-emoji">🎦</span> Entertainment</div>
     </div>
     <div id="tooltip"></div>
+    <div id="place-popup">
+        <button class="close-btn" onclick="hidePlacePopup()">×</button>
+        <h3><span id="popup-emoji"></span><span id="popup-name"></span></h3>
+        <div class="category" id="popup-category"></div>
+        <div class="coords" id="popup-coords"></div>
+        <div class="actions" id="popup-actions"></div>
+    </div>
     <div id="controls">
         <button onclick="zoomIn()">+</button>
         <button onclick="zoomOut()">−</button>
         <button onclick="centerOnUser()">◎</button>
         <button onclick="resetView()">⟲</button>
+        <button onclick="loadData()" title="Refresh">🔄</button>
+        <button id="liveBtn" onclick="toggleLive()" title="Live mode (5s refresh)">⏸️</button>
     </div>
     <div id="scale">
         <span id="scale-text">1 km</span>
@@ -145,16 +218,20 @@ const scaleText = document.getElementById('scale-text');
 const scaleBar = document.getElementById('scale-bar');
 
 let mapData = null;
+let renderedPlaces = []; // For click detection
+let selectedPlace = null; // Currently selected place
 let userLat = null;
 let userLon = null;
 let userHeading = null; // Compass heading in degrees (0 = North)
+let gpsHeading = null; // Heading calculated from GPS movement
+let compassHeading = null; // Heading from device compass
 let userSpeed = 0; // Speed in m/s
 
 // View state - meters per pixel defines zoom
 let viewState = {
     centerLat: 51.45,
     centerLon: -0.35,
-    metersPerPixel: 20, // Start at ~20m per pixel (good for neighborhood view)
+    metersPerPixel: 50, // Start zoomed out, places appear at 12m/px or less
     offsetX: 0,
     offsetY: 0,
     isDragging: false,
@@ -279,61 +356,79 @@ function draw() {
         });
     }
     
-    // Draw agent coverage circles (faint)
+    // Draw small marker circles for agents (not huge coverage circles)
     mapData.agents.forEach(agent => {
         const pos = latLonToXY(agent.lat, agent.lon);
-        const radiusPx = agent.radius / viewState.metersPerPixel;
-        
-        if (radiusPx > 5) { // Only draw if visible
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, radiusPx, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(66, 133, 244, 0.05)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(66, 133, 244, 0.2)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-        }
+        // Small 20px circle regardless of zoom
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(66, 133, 244, 0.15)';
+        ctx.fill();
     });
     
-    // Draw places as emojis
-    // Limit density when very zoomed in to avoid overlap
-    const fontSize = Math.max(14, Math.min(24, 300 / viewState.metersPerPixel));
-    ctx.font = fontSize + 'px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    // Track drawn places for click detection
+    renderedPlaces = [];
     
-    // Track drawn positions to avoid overlap
-    const drawnPositions = [];
-    const minSpacing = fontSize * 1.5; // Minimum pixels between emojis
+    // Reset globalAlpha before drawing places
+    ctx.globalAlpha = 1.0;
     
-    mapData.places.forEach(place => {
-        const pos = latLonToXY(place.lat, place.lon);
-        if (pos.x < -20 || pos.x > canvas.width + 20 || pos.y < -20 || pos.y > canvas.height + 20) return;
+    // Show places at all zoom levels, adjust size/opacity based on zoom
+    // At high zoom (low m/px): large, full opacity
+    // At low zoom (high m/px): smaller, fade out
+    const showPlaces = viewState.metersPerPixel <= 50; // Show up to 50 m/px
+    if (showPlaces) {
+        // Calculate opacity: full at <=12 m/px, fade to 0.3 at 50 m/px
+        let opacity = 1.0;
+        if (viewState.metersPerPixel > 12) {
+            opacity = 1.0 - 0.7 * (viewState.metersPerPixel - 12) / (50 - 12);
+            opacity = Math.max(0.3, opacity);
+        }
+        ctx.globalAlpha = opacity;
         
-        // Check if too close to an already drawn place
-        let tooClose = false;
-        for (const drawn of drawnPositions) {
-            const dx = pos.x - drawn.x;
-            const dy = pos.y - drawn.y;
-            if (Math.sqrt(dx*dx + dy*dy) < minSpacing) {
-                tooClose = true;
-                break;
+        // Font size: larger when zoomed in
+        const fontSize = Math.max(14, Math.min(36, 600 / viewState.metersPerPixel));
+        ctx.font = fontSize + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#000'; // Ensure black text for emojis
+        
+        // Spacing: tighter when zoomed in
+        const minSpacing = fontSize * 0.9;
+        
+        mapData.places.forEach(place => {
+            const pos = latLonToXY(place.lat, place.lon);
+            // Only draw if on screen (with margin for partial visibility)
+            if (pos.x < -30 || pos.x > canvas.width + 30 || pos.y < -30 || pos.y > canvas.height + 30) return;
+            
+            // Check if too close to an already drawn place
+            let tooClose = false;
+            for (const drawn of renderedPlaces) {
+                const dx = pos.x - drawn.x;
+                const dy = pos.y - drawn.y;
+                if (Math.sqrt(dx*dx + dy*dy) < minSpacing) {
+                    tooClose = true;
+                    break;
+                }
             }
-        }
-        if (tooClose) return;
+            if (tooClose) return;
+            
+            const emoji = getEmoji(place.category);
+            ctx.fillText(emoji, pos.x, pos.y);
+            renderedPlaces.push({...place, x: pos.x, y: pos.y, radius: fontSize/2 + 10});
+        });
         
-        const emoji = getEmoji(place.category);
-        ctx.fillText(emoji, pos.x, pos.y);
-        drawnPositions.push(pos);
-    });
+        // Reset alpha for subsequent drawing
+        ctx.globalAlpha = 1.0;
+    }
     
     // Draw agents (larger, labeled)
-    ctx.font = '16px sans-serif';
+    ctx.font = '20px sans-serif';
+    ctx.fillStyle = '#000'; // Reset fill style for agents
     mapData.agents.forEach(agent => {
         const pos = latLonToXY(agent.lat, agent.lon);
         if (pos.x < -30 || pos.x > canvas.width + 30 || pos.y < -30 || pos.y > canvas.height + 30) return;
         
-        // Agent emoji
+        // Agent emoji (always visible)
         ctx.fillText('🤖', pos.x, pos.y);
         
         // Agent label (only at medium zoom - not too far, not too close)
@@ -356,10 +451,15 @@ function draw() {
         ctx.fill();
         
         // Heading cone (if we have heading and moving)
+        // userHeading: 0=North, 90=East, 180=South, 270=West
+        // Canvas: 0=right(East), PI/2=down(South), PI=left(West), -PI/2=up(North)
+        // So we need: canvas_angle = (heading - 90) degrees, but heading 0 should point UP
+        // Actually: North(0°) -> up(-90° canvas) = -PI/2
+        // Formula: canvasRad = (heading - 90) * PI/180
         if (userHeading !== null && userSpeed > 0.5) {
-            const headingRad = (userHeading - 90) * Math.PI / 180; // Convert to canvas coords
-            const coneLength = Math.max(30, userSpeed * 5); // Longer cone when faster
-            const coneWidth = 25 * Math.PI / 180; // 25 degree cone
+            const headingRad = (userHeading - 90) * Math.PI / 180;
+            const coneLength = Math.max(30, userSpeed * 5);
+            const coneWidth = 25 * Math.PI / 180;
             
             ctx.beginPath();
             ctx.moveTo(pos.x, pos.y);
@@ -377,11 +477,12 @@ function draw() {
             ctx.translate(pos.x, pos.y);
             ctx.rotate(headingRad);
             
-            // Arrow
+            // Arrow pointing in direction of travel (tip points right at 0 rotation)
             ctx.beginPath();
-            ctx.moveTo(arrowLen, 0);
-            ctx.lineTo(-5, -6);
-            ctx.lineTo(-5, 6);
+            ctx.moveTo(arrowLen, 0);   // Tip (pointing right = direction of travel after rotation)
+            ctx.lineTo(-8, -8);        // Back left
+            ctx.lineTo(-3, 0);         // Notch
+            ctx.lineTo(-8, 8);         // Back right  
             ctx.closePath();
             ctx.fillStyle = '#4285f4';
             ctx.fill();
@@ -523,6 +624,49 @@ function loadData() {
 }
 
 // Zoom controls
+function showPlacePopup(item, x, y) {
+    const popup = document.getElementById('place-popup');
+    const emoji = item.isAgent ? '🤖' : getEmoji(item.category);
+    
+    document.getElementById('popup-emoji').textContent = emoji;
+    document.getElementById('popup-name').textContent = item.name;
+    document.getElementById('popup-category').textContent = item.isAgent 
+        ? `Agent · ${item.poiCount || 0} places indexed`
+        : (item.category || 'Place');
+    document.getElementById('popup-coords').textContent = 
+        `${item.lat.toFixed(6)}, ${item.lon.toFixed(6)}`;
+    
+    // Build action buttons
+    const actions = document.getElementById('popup-actions');
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lon}`;
+    const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lon}&travelmode=walking`;
+    
+    actions.innerHTML = `
+        <a href="${mapsUrl}" target="_blank"><span>🗺️</span><span>Map</span></a>
+        <a href="${directionsUrl}" target="_blank"><span>🚶</span><span>Directions</span></a>
+    `;
+    
+    // Position popup
+    let popupX = x + 20;
+    let popupY = y - 20;
+    
+    // Keep on screen
+    if (popupX + 250 > window.innerWidth) popupX = x - 250;
+    if (popupY + 200 > window.innerHeight) popupY = y - 180;
+    if (popupY < 10) popupY = 10;
+    
+    popup.style.left = popupX + 'px';
+    popup.style.top = popupY + 'px';
+    popup.style.display = 'block';
+    
+    selectedPlace = item;
+}
+
+function hidePlacePopup() {
+    document.getElementById('place-popup').style.display = 'none';
+    selectedPlace = null;
+}
+
 function toggleLegend() {
     document.getElementById('legend').classList.toggle('show');
 }
@@ -572,15 +716,26 @@ function centerOnUser() {
 }
 
 // Mouse/touch interactions
+let dragStartX = 0, dragStartY = 0;
+let didDrag = false;
+
 canvas.addEventListener('mousedown', e => {
     viewState.isDragging = true;
     viewState.lastX = e.clientX;
     viewState.lastY = e.clientY;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    didDrag = false;
     canvas.style.cursor = 'grabbing';
 });
 
 canvas.addEventListener('mousemove', e => {
     if (viewState.isDragging) {
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+            didDrag = true; // Only count as drag if moved more than 8px
+        }
         viewState.offsetX += e.clientX - viewState.lastX;
         viewState.offsetY += e.clientY - viewState.lastY;
         viewState.lastX = e.clientX;
@@ -592,9 +747,51 @@ canvas.addEventListener('mousemove', e => {
     }
 });
 
-canvas.addEventListener('mouseup', () => {
+canvas.addEventListener('mouseup', (e) => {
     viewState.isDragging = false;
     canvas.style.cursor = 'grab';
+});
+
+// Click to select place
+canvas.addEventListener('click', (e) => {
+    // Ignore clicks that were drags
+    if (didDrag) {
+        return;
+    }
+    
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Find clicked place (with larger hit area)
+    let clicked = null;
+    for (const place of renderedPlaces) {
+        const dx = x - place.x;
+        const dy = y - place.y;
+        if (Math.sqrt(dx*dx + dy*dy) < place.radius + 10) {
+            clicked = place;
+            break;
+        }
+    }
+    
+    // Also check agents
+    if (!clicked && mapData) {
+        for (const agent of mapData.agents) {
+            const pos = latLonToXY(agent.lat, agent.lon);
+            const dx = x - pos.x;
+            const dy = y - pos.y;
+            if (Math.sqrt(dx*dx + dy*dy) < 15) {
+                clicked = {...agent, isAgent: true};
+                break;
+            }
+        }
+    }
+    
+    if (clicked) {
+        showPlacePopup(clicked, x, y);
+    } else {
+        hidePlacePopup();
+    }
 });
 
 canvas.addEventListener('mouseleave', () => {
@@ -606,7 +803,24 @@ canvas.addEventListener('mouseleave', () => {
 canvas.addEventListener('wheel', e => {
     e.preventDefault();
     const factor = e.deltaY > 0 ? 1.2 : 0.8;
-    viewState.metersPerPixel = Math.max(0.5, Math.min(500, viewState.metersPerPixel * factor));
+    const oldMpp = viewState.metersPerPixel;
+    const newMpp = Math.max(0.5, Math.min(500, oldMpp * factor));
+    
+    // Zoom around mouse position
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    // Distance from screen center to mouse in pixels
+    const dxFromCenter = mouseX - canvas.width / 2 - viewState.offsetX;
+    const dyFromCenter = mouseY - canvas.height / 2 - viewState.offsetY;
+    
+    // Adjust offset to keep mouse point stationary
+    const scaleChange = oldMpp / newMpp;
+    viewState.offsetX = viewState.offsetX * scaleChange + dxFromCenter * (1 - scaleChange);
+    viewState.offsetY = viewState.offsetY * scaleChange + dyFromCenter * (1 - scaleChange);
+    
+    viewState.metersPerPixel = newMpp;
     draw();
     updateStats();
 }, { passive: false });
@@ -656,12 +870,21 @@ function showTooltip(x, y) {
 let lastTouchDist = 0;
 let lastTouchCenter = null;
 
+// Touch handling with tap detection
+let touchStartX = 0, touchStartY = 0;
+let touchStartTime = 0;
+let touchMoved = false;
+
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     if (e.touches.length === 1) {
         viewState.isDragging = true;
         viewState.lastX = e.touches[0].clientX;
         viewState.lastY = e.touches[0].clientY;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchStartTime = Date.now();
+        touchMoved = false;
     } else if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -676,6 +899,11 @@ canvas.addEventListener('touchstart', e => {
 canvas.addEventListener('touchmove', e => {
     e.preventDefault();
     if (e.touches.length === 1 && viewState.isDragging) {
+        const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+            touchMoved = true;
+        }
         viewState.offsetX += e.touches[0].clientX - viewState.lastX;
         viewState.offsetY += e.touches[0].clientY - viewState.lastY;
         viewState.lastX = e.touches[0].clientX;
@@ -683,16 +911,44 @@ canvas.addEventListener('touchmove', e => {
         draw();
         updateStats();
     } else if (e.touches.length === 2) {
+        touchMoved = true;
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (lastTouchDist > 0) {
+        
+        // Calculate current pinch center
+        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        
+        if (lastTouchDist > 0 && lastTouchCenter) {
             const factor = lastTouchDist / dist;
-            viewState.metersPerPixel = Math.max(0.5, Math.min(500, viewState.metersPerPixel * factor));
+            const oldMpp = viewState.metersPerPixel;
+            const newMpp = Math.max(0.5, Math.min(500, oldMpp * factor));
+            
+            // Zoom around the pinch center point
+            // The pinch center should stay at the same lat/lon after zoom
+            const rect = canvas.getBoundingClientRect();
+            const pinchX = lastTouchCenter.x - rect.left;
+            const pinchY = lastTouchCenter.y - rect.top;
+            
+            // Calculate how much the view shifts due to zoom
+            // Distance from screen center to pinch point in old meters
+            const dxFromCenter = pinchX - canvas.width / 2 - viewState.offsetX;
+            const dyFromCenter = pinchY - canvas.height / 2 - viewState.offsetY;
+            
+            // After zoom, the same lat/lon should appear at the same screen position
+            // This means we need to adjust offset to compensate for the scale change
+            const scaleChange = oldMpp / newMpp;
+            viewState.offsetX = viewState.offsetX * scaleChange + dxFromCenter * (1 - scaleChange);
+            viewState.offsetY = viewState.offsetY * scaleChange + dyFromCenter * (1 - scaleChange);
+            
+            viewState.metersPerPixel = newMpp;
             draw();
             updateStats();
         }
+        
         lastTouchDist = dist;
+        lastTouchCenter = { x: centerX, y: centerY };
     }
 }, { passive: false });
 
@@ -700,7 +956,50 @@ canvas.addEventListener('touchend', e => {
     viewState.isDragging = false;
     lastTouchDist = 0;
     lastTouchCenter = null;
+    
+    // Detect tap: short duration and no significant movement
+    const touchDuration = Date.now() - touchStartTime;
+    if (!touchMoved && touchDuration < 300) {
+        // This was a tap!
+        const rect = canvas.getBoundingClientRect();
+        const x = touchStartX - rect.left;
+        const y = touchStartY - rect.top;
+        handleTap(x, y);
+    }
 });
+
+// Handle tap on place or agent
+function handleTap(x, y) {
+    // Find tapped place
+    let tapped = null;
+    for (const place of renderedPlaces) {
+        const dx = x - place.x;
+        const dy = y - place.y;
+        if (Math.sqrt(dx*dx + dy*dy) < place.radius + 15) {
+            tapped = place;
+            break;
+        }
+    }
+    
+    // Also check agents
+    if (!tapped && mapData) {
+        for (const agent of mapData.agents) {
+            const pos = latLonToXY(agent.lat, agent.lon);
+            const dx = x - pos.x;
+            const dy = y - pos.y;
+            if (Math.sqrt(dx*dx + dy*dy) < 20) {
+                tapped = {...agent, isAgent: true};
+                break;
+            }
+        }
+    }
+    
+    if (tapped) {
+        showPlacePopup(tapped, x, y);
+    } else {
+        hidePlacePopup();
+    }
+}
 
 // Get user location on load and watch for changes
 if (navigator.geolocation) {
@@ -725,15 +1024,29 @@ if (navigator.geolocation) {
         userLon = pos.coords.longitude;
         userSpeed = pos.coords.speed || 0;
         
-        // Calculate heading from movement if no compass
-        if (prevLat && prevLon && userHeading === null) {
-            const dLon = (userLon - prevLon) * Math.PI / 180;
-            const y = Math.sin(dLon) * Math.cos(userLat * Math.PI / 180);
-            const x = Math.cos(prevLat * Math.PI / 180) * Math.sin(userLat * Math.PI / 180) -
-                      Math.sin(prevLat * Math.PI / 180) * Math.cos(userLat * Math.PI / 180) * Math.cos(dLon);
-            const bearing = Math.atan2(y, x) * 180 / Math.PI;
-            userHeading = (bearing + 360) % 360;
+        // Calculate heading from GPS movement (always, when we have meaningful movement)
+        if (prevLat && prevLon) {
+            const dist = haversine(prevLat, prevLon, userLat, userLon);
+            // Only update heading if moved at least 3 meters (avoid noise)
+            if (dist > 3) {
+                const dLon = (userLon - prevLon) * Math.PI / 180;
+                const y = Math.sin(dLon) * Math.cos(userLat * Math.PI / 180);
+                const x = Math.cos(prevLat * Math.PI / 180) * Math.sin(userLat * Math.PI / 180) -
+                          Math.sin(prevLat * Math.PI / 180) * Math.cos(userLat * Math.PI / 180) * Math.cos(dLon);
+                const bearing = Math.atan2(y, x) * 180 / Math.PI;
+                gpsHeading = (bearing + 360) % 360;
+            }
         }
+        
+        // Prefer GPS heading when moving (speed > 1 m/s), otherwise use compass
+        if (userSpeed > 1 && gpsHeading !== null) {
+            userHeading = gpsHeading;
+        } else if (compassHeading !== null) {
+            userHeading = compassHeading;
+        } else if (gpsHeading !== null) {
+            userHeading = gpsHeading;
+        }
+        
         draw();
     }, null, { enableHighAccuracy: true });
 } else {
@@ -741,18 +1054,45 @@ if (navigator.geolocation) {
 }
 
 // Device orientation for compass heading
+// Only use compass when stationary - GPS heading is more reliable when moving
 if (window.DeviceOrientationEvent) {
     window.addEventListener('deviceorientation', e => {
-        // webkitCompassHeading is iOS, alpha is Android (but needs adjustment)
+        // webkitCompassHeading is iOS (absolute, 0 = North)
         if (e.webkitCompassHeading !== undefined) {
-            userHeading = e.webkitCompassHeading;
-        } else if (e.alpha !== null) {
-            // Android: alpha is rotation around z-axis, 0 when pointing north
-            // But it's relative to device orientation, not absolute
-            userHeading = (360 - e.alpha) % 360;
+            compassHeading = e.webkitCompassHeading;
+        } else if (e.absolute && e.alpha !== null) {
+            // Android with absolute orientation: alpha is degrees from North
+            // alpha increases counter-clockwise, so we invert
+            compassHeading = (360 - e.alpha) % 360;
         }
-        draw();
+        // Note: we don't draw() here - let GPS position updates trigger redraw
+        // This prevents compass jitter from causing constant redraws
+        // Compass heading will be used on next GPS update if stationary
     });
+}
+
+// Live mode state
+let liveMode = false;
+let liveInterval = null;
+
+function toggleLive() {
+    liveMode = !liveMode;
+    const btn = document.getElementById('liveBtn');
+    
+    if (liveMode) {
+        btn.textContent = '▶️';
+        btn.style.background = '#e8f5e9';
+        // Refresh every 5 seconds in live mode
+        liveInterval = setInterval(loadData, 5000);
+        loadData(); // Immediate refresh
+    } else {
+        btn.textContent = '⏸️';
+        btn.style.background = '';
+        if (liveInterval) {
+            clearInterval(liveInterval);
+            liveInterval = null;
+        }
+    }
 }
 
 // Initialize
@@ -760,8 +1100,10 @@ window.addEventListener('resize', resize);
 canvas.style.cursor = 'grab';
 resize();
 
-// Refresh data periodically
-setInterval(loadData, 60000);
+// Refresh data periodically (slow mode)
+setInterval(() => {
+    if (!liveMode) loadData();
+}, 60000);
 </script>
 </body>
 </html>

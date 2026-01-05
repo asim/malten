@@ -155,7 +155,7 @@ func TestShortDest(t *testing.T) {
 // TestBusArrivalFormatting tests the arrival struct formatting
 func TestBusArrivalFormatting(t *testing.T) {
 	now := time.Now()
-	arrivals := []busArrival{
+	arrivals := []BusArrival{
 		{Line: "111", Destination: "Heathrow Airport", ArrivalTime: now.Add(3 * time.Minute)},
 		{Line: "216", Destination: "Kingston Station", ArrivalTime: now.Add(7 * time.Minute)},
 	}
@@ -174,7 +174,7 @@ func TestArrivalEntityDataStructure(t *testing.T) {
 	stopName := "Hampton Station"
 	stopType := "NaptanPublicBusCoachTram"
 	
-	arrivals := []busArrival{
+	arrivals := []BusArrival{
 		{Line: "111", Destination: "Heathrow", ArrivalTime: time.Now().Add(5 * time.Minute)},
 	}
 	
@@ -184,39 +184,33 @@ func TestArrivalEntityDataStructure(t *testing.T) {
 		Name: "🚌 " + stopName + ": 111→Heathrow 5m",
 		Lat:  stopLat,
 		Lon:  stopLon,
-		Data: map[string]interface{}{
-			"stop_id":   naptanID,
-			"stop_name": stopName,
-			"stop_type": stopType,
-			"arrivals":  arrivalsToInterface(arrivals),
+		Data: &ArrivalData{
+			StopID:   naptanID,
+			StopName: stopName,
+			StopType: stopType,
+			Arrivals: arrivals,
 		},
 	}
 	
-	// Verify all required fields exist
-	if entity.Data["stop_id"] != naptanID {
-		t.Errorf("stop_id mismatch: got %v, want %s", entity.Data["stop_id"], naptanID)
+	// Verify using typed accessor
+	arrData := entity.GetArrivalData()
+	if arrData == nil {
+		t.Fatal("GetArrivalData returned nil")
 	}
-	if entity.Data["stop_name"] != stopName {
-		t.Errorf("stop_name mismatch: got %v, want %s", entity.Data["stop_name"], stopName)
+	if arrData.StopID != naptanID {
+		t.Errorf("stop_id mismatch: got %v, want %s", arrData.StopID, naptanID)
 	}
-	if entity.Data["stop_type"] != stopType {
-		t.Errorf("stop_type mismatch: got %v, want %s", entity.Data["stop_type"], stopType)
+	if arrData.StopName != stopName {
+		t.Errorf("stop_name mismatch: got %v, want %s", arrData.StopName, stopName)
 	}
-	
-	// Verify arrivals stored correctly as []interface{} (consistent with JSON)
-	storedArrivals, ok := entity.Data["arrivals"].([]interface{})
-	if !ok {
-		t.Fatalf("arrivals not stored as []interface{}, got %T", entity.Data["arrivals"])
+	if arrData.StopType != stopType {
+		t.Errorf("stop_type mismatch: got %v, want %s", arrData.StopType, stopType)
 	}
-	if len(storedArrivals) != 1 {
-		t.Errorf("arrivals count: got %d, want 1", len(storedArrivals))
+	if len(arrData.Arrivals) != 1 {
+		t.Errorf("arrivals count: got %d, want 1", len(arrData.Arrivals))
 	}
-	firstArr, ok := storedArrivals[0].(map[string]interface{})
-	if !ok {
-		t.Fatalf("first arrival not map[string]interface{}, got %T", storedArrivals[0])
-	}
-	if firstArr["line"] != "111" {
-		t.Errorf("arrival line: got %v, want 111", firstArr["line"])
+	if arrData.Arrivals[0].Line != "111" {
+		t.Errorf("arrival line: got %v, want 111", arrData.Arrivals[0].Line)
 	}
 }
 
@@ -336,7 +330,7 @@ func TestStopTypeConstants(t *testing.T) {
 // TestArrivalSorting verifies arrivals are sorted by time
 func TestArrivalSorting(t *testing.T) {
 	now := time.Now()
-	arrivals := []busArrival{
+	arrivals := []BusArrival{
 		{Line: "111", ArrivalTime: now.Add(10 * time.Minute)},
 		{Line: "216", ArrivalTime: now.Add(3 * time.Minute)},
 		{Line: "290", ArrivalTime: now.Add(7 * time.Minute)},
@@ -344,7 +338,7 @@ func TestArrivalSorting(t *testing.T) {
 	
 	// Verify they're in increasing order (as they should be after sort)
 	// This tests the expected output format, not the actual sort (which happens in fetchStopArrivals)
-	sorted := []busArrival{
+	sorted := []BusArrival{
 		{Line: "216", ArrivalTime: now.Add(3 * time.Minute)},
 		{Line: "290", ArrivalTime: now.Add(7 * time.Minute)},
 		{Line: "111", ArrivalTime: now.Add(10 * time.Minute)},
