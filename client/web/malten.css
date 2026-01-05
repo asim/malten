@@ -321,5 +321,3 @@ input:focus { outline: none; }
   color: #999;
 }
 
-/* === LEGACY (hidden) === */
-#context, #desc, #present, #chars, #private, #side, .iframe, .image, .animation { display: none; }

@@ -376,3 +376,41 @@ func (d *DB) QueryByNameContains(lat, lon, radiusMeters float64, nameContains st
 	}
 	return result
 }
+
+// DBStats holds statistics about the database
+type DBStats struct {
+	Total    int
+	Agents   int
+	Weather  int
+	Prayer   int
+	Arrivals int
+	Places   int
+}
+
+// Stats returns statistics about entities in the database
+func (d *DB) Stats() DBStats {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	stats := DBStats{}
+	for _, point := range d.entities {
+		entity, ok := point.Data().(*Entity)
+		if !ok {
+			continue
+		}
+		stats.Total++
+		switch entity.Type {
+		case EntityAgent:
+			stats.Agents++
+		case EntityWeather:
+			stats.Weather++
+		case EntityPrayer:
+			stats.Prayer++
+		case EntityArrival:
+			stats.Arrivals++
+		case EntityPlace:
+			stats.Places++
+		}
+	}
+	return stats
+}

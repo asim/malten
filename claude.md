@@ -1779,3 +1779,36 @@ VAPID_PRIVATE_KEY=...
 - Foreground refresh: stationary >1min refreshes (bus stop), moving >2min
 - Timeline deduplication: same text within 60s skipped
 - Check-ins persist in localStorage (already worked, verified)
+
+## Session: Jan 5, 2026 - Timeline Refactor & Cleanup
+
+### Timeline Storage Refactor
+- **Renamed** `state.cards` → `state.timeline` 
+- **Removed** `state.conversation` - was duplicate storage
+- **Unified** all messages (user, assistant, system) in `state.timeline` with `type` field
+- **Migration** handles old localStorage keys automatically
+
+### Fixed: Old Messages Wrong Timestamps
+**Problem:** User chats with AI, refreshes, messages show "6 hours ago"
+**Cause:** `state.conversation` used single timestamp for all messages
+**Fix:** Each message has its own timestamp. Server messages deduplicated by text match.
+
+### Fixed: -0°C Display
+**Problem:** Temperature showing `-0°C`
+**Cause:** Old cached weather entities had `-0°C` in Name field
+**Fix:** Context recalculates display string from raw `temp_c` with proper rounding
+
+### Removed Dead Code
+- `seenNewsUrls`, `hasSeenNews()`, `markNewsSeen()` - never used
+
+### Memory Usage (typical)
+- Process: ~150-200 MB
+- spatial.json: ~11 MB on disk
+- events.jsonl: ~80 MB, ~500K events (not loaded into memory)
+- Quadtree expands in memory due to Go data structures
+
+### Files Changed
+- `client/web/malten.js` - timeline refactor, removed conversation
+- `spatial/context.go` - recalculate weather display from raw temp
+- `spatial/live.go` - proper temp rounding
+- `claude.md` - updated docs

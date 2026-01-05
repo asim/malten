@@ -509,11 +509,6 @@ function escapeHTML(str) {
 
 
 
-function clearMessages() {
-    document.getElementById('messages').innerHTML = "";
-    last = timeAgo();
-    seen = {};
-}
 
 function clipMessages() {
     var list = document.getElementById('messages');
@@ -848,19 +843,22 @@ function submitCommand() {
         return false;
     }
     
-    // Handle debug command locally
+    // Handle debug command - show client + fetch server status
     if (prompt.match(/^\/?debug$/i)) {
         form.elements["prompt"].value = '';
-        var info = '🔧 DEBUG\n';
+        var info = '🔧 CLIENT\n';
         info += 'Stream: ' + getStream() + '\n';
         info += 'Location: ' + (state.hasLocation() ? state.lat.toFixed(4) + ', ' + state.lon.toFixed(4) : 'none') + '\n';
-        info += 'Context cached: ' + (state.context ? 'yes' : 'none') + '\n';
-        info += 'Cards: ' + (state.timeline ? state.timeline.length : 0) + ' (DOM: ' + document.querySelectorAll('#messages li').length + ')\n';
-        info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
-        info += 'Checked in: ' + (state.checkedIn ? state.checkedIn.name + ' (' + state.checkedIn.lat.toFixed(4) + ', ' + state.checkedIn.lon.toFixed(4) + ')' : 'no') + '\n';
-        info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 251';
+        info += 'Context: ' + (state.context ? 'cached' : 'none') + '\n';
+        info += 'Timeline: ' + (state.timeline ? state.timeline.length : 0) + ' items\n';
+        info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).length + '\n';
+        info += 'Checked in: ' + (state.checkedIn ? state.checkedIn.name : 'no') + '\n';
+        info += 'JS: v252';
         addToTimeline(info);
+        // Also fetch server status
+        $.post(commandUrl, { prompt: '/status' }).done(function(response) {
+            if (response) addToTimeline(response);
+        });
         return false;
     }
 
@@ -1749,29 +1747,6 @@ function displayResponse(text) {
 }
 
 // Build conversation context from recent cards for LLM
-function getConversationContext() {
-    if (!state.timeline) return [];
-    
-    // Get last 10 user/assistant messages for context
-    var context = [];
-    for (var i = state.timeline.length - 1; i >= 0 && context.length < 10; i--) {
-        var card = state.timeline[i];
-        if (card.type === 'user' || card.type === 'assistant') {
-            context.unshift({ role: card.type, text: card.text });
-        }
-    }
-    return context;
-}
-
-function getCardType(text) {
-    if (text.indexOf('🚏') >= 0 || text.indexOf('🚌') >= 0) return 'card-transport';
-    if (text.indexOf('🌧️') >= 0 || text.indexOf('☀️') >= 0 || text.indexOf('⛅') >= 0) return 'card-weather';
-    if (text.indexOf('🕌') >= 0) return 'card-prayer';
-    if (text.indexOf('📍') >= 0) return 'card-location';
-    if (text.indexOf('📖') >= 0 || text.indexOf('📿') >= 0) return 'card-reminder';
-    return '';
-}
-
 function disableLocation() {
     if (locationWatchId) {
         navigator.geolocation.clearWatch(locationWatchId);
