@@ -1831,3 +1831,40 @@ VAPID_PRIVATE_KEY=...
 - Go server: ~8,900 lines across 34 files
 - Memory: ~140 MB typical
 - Entities: ~12,000 (places, weather, prayer, arrivals, agents)
+
+### Endpoint Simplification
+
+**Before:**
+- `GET /commands` - static help text
+- `GET /commands/meta` - command metadata JSON
+- `/status` command - server status
+
+**After:**
+- `GET /commands` - command metadata JSON (merged)
+- `GET /debug` - server memory, entities, uptime (internal endpoint)
+- `/debug` client command - shows both client state + fetches server /debug
+
+**Endpoints (current):**
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/` | GET | Static files (PWA) |
+| `/commands` | GET | Command metadata JSON |
+| `/commands` | POST | Execute command |
+| `/events` | GET | WebSocket for real-time updates |
+| `/streams` | GET/POST | Stream management |
+| `/messages` | GET | Stream message history |
+| `/agents` | GET/POST/DELETE | Agent CRUD |
+| `/debug` | GET | Server status (memory, entities, uptime) |
+| `/push/*` | various | Push notification subscription |
+
+**Removed:**
+- `/commands/meta` - merged into GET /commands
+- `/status` command - replaced by /debug endpoint
+- `command/status.go` - deleted
+
+### Current Stats
+- JS: 2,670 lines
+- CSS: 323 lines
+- Go: ~9,100 lines across 33 files
+- Memory: ~85 MB typical
+- Entities: ~12,000
