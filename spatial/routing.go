@@ -3,7 +3,6 @@ package spatial
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 )
 
@@ -28,10 +27,7 @@ func GetWalkingDirections(fromLat, fromLon, toLat, toLon float64) (*Route, error
 	url := fmt.Sprintf("%s/route/v1/foot/%f,%f;%f,%f?overview=false&steps=true",
 		osrmBaseURL, fromLon, fromLat, toLon, toLat)
 	
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
-	
-	resp, err := httpClient.Do(req)
+	resp, err := OSRMGet(url)
 	if err != nil {
 		return nil, fmt.Errorf("routing failed: %v", err)
 	}
@@ -220,10 +216,7 @@ func SearchOSM(query string, nearLat, nearLon float64) ([]*Entity, error) {
 		nearLon-0.1, nearLat+0.1, nearLon+0.1, nearLat-0.1,
 	)
 	
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
-	
-	resp, err := httpClient.Do(req)
+	resp, err := LocationGet(url)
 	if err != nil {
 		return nil, err
 	}

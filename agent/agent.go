@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"malten.ai/command"
+	"malten.ai/spatial"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -487,6 +488,7 @@ Examples:
 
 	if len(resp.Choices) == 0 {
 		return nil, errors.New("no response")
+	recordLLMCall(err)
 	}
 
 	content := resp.Choices[0].Message.Content
@@ -549,6 +551,7 @@ func directResponse(systemPrompt string, messages []Message, userPrompt string) 
 		return "", errors.New("no response from AI")
 	}
 
+	recordLLMCall(err)
 	reply := resp.Choices[0].Message.Content
 	preview := reply
 	if len(preview) > 100 {
@@ -600,7 +603,23 @@ func ChatNoContext(prompt string) (string, error) {
 
 	if len(resp.Choices) == 0 {
 		return "", errors.New("no response from AI")
+	recordLLMCall(err)
 	}
 
 	return resp.Choices[0].Message.Content, nil
+}
+
+// recordLLMCall records stats for user-facing LLM calls
+func recordLLMCall(err error) {
+	stats := spatial.GetStats()
+	stats.RecordCall("fanar")
+	if err != nil {
+		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate limit") {
+			stats.RecordRateLimit("fanar")
+		} else {
+			stats.RecordError("fanar", err)
+		}
+	} else {
+		stats.RecordSuccess("fanar")
+	}
 }

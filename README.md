@@ -1,8 +1,6 @@
 # Malten
 
-Spatial AI for the real world. Foursquare if built in the AI era.
-
-Contextually aware of what's around you. Fully agentic - agents continuously index and maintain the world view for each area.
+Spatial AI for the real world. Context-aware of what's around you.
 
 ## What It Does
 
@@ -13,88 +11,92 @@ Open the app → instantly see:
 - 🚏 Live bus/train arrivals with countdown
 - ☕ Nearby cafes, restaurants, pharmacies, shops
 
-Move → it updates automatically. No searching, no typing. Just awareness.
+Move → context updates automatically (adaptive: 5s driving, 10s walking, 30s stationary).
 
 Ask anything → AI with spatial context answers.
 
-**Push notifications**: Enable notifications and get updates even when backgrounded:
+## Awareness System
+
+Agents observe changes in each area. When something interesting happens, you get notified:
+
+- 🌧️ Rain starting soon
+- ⚠️ Transport disruption on your route  
+- ☕ New cafe opened nearby
+
+The system filters noise - you only see what matters.
+
+## Push Notifications
+
+Enable notifications to get updates when backgrounded:
 - 🚌 Bus times when you're at a stop
 - 🕌 Prayer reminders 10 min before
 - ☀️ Morning weather at 7am
-- ☀️ Ad-Duha reminder at 10am
 
-## The Model
-
-See `ARCHITECTURE.md` and `claude.md` for the full spacetime model.
+## Architecture
 
 ```
-events.jsonl     = cosmic ledger (facts about the world, append-only)
-spatial.json     = materialized quadtree (current state, rebuildable)
-stream/websocket = real-time event propagation
-localStorage     = your private timeline (your worldline)
+┌─────────────────────────────────────────────┐
+│ Agents (per area, deterministic)            │
+│ - Fetch weather, transport, places          │
+│ - Accumulate observations                   │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│ Awareness Filter (LLM, periodic)            │
+│ - What's worth telling the user?            │
+│ - Filter noise, surface what matters        │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│ Delivery                                    │
+│ - Timeline card if app open                 │
+│ - Push notification if backgrounded         │
+└─────────────────────────────────────────────┘
 ```
 
-**Primitives**: Streams, Agents, Commands, Database (quadtree), Events
-
-**Privacy**: Your conversations stay in localStorage. Only facts about the world go to the server.
-
-## How It Works
-
-**Instant data**: When you arrive somewhere, Malten fetches what you need immediately - weather, transport, places. No waiting.
-
-**Smart caching**: Data is cached spatially in a quadtree. Move 500m? Get fresh local data. Stay put? Use cache.
-
-**Background agents**: Agents per area continuously index - more places, more detail. You never wait for them.
-
-**Adaptive updates**: Moving fast (driving)? Updates every 5s. Walking? 10s. Stationary? 30s.
+Data model:
+- `events.jsonl` - append-only log of facts about the world
+- `spatial.json` - quadtree spatial index (rebuildable from events)
+- `localStorage` - your private timeline
 
 ## Try It
 
 ```bash
 go build -o malten .
-./malten
+FANAR_API_KEY=xxx FANAR_API_URL=https://api.fanar.qa/v1 ./malten
 ```
 
 Open `localhost:9090`, enable location.
 
-### AI Integration
+## Commands
 
-```bash
-# Fanar (production)
-FANAR_API_KEY=xxx FANAR_API_URL=https://api.fanar.qa/v1 ./malten
-
-# OpenAI (fallback)
-OPENAI_API_KEY=xxx ./malten
-```
+| Command | Description |
+|---------|-------------|
+| `/ping` | Update location, get context |
+| `/nearby <type>` | Find nearby places |
+| `/directions <place>` | Walking directions |
+| `/weather` | Current weather |
+| `/bus` | Bus times |
+| `/prayer` | Prayer times |
+| `/observe` | See pending observations |
+| `/system` | System stats and health |
 
 ## Data Sources
 
-- **Location**: OpenStreetMap Nominatim
-- **Weather**: Open-Meteo
-- **Prayer times**: Aladhan
-- **Transport**: TfL (London buses, tubes, trains)
-- **Places**: OpenStreetMap + Foursquare
-- **Traffic**: TfL disruptions
+- Location: OpenStreetMap Nominatim
+- Weather: Open-Meteo
+- Prayer times: Aladhan
+- Transport: TfL (London)
+- Places: OpenStreetMap + Foursquare
 
-## Architecture
+## Files
 
-```
-User at location
-  → Query quadtree (instant)
-  → Cache miss? Fetch, store as event, return
-  → Agent enriches area in background
-  → events.jsonl = source of truth
-  → spatial.json = rebuildable from events
-```
-
-No waiting. Cache-first. Fetch on demand. Enrich in background.
-
-## Important Files
-
-- `ARCHITECTURE.md` - The spacetime model (read first)
-- `claude.md` - Full development context for AI assistants
-- `events.jsonl` - Append-only event log (never delete)
-- `spatial.json` - Quadtree state (rebuildable)
+- `claude.md` - Full development context
+- `ARCHITECTURE.md` - The spacetime model
+- `events.jsonl` - Event log (don't delete)
+- `spatial.json` - Spatial index
 
 ## License
 

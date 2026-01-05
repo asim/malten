@@ -49,6 +49,48 @@ var pendingMessages = {};
 var isAcquiringLocation = false;
 var lastAcquiringShown = 0;
 
+// Screen Wake Lock - prevent phone from sleeping while tracking
+var wakeLock = {
+    lock: null,
+    enabled: false,
+    
+    async acquire() {
+        if (!('wakeLock' in navigator)) {
+            debugLog('Wake Lock API not supported');
+            return false;
+        }
+        try {
+            this.lock = await navigator.wakeLock.request('screen');
+            this.enabled = true;
+            this.lock.addEventListener('release', () => {
+                debugLog('Wake lock released');
+                this.lock = null;
+            });
+            debugLog('Wake lock acquired');
+            return true;
+        } catch (err) {
+            debugLog('Wake lock failed: ' + err.message);
+            return false;
+        }
+    },
+    
+    async release() {
+        if (this.lock) {
+            await this.lock.release();
+            this.lock = null;
+            this.enabled = false;
+            debugLog('Wake lock released manually');
+        }
+    },
+    
+    // Re-acquire if page becomes visible (lock is auto-released when hidden)
+    async reacquire() {
+        if (this.enabled && !this.lock) {
+            await this.acquire();
+        }
+    }
+};
+
 // Set acquiring state - always shows in timeline
 function setAcquiring(acquiring) {
     if (acquiring && !isAcquiringLocation) {
@@ -203,6 +245,16 @@ var state = {
         var match = html.match(/📍 ([^\n]+)/);
         return match ? match[1].trim() : null;
     },
+    // Check if we're near a saved place (within 50m)
+    getNearSavedPlace: function() {
+        if (!this.lat || !this.lon || !this.savedPlaces) return null;
+        for (var name in this.savedPlaces) {
+            var place = this.savedPlaces[name];
+            var dist = haversineDistance(this.lat, this.lon, place.lat, place.lon);
+            if (dist < 50) return name; // Within 50m
+        }
+        return null;
+    },
     createQACard: function(question, answer) {
         var card = {
             question: question,
@@ -335,19 +387,39 @@ state.load();
 function addToTimeline(text, type, timestamp, skipSave) {
     if (!text) return;
     
-    // Augment check-in prompts with saved places
+    // Check-in prompts: suppress if near a saved place, otherwise augment
     if (text.indexOf('Where are you?') >= 0 || text.indexOf('GPS seems stuck') >= 0) {
+        var nearSaved = state.nearSavedPlace();
+        if (nearSaved) {
+            console.log('[timeline] Suppressing check-in prompt, near saved place:', nearSaved);
+            return;
+        }
         text = augmentCheckInPrompt(text);
     }
     
     var time = timestamp || Date.now();
     
-    // Dedupe: skip if same text added in last 60 seconds
+    // Dedupe: skip if same text exists in timeline within last 5 minutes
+    // For location messages, extend to 30 minutes and compare just the location
     if (state.timeline && state.timeline.length > 0) {
-        var lastCard = state.timeline[state.timeline.length - 1];
-        var isDupe = lastCard.text === text && (Date.now() - lastCard.time) < 60000;
-        if (isDupe) {
-            return; // Skip duplicate
+        var isLocationMsg = text.indexOf('📍') === 0 && text.indexOf('Entered') < 0;
+        var dedupWindow = isLocationMsg ? (30 * 60 * 1000) : (5 * 60 * 1000);
+        var cutoff = Date.now() - dedupWindow;
+        
+        for (var i = state.timeline.length - 1; i >= 0; i--) {
+            var card = state.timeline[i];
+            if (card.time < cutoff) break; // Stop checking older cards
+            
+            if (isLocationMsg && card.text && card.text.indexOf('📍') === 0) {
+                // For location messages, compare just the street name
+                var newLoc = text.replace('📍 ', '').split(',')[0].trim();
+                var oldLoc = card.text.replace('📍 ', '').split(',')[0].trim();
+                if (newLoc === oldLoc) {
+                    return; // Skip duplicate location
+                }
+            } else if (card.text === text) {
+                return; // Skip exact duplicate
+            }
         }
     }
     
@@ -406,6 +478,9 @@ function renderTimelineItem(item) {
     if (type === 'user') {
         // User message - escape HTML, no clickable processing
         html = escapeHTML(item.text);
+    } else if (type === 'reminder') {
+        // Reminder - preserve HTML (links are already in text)
+        html = item.text.replace(/\n/g, '<br>');
     } else {
         html = makeCheckInClickable(item.text).replace(/\n/g, '<br>');
     }
@@ -437,6 +512,7 @@ function renderTimelineItem(item) {
 // Determine item type from text
 function getTimelineType(text) {
     if (!text) return 'default';
+    if (text.indexOf('🔔') >= 0) return 'notification'; // Push notifications
     if (text.indexOf('🚶') >= 0 || text.indexOf('🚗') >= 0 || text.indexOf('📍 Entered') >= 0) return 'movement';
     if (text.indexOf('🚏') >= 0 || text.indexOf('🚌') >= 0) return 'transport';
     if (text.indexOf('🌧️') >= 0 || text.indexOf('☀️') >= 0 || text.indexOf('⛅') >= 0) return 'weather';
@@ -891,6 +967,27 @@ function submitCommand() {
         }
         return false;
     }
+    
+    // Handle /wakelock on|off - prevent screen from sleeping
+    var wakelockMatch = prompt.match(/^\/?wakelock\s+(on|off)$/i);
+    if (wakelockMatch) {
+        form.elements["prompt"].value = '';
+        var action = wakelockMatch[1].toLowerCase();
+        if (action === 'on') {
+            wakeLock.acquire().then(function(success) {
+                if (success) {
+                    addToTimeline('🔆 Screen wake lock enabled - phone won\'t sleep');
+                } else {
+                    addToTimeline('❌ Wake lock not available on this device');
+                }
+            });
+        } else {
+            wakeLock.release().then(function() {
+                addToTimeline('🔅 Screen wake lock disabled');
+            });
+        }
+        return false;
+    }
 
     // ========================================
     // SERVER COMMANDS (everything else)
@@ -1051,10 +1148,12 @@ var movementTracker = {
     getStatus: function() {
         if (!this.startTime) return null;
         var elapsed = (Date.now() - this.startTime) / 1000 / 60; // minutes
-        if (elapsed < 0.5) return null;
+        if (elapsed < 0.3) return null; // Need at least 18 seconds
         
         var speed = this.totalDistance / (elapsed * 60); // m/s
-        var mode = speed > 10 ? 'driving' : (speed > 1.5 ? 'walking' : 'stationary');
+        // Walking is 0.5-10 m/s (slow stroll to fast walk)
+        // Driving is >10 m/s (~36 km/h)
+        var mode = speed > 10 ? 'driving' : (speed > 0.5 ? 'walking' : 'stationary');
         
         return {
             distance: Math.round(this.totalDistance),
@@ -1072,8 +1171,8 @@ var movementTracker = {
         // Only show heartbeat if moving
         if (!status || status.mode === 'stationary') return;
         
-        // Show heartbeat every 60 seconds while moving
-        if (now - this.lastHeartbeat < 60000) return;
+        // Show heartbeat every 30 seconds while moving
+        if (now - this.lastHeartbeat < 30000) return;
         this.lastHeartbeat = now;
         
         var msg = '';
@@ -1104,18 +1203,99 @@ function getHeading() {
     var first = recent[0];
     var last = recent[recent.length - 1];
     
-    var dLon = (last.lon - first.lon) * Math.PI / 180;
-    var y = Math.sin(dLon) * Math.cos(last.lat * Math.PI / 180);
-    var x = Math.cos(first.lat * Math.PI / 180) * Math.sin(last.lat * Math.PI / 180) -
-            Math.sin(first.lat * Math.PI / 180) * Math.cos(last.lat * Math.PI / 180) * Math.cos(dLon);
+    return calculateBearing(first.lat, first.lon, last.lat, last.lon);
+}
+
+// Calculate bearing between two points, returns compass direction string
+function calculateBearing(lat1, lon1, lat2, lon2) {
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+    var x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+            Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
     var bearing = Math.atan2(y, x) * 180 / Math.PI;
     bearing = (bearing + 360) % 360;
     
-    // Convert to compass direction
     var directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
     var index = Math.round(bearing / 45) % 8;
     return '→' + directions[index];
 }
+
+// Calculate raw bearing in degrees
+function calculateBearingDegrees(lat1, lon1, lat2, lon2) {
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+    var x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+            Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+    var bearing = Math.atan2(y, x) * 180 / Math.PI;
+    return (bearing + 360) % 360;
+}
+
+// Turn detection - emits events when you make significant turns
+var turnTracker = {
+    lastHeading: null,
+    lastTurnTime: 0,
+    cumulativeTurn: 0,
+    distanceSinceTurn: 0,
+    
+    update: function(lat, lon, prevLat, prevLon) {
+        if (!prevLat || !prevLon) return;
+        
+        var dist = haversineDistance(prevLat, prevLon, lat, lon);
+        if (dist < 5) return; // Need some movement to calculate heading
+        
+        var heading = calculateBearingDegrees(prevLat, prevLon, lat, lon);
+        
+        if (this.lastHeading !== null) {
+            // Calculate turn angle (positive = right, negative = left)
+            var turn = heading - this.lastHeading;
+            // Normalize to -180 to 180
+            if (turn > 180) turn -= 360;
+            if (turn < -180) turn += 360;
+            
+            // Accumulate small turns
+            this.cumulativeTurn += turn;
+            this.distanceSinceTurn += dist;
+            
+            // Detect significant turn (>45 degrees accumulated)
+            if (Math.abs(this.cumulativeTurn) > 45) {
+                this.emitTurn();
+            }
+        }
+        
+        this.lastHeading = heading;
+    },
+    
+    emitTurn: function() {
+        var now = Date.now();
+        // Don't emit more than once per 30 seconds
+        if (now - this.lastTurnTime < 30000) {
+            this.cumulativeTurn = 0;
+            this.distanceSinceTurn = 0;
+            return;
+        }
+        
+        var direction = this.cumulativeTurn > 0 ? 'right' : 'left';
+        var angle = Math.abs(Math.round(this.cumulativeTurn));
+        var dist = Math.round(this.distanceSinceTurn);
+        
+        // Only emit for turns > 60 degrees after some distance
+        if (angle > 60 && dist > 10) {
+            var emoji = direction === 'right' ? '↪️' : '↩️';
+            var msg = emoji + ' Turned ' + direction + ' (' + dist + 'm)';
+            addToTimeline(msg, 'movement');
+            this.lastTurnTime = now;
+        }
+        
+        this.cumulativeTurn = 0;
+        this.distanceSinceTurn = 0;
+    },
+    
+    reset: function() {
+        this.lastHeading = null;
+        this.cumulativeTurn = 0;
+        this.distanceSinceTurn = 0;
+    }
+};
 
 // Adaptive ping interval based on speed
 // Driving (>10 m/s): 5s, Walking (2-10 m/s): 10s, Stationary: 30s
@@ -1129,9 +1309,9 @@ function getPingInterval() {
     var distance = haversineDistance(lastPingLat, lastPingLon, state.lat, state.lon);
     var speed = distance / elapsed; // m/s
     
-    if (speed > 10) return 5000;  // Driving: every 5s
-    if (speed > 2) return 10000;  // Walking: every 10s  
-    return 30000;                 // Stationary: every 30s
+    if (speed > 10) return 5000;   // Driving: every 5s
+    if (speed > 0.5) return 10000; // Walking: every 10s (slow stroll = 0.5m/s) 
+    return 30000;                  // Stationary: every 30s
 }
 
 // Haversine formula for distance in meters
@@ -1174,10 +1354,17 @@ function startLocationWatch() {
         function(pos) {
             var lat = pos.coords.latitude;
             var lon = pos.coords.longitude;
+            var accuracy = pos.coords.accuracy; // GPS accuracy in meters
             var now = Date.now();
             
             // Update movement tracker (before updating state)
             movementTracker.update(lat, lon);
+            
+            // Update turn tracker
+            turnTracker.update(lat, lon, state.lat, state.lon);
+            
+            // Track GPS accuracy
+            state.gpsAccuracy = accuracy;
             
             // Always update local state immediately
             var moved = false;
@@ -1194,6 +1381,7 @@ function startLocationWatch() {
             
             // If significant movement, ping immediately
             if (moved || !lastPingSent) {
+                debugLog('Ping: moved=' + Math.round(moved ? haversineDistance(state.lat, state.lon, lat, lon) : 0) + 'm');
                 lastPingLat = lat;
                 lastPingLon = lon;
                 lastPingTime = now;
@@ -1202,7 +1390,9 @@ function startLocationWatch() {
             } else {
                 // Otherwise respect throttle interval
                 var interval = getPingInterval();
-                if (now - lastPingSent >= interval) {
+                var timeSincePing = now - lastPingSent;
+                if (timeSincePing >= interval) {
+                    debugLog('Ping: throttle interval ' + Math.round(interval/1000) + 's elapsed');
                     lastPingLat = lat;
                     lastPingLon = lon;
                     lastPingTime = now;
@@ -1224,14 +1414,14 @@ function fetchReminder() {
     
     // Daily reminder - shows once per day on first open
     if (state.reminderDate !== today) {
+        // Mark as shown IMMEDIATELY to prevent duplicate fetches
+        state.reminderDate = today;
+        state.save();
+        
         $.post(commandUrl, { prompt: '/reminder', stream: getStream() }).done(function(response) {
             try {
                 var r = JSON.parse(response);
                 if (!r || (!r.verse && !r.name)) return;
-                
-                // Mark as shown
-                state.reminderDate = today;
-                state.save();
                 
                 // Display reminder card
                 displayReminderCard(r);
@@ -1273,15 +1463,15 @@ function checkPrayerReminder() {
     // Check if already shown today
     if (state.prayerReminders[reminderKey] === today) return;
     
+    // Mark as shown IMMEDIATELY to prevent duplicate fetches
+    state.prayerReminders[reminderKey] = today;
+    state.save();
+    
     // Fetch and display the prayer reminder
     $.post(commandUrl, { prompt: '/reminder ' + reminderKey, stream: getStream() }).done(function(response) {
         try {
             var r = JSON.parse(response);
             if (!r || (!r.verse && !r.name)) return;
-            
-            // Mark as shown
-            state.prayerReminders[reminderKey] = today;
-            state.save();
             
             // Display reminder card
             displayReminderCard(r);
@@ -1289,22 +1479,58 @@ function checkPrayerReminder() {
     });
 }
 
+// English titles for surahs
+var surahTitles = {
+    93: 'The Morning Hours',
+    92: 'The Night',
+    89: 'The Dawn',
+    91: 'The Sun',
+    94: 'The Relief',
+    103: 'Time',
+    112: 'Sincerity',
+    113: 'The Daybreak',
+    114: 'Mankind'
+};
+
 function displayReminderCard(r) {
     // Build the text
     var text = '';
+    var link = '';
+    
+    debugLog('displayReminderCard: name=' + (r.name ? r.name.substring(0,30) : 'none') + ', verse=' + (r.verse ? r.verse.substring(0,30) : 'none'));
+    
     if (r.name && r.name.length > 0) {
-        text = '📿 ' + r.name.split('\n\n')[0]; // Just the title
+        // Name of Allah - show title and brief description
+        var nameParts = r.name.split('\n\n');
+        var title = nameParts[0];
+        var desc = nameParts[1] ? nameParts[1].substring(0, 150) + '...' : '';
+        text = '📿 ' + title;
+        if (desc) {
+            text += '\n' + desc;
+        }
     } else if (r.verse && r.verse.length > 0) {
         var verseParts = r.verse.split('\n\n');
         var verseRef = verseParts[0] || '';
         var verseText = verseParts.slice(1).join('\n\n') || r.verse;
-        text = '📖 "' + verseText.trim() + '" — ' + verseRef;
+        
+        // Extract surah number from reference (e.g., "Ad-Duhaa 93:1-3" -> 93)
+        var surahMatch = verseRef.match(/(\d+):\d+/);
+        var surahNum = surahMatch ? parseInt(surahMatch[1]) : null;
+        var englishTitle = surahNum && surahTitles[surahNum] ? ' (' + surahTitles[surahNum] + ')' : '';
+        
+        // Make it a link if we have the surah number
+        if (surahNum) {
+            link = 'https://reminder.dev/quran/' + surahNum;
+            text = '📖 <a href="' + link + '" target="_blank" class="reminder-link">"' + verseText.trim() + '"</a>\n— ' + verseRef + englishTitle;
+        } else {
+            text = '📖 "' + verseText.trim() + '" — ' + verseRef;
+        }
     }
     
     if (!text) return;
     
-    // displaySystemMessage handles both display AND persistence
-    addToTimeline(text);
+    // Add to timeline
+    addToTimeline(text, 'reminder');
 }
 
 function fetchContext() {
@@ -1455,12 +1681,21 @@ function buildContextSummary(ctx, needsAction) {
 function buildContextHtml(ctx) {
     var html = ctx.html || '';
     
+    // Check if we're near a saved place and show that instead of street name
+    var nearPlace = state.getNearSavedPlace();
+    if (nearPlace && ctx.location && ctx.location.name) {
+        // Replace "📍 Street Name, Postcode" with "📍 Home (Street Name)"
+        var streetPattern = new RegExp('📍 ' + ctx.location.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        html = html.replace(streetPattern, '📍 ' + nearPlace + ' ⭐ (' + ctx.location.name + ')');
+    }
+    
     // Enable location button
     html = html.replace(/\{enable_location\}/g, 
         '<a href="javascript:void(0)" class="enable-location-btn">📍 Enable location</a>');
     
-    // Add notifications button at the end
+    // Add notifications button and map link at the end
     html += '\n' + getNotificationButton();
+    html += ' <a href="/map" class="map-link-btn">🗺️ Map</a>';
     
     // Replace place counts with clickable links
     var categoryIcons = {
@@ -1781,6 +2016,7 @@ function sendLocation(lat, lon) {
         lon: loc.isCheckedIn ? loc.lon : lon
     };
     if (loc.isCheckedIn) params.checkin = loc.name;
+    if (state.gpsAccuracy) params.accuracy = Math.round(state.gpsAccuracy);
     $.post(commandUrl, params).done(function(data) {
         if (data && data.length > 0) {
             state.setContext(data);
@@ -2057,6 +2293,8 @@ var commands = [
     { cmd: '/refresh', desc: 'Force reload' },
     { cmd: '/clear', desc: 'Reset all data' },
     { cmd: '/debug', desc: 'Show debug info' },
+    { cmd: '/wakelock on', desc: 'Prevent phone sleep' },
+    { cmd: '/wakelock off', desc: 'Allow phone sleep' },
 ];
 
 function showCommandPalette(filter) {
@@ -2449,6 +2687,24 @@ function checkPushState() {
     return Promise.all([vapidPromise, subPromise]);
 }
 
+// Fetch push notification history and display in timeline
+function fetchPushHistory() {
+    fetch('/push/history').then(function(r) { return r.json(); }).then(function(data) {
+        if (data.history && data.history.length > 0) {
+            // Add push notifications to timeline
+            data.history.forEach(function(item) {
+                var text = item.title;
+                if (item.body) text += '\n' + item.body;
+                // Use the notification timestamp
+                var timestamp = new Date(item.time).getTime();
+                addToTimeline('🔔 ' + text, 'notification', timestamp);
+            });
+        }
+    }).catch(function(err) {
+        debugLog('Failed to fetch push history', err);
+    });
+}
+
 // Refresh context display (to update notification button)
 function refreshContextDisplay() {
     if (state.context) {
@@ -2515,11 +2771,17 @@ $(document).ready(function() {
     // Update timestamps every minute
     setInterval(updateTimestamps, 60000);
     
-    // When page becomes visible (PWA reopen), check if we moved
+    // When page becomes visible (PWA reopen), check if we moved and fetch any push notifications
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
             updateTimestamps();
             checkIfMoved();
+            // Fetch any push notifications sent while app was backgrounded
+            if (pushState.subscribed) {
+                fetchPushHistory();
+            }
+            // Re-acquire wake lock (auto-released when page hidden)
+            wakeLock.reacquire();
         }
     });
     

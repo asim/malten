@@ -414,3 +414,24 @@ func (d *DB) Stats() DBStats {
 	}
 	return stats
 }
+
+// CountByAgentID counts entities indexed by a specific agent
+func (d *DB) CountByAgentID(agentID string, entityType EntityType) int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	count := 0
+	for _, point := range d.entities {
+		entity, ok := point.Data().(*Entity)
+		if !ok {
+			continue
+		}
+		if entity.Type != entityType {
+			continue
+		}
+		if aid, ok := entity.Data["agent_id"].(string); ok && aid == agentID {
+			count++
+		}
+	}
+	return count
+}

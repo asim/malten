@@ -1,6 +1,7 @@
 package command
 
 import (
+	"encoding/json"
 	"strings"
 
 	"malten.ai/spatial"
@@ -30,28 +31,28 @@ func init() {
 			}
 			
 			if r == nil {
-				return "Reminder unavailable", nil
+				return `{"error": "Reminder unavailable"}`, nil
 			}
 			
-			// Return formatted text
-			return formatReminder(r), nil
+			// Return JSON for client
+			return formatReminderJSON(r), nil
 		},
 	})
 }
 
-func formatReminder(r *spatial.Reminder) string {
-	var parts []string
-	
-	// Name of Allah or verse
-	if r.Name != "" {
-		parts = append(parts, "💿 "+r.Name)
+// ReminderResponse is the JSON format for client
+type ReminderResponse struct {
+	Verse   string `json:"verse,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+func formatReminderJSON(r *spatial.Reminder) string {
+	resp := ReminderResponse{
+		Verse:   r.Verse,
+		Name:    r.Name,
+		Message: r.Message,
 	}
-	if r.Verse != "" {
-		parts = append(parts, r.Verse)
-	}
-	if r.Message != "" {
-		parts = append(parts, r.Message)
-	}
-	
-	return strings.Join(parts, "\n")
+	b, _ := json.Marshal(resp)
+	return string(b)
 }

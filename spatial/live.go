@@ -28,7 +28,6 @@ const (
 	bbcUKRSS           = "https://feeds.bbci.co.uk/news/uk/rss.xml"
 )
 
-var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 // Live data fetch functions - called by agent loops
 
@@ -42,11 +41,7 @@ func fetchWeather(lat, lon float64) *Entity {
 	
 	url := fmt.Sprintf("%s?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&hourly=precipitation_probability&timezone=auto&forecast_hours=6",
 		weatherURL, lat, lon)
-	
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
-	
-	resp, err := httpClient.Do(req)
+	resp, err := WeatherGet(url)
 	if err != nil {
 		return nil
 	}
@@ -213,10 +208,7 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 	url := fmt.Sprintf("%s/%s?latitude=%.2f&longitude=%.2f&method=2",
 		prayerTimesURL, now.Format("02-01-2006"), lat, lon)
 	
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
-	
-	resp, err := httpClient.Do(req)
+	resp, err := PrayerGet(url)
 	if err != nil {
 		return nil
 	}
@@ -325,20 +317,8 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=%s&radius=500",
 		tflBaseURL, lat, lon, stopType)
 	
-	var resp *http.Response
-	var fetchErr error
-	
-	err := TfLRateLimitedCall(func() error {
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Set("User-Agent", "Malten/1.0")
-		
-		var err error
-		resp, err = httpClient.Do(req)
-		fetchErr = err
-		return err
-	})
-	
-	if err != nil || fetchErr != nil {
+	resp, err := TfLGet(url)
+	if err != nil {
 		log.Printf("[transport] API error for %s: %v", stopType, err)
 		return []*Entity{} // empty = extend TTL
 	}
@@ -427,17 +407,7 @@ type busArrival struct {
 func fetchStopArrivals(naptanID string) []busArrival {
 	url := fmt.Sprintf("%s/StopPoint/%s/Arrivals", tflBaseURL, naptanID)
 	
-	var resp *http.Response
-	
-	err := TfLRateLimitedCall(func() error {
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Set("User-Agent", "Malten/1.0")
-		
-		var err error
-		resp, err = httpClient.Do(req)
-		return err
-	})
-	
+	resp, err := TfLGet(url)
 	if err != nil {
 		return nil
 	}
@@ -524,10 +494,7 @@ func fetchLocation(lat, lon float64) *Entity {
 	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?lat=%f&lon=%f&format=json&zoom=18",
 		lat, lon)
 	
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
-	
-	resp, err := httpClient.Do(req)
+	resp, err := LocationGet(url)
 	if err != nil {
 		return nil
 	}
@@ -668,17 +635,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 	stopUrl := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=500",
 		tflBaseURL, lat, lon)
 	
-	var resp *http.Response
-	
-	err := TfLRateLimitedCall(func() error {
-		req, _ := http.NewRequest("GET", stopUrl, nil)
-		req.Header.Set("User-Agent", "Malten/1.0")
-		
-		var err error
-		resp, err = httpClient.Do(req)
-		return err
-	})
-	
+	resp, err := TfLGet(stopUrl)
 	if err != nil {
 		log.Printf("[context] TfL StopPoint query failed: %v", err)
 		return ""
@@ -957,17 +914,7 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 	db := Get()
 	disruptionUrl := "https://api.tfl.gov.uk/Road/all/Disruption"
 	
-	var resp *http.Response
-	
-	err := TfLRateLimitedCall(func() error {
-		req, _ := http.NewRequest("GET", disruptionUrl, nil)
-		req.Header.Set("User-Agent", "Malten/1.0")
-		
-		var err error
-		resp, err = httpClient.Do(req)
-		return err
-	})
-	
+	resp, err := TfLGet(disruptionUrl)
 	if err != nil {
 		log.Printf("[disruption] TfL API error: %v", err)
 		return ""
@@ -1085,10 +1032,7 @@ func fetchBreakingNews() *Entity {
 		}
 	}
 	
-	req, _ := http.NewRequest("GET", bbcUKRSS, nil)
-	req.Header.Set("User-Agent", "Malten/1.0")
-	
-	resp, err := httpClient.Do(req)
+	resp, err := NewsGet(bbcUKRSS)
 	if err != nil {
 		return nil
 	}

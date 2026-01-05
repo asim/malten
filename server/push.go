@@ -31,6 +31,14 @@ type PushUser struct {
 	LastPing     time.Time         `json:"last_ping"`
 	LastPush     time.Time         `json:"last_push"`
 	Timezone     *time.Location    `json:"-"` // Not persisted, recalculated from lon
+	PushHistory  []PushHistoryItem `json:"push_history,omitempty"` // Recent push notifications
+}
+
+// PushHistoryItem represents a sent push notification
+type PushHistoryItem struct {
+	Time  time.Time `json:"time"`
+	Title string    `json:"title"`
+	Body  string    `json:"body"`
 }
 
 // PushManager handles web push notifications
@@ -244,8 +252,19 @@ func (pm *PushManager) SendPush(sessionID string, notification *PushNotification
 
 	pm.mu.Lock()
 	user.LastPush = time.Now()
+	// Store in push history for timeline display
+	user.PushHistory = append(user.PushHistory, PushHistoryItem{
+		Time:  time.Now(),
+		Title: notification.Title,
+		Body:  notification.Body,
+	})
+	// Keep only last 20 push notifications
+	if len(user.PushHistory) > 20 {
+		user.PushHistory = user.PushHistory[len(user.PushHistory)-20:]
+	}
 	pm.mu.Unlock()
 
+	pm.save() // Persist push history
 	log.Printf("[push] Sent to %s: %s", sessionID[:8], notification.Title)
 	return nil
 }
@@ -364,6 +383,46 @@ func HandleVAPIDKey(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"key": pm.vapidPublic})
 }
 
+// HandlePushHistory handles GET /push/history - returns recent push notifications for timeline
+func HandlePushHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sessionID := getSessionToken(w, r)
+	if sessionID == "" {
+		JsonError(w, "No session", http.StatusUnauthorized)
+		return
+	}
+
+	pm := GetPushManager()
+	pm.mu.RLock()
+	user, exists := pm.users[sessionID]
+	pm.mu.RUnlock()
+
+	var history []PushHistoryItem
+	if exists && user.PushHistory != nil {
+		history = user.PushHistory
+	} else {
+		history = []PushHistoryItem{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"history": history,
+	})
+}
+
+// ClearPushHistory clears push history after client has fetched it
+func (pm *PushManager) ClearPushHistory(sessionID string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if user, exists := pm.users[sessionID]; exists {
+		user.PushHistory = nil
+	}
+}
+
 // Scheduled notification types
 const (
 	NotifyMorningWeather = "morning_weather"
@@ -469,4 +528,35 @@ func SetWeatherNotificationBuilder(cb func(lat, lon float64) *PushNotification) 
 // SetPrayerNotificationBuilder sets the callback for prayer notifications  
 func SetPrayerNotificationBuilder(cb func(lat, lon float64, now time.Time) *PushNotification) {
 	buildPrayerNotification = cb
+}
+
+
+// PushAwarenessToArea pushes awareness items to all users in an area
+func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emoji, Message string }) {
+	if pm == nil {
+		return
+	}
+
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	for _, user := range pm.users {
+		// Check if user is in this area (within 2km)
+		if user.Lat == 0 && user.Lon == 0 {
+			continue
+		}
+		
+		dist := haversine(lat, lon, user.Lat, user.Lon)
+		if dist > 2.0 { // > 2km
+			continue
+		}
+
+		for _, item := range items {
+			notification := &PushNotification{
+				Title: item.Emoji + " Malten",
+				Body:  item.Message,
+			}
+			go pm.SendPush(user.SessionID, notification)
+		}
+	}
 }

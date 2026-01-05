@@ -216,6 +216,11 @@ func main() {
 	server.SetWeatherNotificationBuilder(buildWeatherNotification)
 	server.SetPrayerNotificationBuilder(buildPrayerNotification)
 
+	// Awareness push callback
+	spatial.SetAwarenessPushCallback(func(lat, lon float64, items []struct{ Emoji, Message string }) {
+		server.GetPushManager().PushAwarenessToArea(lat, lon, items)
+	})
+
 	// Initialize AI agent
 	if err := agent.Init(); err != nil {
 		log.Printf("AI not available: %v", err)
@@ -314,6 +319,8 @@ func main() {
 	http.HandleFunc("/push/subscribe", server.HandleSubscribe)
 	http.HandleFunc("/push/unsubscribe", server.HandleUnsubscribe)
 	http.HandleFunc("/push/vapid-key", server.HandleVAPIDKey)
+	http.HandleFunc("/push/history", server.HandlePushHistory)
+	http.HandleFunc("/map", server.MapHandler)
 
 	h := server.WithCors(http.DefaultServeMux)
 

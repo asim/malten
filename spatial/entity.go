@@ -23,6 +23,7 @@ const (
 	EntityLocation EntityType = "location" // Reverse geocoded location names
 	EntityNews       EntityType = "news"       // Breaking news/headlines
 	EntityDisruption EntityType = "disruption" // Traffic disruptions
+	EntityStreet     EntityType = "street"     // Street/road geometry
 )
 
 // Entity represents any spatial object in the world

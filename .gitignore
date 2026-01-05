@@ -6,3 +6,5 @@ spatial.json
 events.jsonl
 spatial.json
 events.jsonl
+backups/
+push_subscriptions.json

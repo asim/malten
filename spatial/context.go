@@ -104,10 +104,21 @@ func GetContextData(lat, lon float64) *ContextData {
 		}
 	}
 
-	// Location - cache only, don't block on geocoding
+	// Location - check cache first, fetch inline if empty
 	tLoc := time.Now()
 	locs := db.Query(lat, lon, 500, EntityLocation, 1)
-	log.Printf("[context] location: %v", time.Since(tLoc))
+	log.Printf("[context] location cache query: %v", time.Since(tLoc))
+	
+	// If no cached location, fetch inline (don't make user wait for agent)
+	if len(locs) == 0 {
+		tFetch := time.Now()
+		if loc := fetchLocation(lat, lon); loc != nil {
+			db.Insert(loc)
+			locs = []*Entity{loc}
+			log.Printf("[context] location fetched inline: %v", time.Since(tFetch))
+		}
+	}
+	
 	if len(locs) > 0 {
 		ctx.Location = &LocationInfo{
 			Name: locs[0].Name,

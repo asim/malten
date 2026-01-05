@@ -113,6 +113,12 @@ input:focus { outline: none; }
   font-style: italic;
 }
 
+/* Notification - push notifications from background */
+.card-notification {
+  border-left: 3px solid #4285f4;
+  background: #e8f0fe;
+}
+
 /* === CONTEXT CARD === */
 #context-card {
   margin: 10px 15px;
@@ -321,3 +327,34 @@ input:focus { outline: none; }
   color: #999;
 }
 
+.map-link-btn {
+  display: inline-block;
+  margin-top: 10px;
+  margin-left: 8px;
+  padding: 8px 14px;
+  background: #e3f2fd;
+  border-radius: 20px;
+  color: #1976d2;
+  font-size: 13px;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.map-link-btn:hover {
+  background: #bbdefb;
+}
+
+
+.reminder-link {
+  color: #5d4037;
+  text-decoration: none;
+}
+
+.reminder-link:hover {
+  text-decoration: underline;
+}
+
+.card.reminder {
+  background: #fff8e1;
+  border-left: 3px solid #ffc107;
+}

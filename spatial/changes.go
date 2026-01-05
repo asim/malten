@@ -3,14 +3,11 @@ package spatial
 import (
 	"fmt"
 	"sync"
-	"time"
 )
 
 // SessionContext tracks last context sent to each session
 type sessionEntry struct {
-	ctx      *ContextData
-	lastPush time.Time
-	lastLoc  string // Last location pushed (to dedup)
+	ctx *ContextData
 }
 
 var (
@@ -111,7 +108,8 @@ func SetSessionContext(session string, ctx *ContextData) {
 }
 
 // GetContextWithChanges returns context and any meaningful changes to push
-func GetContextWithChanges(session string, lat, lon float64) (*ContextData, []string) {
+// accuracy is GPS accuracy in meters (0 if unknown), speed is in m/s (0 if unknown)
+func GetContextWithChanges(session string, lat, lon, accuracy, speed float64) (*ContextData, []string) {
 	entry := getSessionEntry(session)
 	var old *ContextData
 	if entry != nil {
@@ -124,25 +122,10 @@ func GetContextWithChanges(session string, lat, lon float64) (*ContextData, []st
 	
 	var messages []string
 	
-	// Dedup location: don't push same location within 30 seconds
-	if changes.LocationChanged && changes.NewLocation != "" {
-		shouldPush := true
-		if entry != nil && entry.lastLoc == changes.NewLocation {
-			if time.Since(entry.lastPush) < 30*time.Second {
-				shouldPush = false
-			}
-		}
-		if shouldPush {
-			messages = append(messages, fmt.Sprintf("📍 %s", changes.NewLocation))
-			// Update last push
-			sessionContextsMu.Lock()
-			if sessionContexts[session] != nil {
-				sessionContexts[session].lastLoc = changes.NewLocation
-				sessionContexts[session].lastPush = time.Now()
-			}
-			sessionContextsMu.Unlock()
-		}
-	}
+	// Location changes are NOT pushed to timeline
+	// Location is state, visible in context card - not an event/alert
+	// Only arrival detection (stopping at a POI) triggers timeline messages
+	// That's handled separately in command/nearby.go detectArrival()
 	
 	if changes.PrayerChanged && changes.NewPrayer != "" {
 		messages = append(messages, fmt.Sprintf("🕌 %s", changes.NewPrayer))

@@ -122,23 +122,51 @@ func agentLoop(agent *Entity) {
 	if region != nil {
 		regionName = region.Name
 	}
-	log.Printf("[agent] %s started (region: %s)", agent.Name, regionName)
+	log.Printf("[agent] %s started (region: %s, agentic: %v)", agent.Name, regionName, AgenticMode)
 	
-	// Start live data immediately (don't wait for POI index)
+	// Start data loop immediately (don't wait for POI index)
 	go func() {
-		updateLiveData(agent)
+		// Add random initial delay (0-30s) to spread out agent updates
+		initialDelay := time.Duration(time.Now().UnixNano()%30000) * time.Millisecond
+		time.Sleep(initialDelay)
 		
-		// Continuous live data loop
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
+		runAgentCycle(agent)
 		
-		for range ticker.C {
-			updateLiveData(agent)
+		// Continuous loop
+		for {
+			state := GetAgentState(agent.ID)
+			
+			// If agentic mode set a specific next cycle time, honor it
+			if AgenticMode && !state.NextCycle.IsZero() && time.Now().Before(state.NextCycle) {
+				sleepDuration := time.Until(state.NextCycle)
+				if sleepDuration > 0 {
+					time.Sleep(sleepDuration)
+				}
+			} else {
+				// Default: 30s base + 0-5s jitter
+				jitter := time.Duration(time.Now().UnixNano()%5000) * time.Millisecond
+				time.Sleep(30*time.Second + jitter)
+			}
+			
+			runAgentCycle(agent)
 		}
 	}()
 	
 	// POI index runs in parallel (takes longer)
 	IndexAgent(agent)
+}
+
+// runAgentCycle executes one cycle - either agentic or simple polling
+func runAgentCycle(agent *Entity) {
+	if AgenticMode {
+		if err := AgentCycle(agent); err != nil {
+			log.Printf("[agent] %s cycle error: %v", agent.Name, err)
+			// Fall back to simple polling on error
+			updateLiveData(agent)
+		}
+	} else {
+		updateLiveData(agent)
+	}
 }
 
 func updateLiveData(agent *Entity) {
@@ -152,6 +180,13 @@ func updateLiveData(agent *Entity) {
 	// Weather
 	if weather := fetchWeather(agent.Lat, agent.Lon); weather != nil {
 		db.Insert(weather)
+		// Check for notable weather
+		if weather.Data != nil {
+			if rain, ok := weather.Data["rain_forecast"].(string); ok && rain != "" {
+				AddWeatherObservation(agent.ID, agent.Name,
+					weather.Data["temp_c"].(float64), weather.Name, rain)
+			}
+		}
 	}
 	
 	// Prayer times
@@ -202,6 +237,9 @@ func updateLiveData(agent *Entity) {
 	// Update agent timestamp
 	agent.Data["last_live"] = time.Now().Format(time.RFC3339)
 	db.Insert(agent)
+
+	// Check if awareness processing is due
+	processAwarenessIfDue(agent)
 }
 
 // recoverStaleAgents starts loops for all agents
@@ -410,4 +448,53 @@ func ReverseGeocode(lat, lon float64) string {
 		return larger
 	}
 	return addr.City
+}
+
+// processAwarenessIfDue checks if awareness processing should run for this agent
+func processAwarenessIfDue(agent *Entity) {
+	state := GetAgentState(agent.ID)
+	obsLog := GetObservationLog()
+	
+	// Check if we should process
+	if !obsLog.ShouldProcess(agent.ID, state.ActiveUsers > 0) {
+		return
+	}
+	
+	pending := obsLog.GetPending(agent.ID)
+	if len(pending) == 0 {
+		return
+	}
+	
+	// Process awareness
+	items, err := ProcessAwareness(agent.ID, agent.Name, map[string]interface{}{
+		"active_users": state.ActiveUsers,
+	})
+	if err != nil {
+		log.Printf("[awareness] %s processing error: %v", agent.Name, err)
+		return
+	}
+	
+	if len(items) > 0 {
+		log.Printf("[awareness] %s surfacing %d items", agent.Name, len(items))
+		// Push to users in this area
+		if AwarenessPushCallback != nil {
+			var pushItems []struct{ Emoji, Message string }
+			for _, item := range items {
+				pushItems = append(pushItems, struct{ Emoji, Message string }{item.Emoji, item.Message})
+			}
+			AwarenessPushCallback(agent.Lat, agent.Lon, pushItems)
+		}
+		for _, item := range items {
+			log.Printf("[awareness] %s: %s %s", agent.Name, item.Emoji, item.Message)
+		}
+	}
+}
+
+// AwarenessPushCallback is called to push awareness items to users
+// Set by main.go to avoid import cycle with server package
+var AwarenessPushCallback func(lat, lon float64, items []struct{ Emoji, Message string })
+
+// SetAwarenessPushCallback sets the callback
+func SetAwarenessPushCallback(cb func(lat, lon float64, items []struct{ Emoji, Message string })) {
+	AwarenessPushCallback = cb
 }

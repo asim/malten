@@ -7,57 +7,82 @@ import (
 )
 
 // APIRateLimiter serializes external API calls to prevent rate limiting
-// All external API calls should go through this to coordinate across goroutines
 type APIRateLimiter struct {
 	mu           sync.Mutex
 	lastCall     map[string]time.Time
 	minInterval  time.Duration
-	globalLock   sync.Mutex // Ensures only one API call at a time
 }
 
 var (
-	// Global rate limiter for all external APIs
 	apiLimiter = &APIRateLimiter{
 		lastCall:    make(map[string]time.Time),
-		minInterval: 2 * time.Second, // At least 2 seconds between any API calls
+		minInterval: 2 * time.Second,
 	}
 )
 
-// RateLimitedCall executes fn after waiting for rate limit
-// apiName is used to track per-API timing (e.g. "tfl", "osm", "weather")
-// Returns error from fn, or nil if skipped due to recent call
-func RateLimitedCall(apiName string, fn func() error) error {
-	apiLimiter.mu.Lock()
+// LLM rate limiter (separate, longer interval for Fanar)
+var llmLimiter = struct {
+	mu          sync.Mutex
+	lastCall    time.Time
+	minInterval time.Duration
+}{
+	minInterval: 500 * time.Millisecond,
+}
+
+// LLMRateLimitedCall wraps LLM API calls with rate limiting and stats
+func LLMRateLimitedCall(fn func() error) error {
+	stats := GetStats()
 	
-	// Check if we called this API recently
-	if last, ok := apiLimiter.lastCall[apiName]; ok {
-		elapsed := time.Since(last)
-		if elapsed < apiLimiter.minInterval {
-			wait := apiLimiter.minInterval - elapsed
-			apiLimiter.mu.Unlock()
-			log.Printf("[ratelimit] %s: waiting %.1fs", apiName, wait.Seconds())
-			time.Sleep(wait)
-			apiLimiter.mu.Lock()
-		}
+	// Check for backoff
+	backoff := stats.GetBackoffDuration("llm")
+	if backoff > 0 {
+		log.Printf("[ratelimit] llm: backing off %.1fs", backoff.Seconds())
+		time.Sleep(backoff)
 	}
 	
-	// Mark this API as being called
-	apiLimiter.lastCall[apiName] = time.Now()
-	apiLimiter.mu.Unlock()
+	llmLimiter.mu.Lock()
 	
-	// Serialize all API calls globally (only one at a time)
-	apiLimiter.globalLock.Lock()
-	defer apiLimiter.globalLock.Unlock()
+	elapsed := time.Since(llmLimiter.lastCall)
+	if elapsed < llmLimiter.minInterval {
+		wait := llmLimiter.minInterval - elapsed
+		llmLimiter.mu.Unlock()
+		time.Sleep(wait)
+		llmLimiter.mu.Lock()
+	}
 	
-	return fn()
+	llmLimiter.lastCall = time.Now()
+	llmLimiter.mu.Unlock()
+	
+	stats.RecordCall("llm")
+	
+	err := fn()
+	if err != nil {
+		if isRateLimitError(err) {
+			stats.RecordRateLimit("llm")
+		} else {
+			stats.RecordError("llm", err)
+		}
+		return err
+	}
+	
+	stats.RecordSuccess("llm")
+	return nil
 }
 
-// TfLRateLimitedCall is a convenience wrapper for TfL API calls
-func TfLRateLimitedCall(fn func() error) error {
-	return RateLimitedCall("tfl", fn)
+// isRateLimitError checks if error is a rate limit (429)
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return contains(errStr, "429") || contains(errStr, "rate limit") || contains(errStr, "Too Many Requests")
 }
 
-// OSMRateLimitedCall is a convenience wrapper for OSM Overpass API calls  
-func OSMRateLimitedCall(fn func() error) error {
-	return RateLimitedCall("osm", fn)
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

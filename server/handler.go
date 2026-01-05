@@ -62,14 +62,20 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		Input:   input,
 	}
 	// First try location from POST (inline with command)
-	var shouldPromptCheckIn bool
+	var locUpdate *command.LocationUpdate
 	if latStr := r.Form.Get("lat"); latStr != "" {
 		if lat, err := strconv.ParseFloat(latStr, 64); err == nil {
 			if lon, err := strconv.ParseFloat(r.Form.Get("lon"), 64); err == nil {
 				ctx.Lat = lat
 				ctx.Lon = lon
-				// Store location and check if GPS is stuck
-				shouldPromptCheckIn = command.SetLocation(token, lat, lon)
+				// GPS accuracy
+				if accStr := r.Form.Get("accuracy"); accStr != "" {
+					if acc, err := strconv.ParseFloat(accStr, 64); err == nil {
+						ctx.Accuracy = acc
+					}
+				}
+				// Store location and check for prompts/notifications
+				locUpdate = command.SetLocation(token, lat, lon)
 			}
 		}
 	}
@@ -101,9 +107,14 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 				Default.Events <- NewChannelMessage(msg, stream, "@"+token)
 			}
 		}
-		// Check if we should prompt for check-in (GPS stuck)
-		if shouldPromptCheckIn {
-			go sendCheckInPrompt(token, stream, ctx.Lat, ctx.Lon)
+		// Check if we should prompt for check-in (GPS stuck) or notify arrival
+		if locUpdate != nil {
+			if locUpdate.ShouldPromptCheckIn {
+				go sendCheckInPrompt(token, stream, ctx.Lat, ctx.Lon)
+			}
+			if locUpdate.ArrivedAt != "" {
+				go sendArrivalPrompt(token, stream, locUpdate.ArrivedAt, ctx.Lat, ctx.Lon)
+			}
 		}
 		return
 	}

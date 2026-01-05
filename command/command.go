@@ -11,6 +11,7 @@ type Context struct {
 	Session      string
 	Lat          float64
 	Lon          float64
+	Accuracy     float64  // GPS accuracy in meters (0 if not provided)
 	ToLat        float64  // Destination lat (for directions)
 	ToLon        float64  // Destination lon (for directions)
 	Input        string

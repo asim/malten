@@ -88,3 +88,19 @@ func sendCheckInPrompt(token, stream string, lat, lon float64) {
 
 	Default.Broadcast(msg)
 }
+
+// sendArrivalPrompt notifies user they've arrived at a POI
+func sendArrivalPrompt(token, stream, poiName string, lat, lon float64) {
+	text := fmt.Sprintf("📍 Arrived at %s\n\nReply `/checkin %s` to check in", poiName, poiName)
+	
+	msg := &Message{
+		Id:      Random(16),
+		Type:    "message",
+		Text:    text,
+		Stream:  stream,
+		Channel: "@" + token,
+		Created: time.Now().UnixNano(),
+	}
+	
+	Default.Broadcast(msg)
+}

@@ -59,9 +59,8 @@ func Agents() string {
 }
 
 func countEntitiesByAgent(db *spatial.DB, agentID string, entityType spatial.EntityType) int {
-	// This is a simple approximation - count entities near agent location
-	// A proper implementation would track agent_id in entity data
-	return 0 // TODO: implement proper counting
+	// Count entities that have this agent_id in their data
+	return db.CountByAgentID(agentID, entityType)
 }
 
 func formatDuration(d time.Duration) string {

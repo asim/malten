@@ -491,9 +491,40 @@ Flow:
 ## CRITICAL: Data Preservation
 
 ### NEVER DELETE
-- `spatial.json` - The spatial index. Contains all cached POIs, agents, weather, prayer times, transport data
+- `spatial.json` - The spatial index. Contains all cached POIs, agents, streets, weather, prayer times, transport data
 - `events.jsonl` - Event log for replay
 - `data/*.json` - Supplementary data
+- `backups/` - Automated backups (can regenerate, but saves time)
+
+### Backups
+
+Automated backups run every 6 hours via cron:
+
+```bash
+# Cron job
+0 */6 * * * /home/exedev/malten/scripts/backup.sh
+
+# Manual backup
+/home/exedev/malten/scripts/backup.sh
+
+# Restore from backup
+gunzip -c backups/spatial_YYYYMMDD_HHMMSS.json.gz > spatial.json
+sudo systemctl restart malten
+```
+
+| Setting | Value |
+|---------|-------|
+| Frequency | Every 6 hours |
+| Retention | 7 days (28 backups) |
+| Location | `/home/exedev/malten/backups/` |
+| Files | `spatial_*.json.gz`, `events_*.jsonl.gz` |
+| Compressed size | ~16MB per backup |
+
+**Why backups matter:**
+- Street indexing via OSRM is expensive (rate-limited API calls)
+- 29 streets = ~30 OSRM calls at 2s each = 1 minute of API time
+- POI indexing via OSM Overpass is also rate-limited
+- Rebuilding from scratch would take hours
 
 ### Why This Matters
 1. Agents constantly index in background - POIs, transport, weather
@@ -1868,3 +1899,686 @@ VAPID_PRIVATE_KEY=...
 - Go: ~9,100 lines across 33 files
 - Memory: ~85 MB typical
 - Entities: ~12,000
+
+## Session: Jan 5, 2026 - Push History, Map View, Pro
+
+### Push Notifications in Timeline
+- Push notifications now stored in `PushHistory` on server
+- New endpoint `GET /push/history` returns recent push notifications
+- Client fetches push history when app becomes visible (visibilitychange)
+- Push notifications appear in timeline with 🔔 emoji
+- Styled with blue left border and light blue background
+
+### Spatial Map View
+- New `GET /map` endpoint returns all spatial data as JSON
+- New `map.html` - canvas-based visualization of spatial index
+- Features:
+  - **Grid overlay** - 1km squares (adjusts with zoom: 100m, 500m, 1km, 5km)
+  - **Scale bar** - shows actual distance (50m to 5km)
+  - **Emoji POIs** - ☕ cafe, 🍴 restaurant, 🏪 shop, 🚏 transport, 🏥 health, 🎦 entertainment
+  - **Agent markers** - 🤖 with labels and coverage circles
+  - **User location** - blue dot with accuracy circle
+  - **Center-on-user** button (◎) - gets GPS and centers map
+  - **Pan/zoom** - mouse drag, scroll wheel, touch gestures
+  - **Tooltips** - hover to see place/agent names
+  - **Stats** - agents, total places, visible places, scale (m/px)
+- Meters-per-pixel based zoom (1-500 m/px range)
+- `/map` command shows map stats and link
+
+### Pro Membership
+- `/pro` command shows pricing information
+- Free tier: all current features
+- Pro tier: £2.99/month or £24.99/year
+  - Cloud backup & sync
+  - Saved places on all devices
+  - Step history & stats
+  - Timeline sharing
+  - Priority support
+- Family tier: £4.99/month for up to 5 people
+
+### Agent Efficiency
+- Added random jitter to agent loops (0-30s initial delay, 0-5s ongoing)
+- Prevents all agents from updating simultaneously
+- Rate limiting already in place: 2s between TfL calls
+- Fresh cache check prevents redundant API calls
+
+### Timeline Deduplication
+- Improved from 60s to 5min window
+- Checks all recent cards, not just the last one
+- Prevents duplicate push notifications and repeated messages
+
+### Entity Counting
+- `CountByAgentID()` method added to DB
+- `/agents` command now shows accurate place/stop counts per agent
+
+### Files Changed
+- `server/push.go` - Push history storage and retrieval
+- `server/map.go` - New map data endpoint
+- `client/web/map.html` - New canvas map view
+- `client/web/malten.js` - Push history fetch, improved deduplication (v256)
+- `client/web/malten.css` - Notification card styling (v27)
+- `command/pro.go` - New Pro info command
+- `command/map.go` - New map info command
+- `command/agents.go` - Entity counting fix
+- `spatial/db.go` - CountByAgentID method
+- `spatial/agent.go` - Jittered agent loops
+- `main.go` - New routes (/map, /push/history)
+
+### Endpoints Added
+| Endpoint | Method | Purpose |
+|----------|--------|----------|
+| `/map` | GET | Spatial data JSON for map view |
+| `/push/history` | GET | Recent push notifications for timeline |
+
+### Street Indexing via OSRM
+- New `/streets` command triggers street indexing for an area
+- Uses OSRM to fetch walking routes between agent location and nearby POIs
+- Route geometry (GPS coordinates) stored as street entities
+- Streets rendered as lines on the map
+- Builds a street network over time without needing map tiles
+
+**How it works:**
+1. Agent identifies nearby POIs (200m+ away)
+2. Fetches walking route from agent center to each POI via OSRM
+3. Route geometry (array of [lon, lat] points) stored in spatial DB
+4. Map renders streets as connected lines
+
+**Files:**
+- `spatial/streets.go` - Street fetching and indexing
+- `spatial/entity.go` - EntityStreet type added
+- `command/streets.go` - /streets command
+- `server/map.go` - MapStreet struct and query
+- `client/web/map.html` - Street rendering
+
+**Rate limiting:**
+- OSRM calls rate-limited (2s between calls)
+- /streets indexes 5 routes immediately, rest in background
+- Existing routes are skipped (deduplication by to_name)
+
+**Cost:**
+- Each street = 1 OSRM API call (~2s with rate limiting)
+- 29 streets indexed so far
+- Data is expensive to rebuild - backups are critical
+
+## Session: Jan 5, 2026 - Movement & Check-in Fixes
+
+### Issues Reported
+1. **Initial street detection wrong** - First load showed wrong street (Broad Lane vs Gloucester Road)
+2. **Speed detection slow** - Moving detected but mode (walking/driving) not immediately correct
+3. **Street change not notified** - Changed streets but no notification
+4. **No arrival notification** - Arrived at Sainsbury's, moved a lot, but no check-in prompt
+5. **Phone sleeping** - Had to keep phone awake manually while driving
+
+### Fixes Implemented
+
+**Screen Wake Lock API**
+- New `/wakelock on` and `/wakelock off` commands
+- Uses Screen Wake Lock API to prevent phone from sleeping
+- Auto-reacquires lock when app becomes visible (lock is released when page hidden)
+- Wake lock object in `malten.js` with `acquire()`, `release()`, `reacquire()` methods
+
+**Arrival Detection (new)**
+- Previously only checked for "stuck GPS" (indoor drift)
+- Now detects arrival: was moving (>5 m/s), now stopped (<2 m/s), near a POI (<100m)
+- Sends arrival prompt: "📍 Arrived at Sainsbury's" with check-in suggestion
+- `SetLocation()` now returns `LocationUpdate` struct with both check-in and arrival info
+- `detectArrival()` function analyzes location history for speed changes
+
+**Inline Location Fetch (first request)**
+- Previously: first /ping had no location if not cached (waited for agent)
+- Now: `GetContextData()` fetches location inline if cache is empty
+- First response always has street name
+
+### Files Changed
+- `client/web/malten.js` - Wake lock API, v258
+- `command/nearby.go` - `LocationUpdate` struct, `detectArrival()` function
+- `server/handler.go` - Handle arrival prompts
+- `server/location.go` - `sendArrivalPrompt()` function
+- `spatial/context.go` - Inline location fetch when cache empty
+
+### New Commands
+- `/wakelock on` - Enable screen wake lock (prevents sleep)
+- `/wakelock off` - Disable screen wake lock
+
+### Detection Thresholds
+```go
+arrivalSpeedThreshold = 2.0   // m/s - below this is "stopped"
+arrivalMovingThreshold = 5.0  // m/s - above this is "was moving"
+arrivalPOIRadius = 100.0      // meters - look for POIs within this
+locationHistorySize = 20      // Keep 20 points for ~60s of history
+```
+
+### GPS Accuracy-Based Street Filtering
+- Street change notifications suppressed when:
+  - GPS accuracy > 50m AND speed > 5 m/s (driving with poor GPS)
+- This prevents false street notifications when GPS is bouncing while driving
+- Accuracy sent from client with each ping
+- Speed calculated from location history
+
+### Reminder Deduplication Fix
+- Daily and prayer reminders now mark as shown BEFORE async fetch
+- Prevents duplicate reminders when app triggers multiple context updates quickly
+
+## Session: Jan 5, 2026 - Event Model Refactor & Turn Detection
+
+### Event Model Fixed
+The core issue was treating location as an event rather than state. Now:
+
+**State (visible in context card, NOT pushed to timeline):**
+- 📍 Location/street name
+- 🌡️ Temperature
+- 🕌 Current prayer
+
+**Events (pushed to timeline):**
+- 🕌 Prayer time changed
+- 🌧️ Rain warning
+- 📍 Arrived at [POI] (from arrival detection)
+- ↪️/↩️ Turned right/left (from turn detection)
+
+No more duplicate "📍 Milton Road" notifications - location is always visible in context card.
+
+### Turn Detection
+New `turnTracker` in client detects significant direction changes:
+- Accumulates heading changes from GPS movement
+- Emits "↪️ Turned right (25m)" or "↩️ Turned left (30m)" when turn > 60°
+- 30-second cooldown between turn events
+- Uses `calculateBearingDegrees()` for raw heading
+
+### Map Heading/Direction
+Map view now shows:
+- Blue direction arrow when heading known
+- Direction cone when moving (longer cone = faster)
+- Uses compass (deviceorientation API) when available
+- Falls back to calculated heading from GPS movement
+
+### Reminder Fixes
+- `/reminder` command now returns JSON (was plain text)
+- Surah titles map added: 93 → "The Morning Hours", 92 → "The Night", etc.
+- Verse text is clickable, links to reminder.dev/quran/{number}
+- Deduplication: mark as shown BEFORE async fetch
+
+### Saved Places in Context
+If within 50m of a saved place (e.g., "Home"), context shows:
+- "📍 Home ⭐ (Milton Road, TW12 2LL)" instead of just street name
+
+### Files Changed
+- `spatial/changes.go` - Removed location push logic, simplified
+- `server/map.html` - Added heading arrow, direction cone, deviceorientation
+- `client/web/malten.js` - Turn tracker, bearing functions, saved place display
+- `command/reminder.go` - Returns JSON, ReminderResponse struct
+
+### Client JS Version: 269
+
+## Session: Jan 5, 2026 - Checkpoint Before Agentic Refactor
+
+### Current State Summary
+
+**What Works:**
+- Context card with location, weather, prayer, bus times, places
+- Arrival detection (stop at POI → prompt to check-in)
+- Turn detection (↪️ Turned right)
+- Map view with heading/direction arrow
+- Daily reminders with Name of Allah + description
+- Prayer-time reminders (Duha, Fajr, etc.) with English titles
+- Saved places shown in context ("📍 Home ⭐")
+- Wake lock to prevent phone sleep (`/wakelock on`)
+- Push notifications for background updates
+
+**What "Agents" Currently Do (NOT agentic):**
+- Dumb background loops every 30 seconds
+- Fetch: weather, prayer times, transport arrivals
+- Index: POIs from OSM (once on creation)
+- No LLM, no reasoning, no decisions
+- Just cron jobs with geographic assignment
+
+**Architecture:**
+- 33 agents covering Greater London + other cities
+- Each agent has lat/lon center + radius
+- `updateLiveData()` runs every 30s per agent
+- `IndexAgent()` runs once to populate POIs
+- All data goes into quadtree spatial index
+
+### Next Session: Agentic Agents
+
+Transform agents from dumb loops to LLM-powered decision makers:
+
+**Agent Loop:**
+1. **Observe** - What's the state of my area? What's changed?
+2. **Think (LLM)** - Given observations, what should I do?
+3. **Act** - Execute decided actions via tools
+4. **Reflect** - Did actions achieve the goal?
+
+**Tools to expose:**
+- `fetch_transport(stop_id)` - Get arrivals for a stop
+- `fetch_weather(lat, lon)` - Get weather  
+- `index_pois(category, radius)` - Index places from OSM
+- `notify_users(message)` - Push to users in area
+- `query_spatial(type, radius)` - Query spatial index
+- `set_poll_interval(resource, seconds)` - Adjust polling frequency
+
+**Agent Prompt (draft):**
+```
+You are a spatial agent responsible for {name} ({lat}, {lon}).
+
+Your job: keep the spatial index fresh and relevant for users in your area.
+
+Current state:
+- Weather: {status}
+- Transport: {stop_count} stops, {stale_count} stale
+- POIs: {poi_count} indexed
+- Users: {active_count} in area
+
+Recent events: {event_log}
+
+Decide what actions to take. Be efficient - don't fetch what's already fresh.
+```
+
+**Considerations:**
+- Cost: LLM calls every 30s × 33 agents = expensive
+- Maybe: LLM decides only when something interesting happens
+- Maybe: Tiered - most agents are dumb, promote to agentic when users present
+- Maybe: One "supervisor" agent coordinates dumb worker agents
+
+### Files to Change
+- `spatial/agent.go` - Agent loop, tool execution
+- `agent/agent.go` - LLM integration (already has Claude client)
+- New: `spatial/tools.go` - Tool definitions
+- New: `spatial/agent_prompt.go` - Prompt templates
+
+### JS Version: 270
+### Go Build: Working
+### Server: Running on port 9090
+
+## Session: Jan 5, 2026 - Agentic Agents
+
+### The Change
+Agents are now truly agentic. They use an LLM loop (OODA cycle) to decide what to do.
+
+**Before:** Dumb 30s polling loop that always fetched weather, prayer, transport.
+
+**After:** LLM observes state, decides what needs updating, executes tools, schedules next cycle.
+
+### How It Works
+
+1. **Observe** - Agent gathers current state:
+   - Weather: fresh/STALE (>10 min)
+   - Prayer: fresh/STALE (>1 hour)
+   - Transport: fresh/STALE (>5 min)
+   - Active users in area
+   - Queued events
+
+2. **Orient + Decide** - LLM processes observations, outputs JSON tool call:
+   ```json
+   {"tool": "fetch_weather", "args": {}}
+   ```
+
+3. **Act** - Tool executes, result fed back to LLM
+
+4. **Loop** - LLM decides next action until `done` or `set_next_cycle`
+
+### Tools Available
+
+| Tool | Purpose |
+|------|---------|
+| `fetch_weather` | Get weather for agent's area |
+| `fetch_prayer` | Get prayer times |
+| `fetch_transport` | Get bus/tube/rail arrivals |
+| `set_next_cycle` | Schedule when to wake up next (1-60 min) |
+| `done` | Signal cycle complete |
+
+### Rate Limiting
+
+Fanar has strict rate limits. Added `LLMRateLimitedCall()` with 500ms minimum between LLM calls globally.
+
+### Toggle
+
+```bash
+/agentic on    # Enable LLM-based processing
+/agentic off   # Return to simple polling
+/agentic       # Show status
+```
+
+### Efficiency Gains
+
+- Agents with no users set next cycle to 30-60 min (not 30s)
+- Only fetches STALE data (checks before calling)
+- Self-scheduling based on conditions
+
+### Files Changed
+
+- `spatial/agentic.go` - Core OODA loop with JSON-based tool calling
+- `spatial/ratelimit.go` - Added LLM rate limiter
+- `spatial/agent.go` - Modified `agentLoop` to support agentic mode
+- `command/agentic.go` - Toggle command
+
+### Check-in Prompt Fix
+
+Also fixed: if you're near a saved place (like Home), check-in prompts are suppressed. No more "Where are you?" when you're at home.
+
+- `client/web/malten.js` - `addToTimeline()` checks `state.nearSavedPlace()` before showing check-in prompt
+
+### JS Version: 271
+
+### Observability & Stats
+
+Added system stats tracking for API calls:
+
+```bash
+/system   # Shows memory, agents, entities, and API stats
+```
+
+**Output includes:**
+- Memory usage (alloc, sys, GC cycles)
+- Agent count and agentic mode status
+- Entity counts (places, arrivals)
+- Per-API stats:
+  - Call count and success rate
+  - Rate limit hits
+  - Consecutive errors (for backoff)
+  - Last success/error times
+
+**Rate limiting with exponential backoff:**
+- Tracks consecutive errors per API
+- Backoff: 1s, 2s, 4s, 8s... up to 60s max
+- Resets on successful call
+
+**Files:**
+- `spatial/stats.go` - Stats tracking
+- `spatial/ratelimit.go` - Rate limiting with backoff
+- `command/system.go` - /system command
+- `agent/agent.go` - Added Fanar stats recording
+
+### Architecture Decision
+
+**Deterministic loops by default.** AgenticMode is off.
+
+The simple polling loop does the job:
+- Weather stale? Fetch.
+- Prayer stale? Fetch.
+- Transport stale? Fetch.
+
+No LLM needed for this. LLM is for:
+- User queries (Fanar)
+- Complex decisions we don't want to hardcode
+
+`/agentic on` enables LLM-based agent processing for experimentation.
+
+### HTTP Client Wrapper (Jan 5, 2026)
+
+All external HTTP calls now go through a unified client with:
+- Rate limiting (2s between calls per API)
+- Exponential backoff on errors
+- Stats tracking
+- Logging
+
+**Usage:**
+```go
+// API-specific functions
+resp, err := TfLGet(url)
+resp, err := WeatherGet(url)
+resp, err := PrayerGet(url)
+resp, err := LocationGet(url)
+resp, err := OSRMGet(url)
+resp, err := OSMGet(url)
+resp, err := NewsGet(url)
+
+// Or generic
+resp, err := External.Get("api-name", url)
+```
+
+**Files:**
+- `spatial/http.go` - ExternalClient with rate limiting and stats
+- `spatial/ratelimit.go` - Simplified, just LLM rate limiting
+- `spatial/live.go` - Uses new API-specific functions
+- `spatial/routing.go` - Uses OSRMGet, LocationGet
+- `spatial/streets.go` - Uses OSRMGet
+
+**Stats tracked per API:**
+- Call count
+- Success/error counts
+- Rate limit hits
+- Consecutive errors (for backoff calculation)
+- Last success/error timestamps
+
+## Awareness System
+
+### The Vision
+
+"Move → it updates automatically. No searching, no typing. Just awareness."
+
+The app should proactively surface interesting things. Not just show data when you look - tell you things you didn't know to ask about.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│ Deterministic Agent Loop (every 30s)        │
+│ - Fetch weather, prayer, transport          │
+│ - Index new places                          │
+│ - Detect disruptions                        │
+│ - Accumulate observations → ObservationLog  │
+│ - No LLM, no cost                           │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼ (every 5-10 min, or on significant event)
+┌─────────────────────────────────────────────┐
+│ Awareness Filter (LLM)                      │
+│                                             │
+│ Input:                                      │
+│ - Recent observations for area              │
+│ - User context (location history, patterns) │
+│ - Time of day, day of week                  │
+│                                             │
+│ Prompt:                                     │
+│ "Given these observations and user context, │
+│  what's worth telling the user? Be selective│
+│  - only genuinely interesting/useful things"│
+│                                             │
+│ Output:                                     │
+│ - List of awareness items to surface        │
+│ - Or empty if nothing noteworthy            │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│ Delivery                                    │
+│ - App open? Timeline card                   │
+│ - App backgrounded? Push notification       │
+│ - Dedupe against recently surfaced items    │
+└─────────────────────────────────────────────┘
+```
+
+### What Makes Something "Interesting"
+
+**Worth surfacing:**
+- Weather change that affects plans (rain starting, temp drop)
+- Disruption on routes user frequents
+- New place on streets user walks often
+- Approaching prayer time (already doing this)
+- Historic/notable place user is near for first time
+- Unusual situation (bus much earlier/later than normal)
+
+**NOT worth surfacing:**
+- Normal weather
+- Normal bus times
+- Places user has passed many times
+- Routine data refreshes
+
+### Observation Types
+
+```go
+type Observation struct {
+    Time      time.Time
+    Type      string    // weather_change, new_place, disruption, etc.
+    AgentID   string
+    Data      map[string]interface{}
+    Surfaced  bool      // Already told user?
+}
+```
+
+Types:
+- `weather_change` - significant weather shift
+- `weather_warning` - rain, storm, extreme temp
+- `new_place` - newly indexed POI
+- `disruption` - transport disruption
+- `arrival_anomaly` - bus much earlier/later than usual
+- `prayer_approaching` - 10-15 min before prayer
+- `notable_nearby` - historic site, mosque, etc. user hasn't seen
+
+### User Context
+
+To decide what's interesting, we need to know:
+- **Location history** - where does user go regularly?
+- **Time patterns** - when do they commute?
+- **Places seen** - what have we already told them about?
+- **Preferences** - do they care about cafes? mosques? history?
+
+Currently in localStorage (client-side):
+- `locationHistory` - last 20 points
+- `savedPlaces` - manually saved
+- `timeline` - what we've shown them
+
+Need server-side (for awareness filter):
+- Anonymized location patterns per session
+- What's been surfaced to avoid repeats
+
+### Cost Management
+
+**Target:** 1 LLM call per area per 5-10 minutes, not per observation.
+
+**Batching:** Accumulate observations, process in batch.
+
+**Skip if nothing new:** Don't call LLM if observation log is empty or only routine items.
+
+**Tiered:**
+- Areas with active users: process every 5 min
+- Areas without users: process every 30 min or skip
+
+### Implementation Plan
+
+1. **ObservationLog** - accumulator for agent observations
+2. **AwarenessFilter** - LLM prompt to filter interesting items
+3. **UserContext** - track patterns server-side (anonymized)
+4. **SurfacedItems** - deduplication of what user has seen
+5. **Delivery** - push to timeline or notification
+
+### Files to Create
+
+- `spatial/awareness.go` - ObservationLog, AwarenessFilter
+- `spatial/patterns.go` - User pattern tracking
+- `command/awareness.go` - /awareness command to see what's been observed
+
+### Privacy
+
+User patterns stored per session token, not user identity. No PII. Patterns are:
+- Geohash frequency (which areas visited)
+- Time-of-day patterns (when active)
+- NOT: exact coordinates, names, personal data
+
+### Implementation Complete (Jan 5, 2026)
+
+The awareness system is now implemented:
+
+**Files created/modified:**
+- `spatial/awareness.go` - ObservationLog, ProcessAwareness, observation helpers
+- `spatial/agent.go` - Added processAwarenessIfDue to agent loop, observation hooks
+- `command/awareness.go` - /awareness and /test-awareness commands
+- `server/push.go` - PushAwarenessToArea for pushing to users in area
+- `main.go` - Wired up awareness push callback
+- `README.md` - Updated to reflect current architecture
+
+**How it works:**
+1. Agents accumulate observations (weather warnings, disruptions, new places)
+2. Every 5-10 min (if observations pending), LLM filters what's interesting
+3. Interesting items pushed to users in that area (timeline or push notification)
+
+**Commands:**
+- `/awareness` - Show pending observations
+- `/awareness process` - Manually trigger LLM filter
+- `/test-awareness` - Add test observations for debugging
+
+**Cost:** ~1 LLM call per area per 5-10 min when observations pending (not per observation)
+
+---
+
+## Session Checkpoint: Jan 5, 2026 - Awareness System Complete
+
+### What We Built Today
+
+1. **Agentic Mode (experimental)** - `/agentic on/off`
+   - LLM-based agent decision making
+   - JSON tool calling for Fanar compatibility
+   - Disabled by default (deterministic is more efficient)
+
+2. **Observability** - `/system`
+   - API stats per endpoint (calls, success rate, errors)
+   - Exponential backoff on failures
+   - Memory and entity counts
+
+3. **HTTP Client Wrapper** - `spatial/http.go`
+   - All external calls through unified client
+   - Rate limiting, stats, logging built-in
+   - API-specific functions: `TfLGet()`, `WeatherGet()`, etc.
+
+4. **Awareness System** - `/observe`, `/trigger`
+   - Agents accumulate observations (weather warnings, disruptions, new places)
+   - LLM filters what's interesting (every 5-10 min)
+   - Push to users in area (timeline or notification)
+
+5. **Check-in Fix**
+   - Suppressed when near saved place (Home)
+
+### Architecture Now Matches Vision
+
+```
+README says                          Reality
+─────────────────────────────────────────────────────
+"Open app → instantly see"           ✓ Context card
+"Move → updates automatically"       ✓ Adaptive ping (5s/10s/30s)
+"Ask anything → AI answers"          ✓ Fanar + tools
+"Awareness system"                   ✓ ObservationLog + LLM filter
+"Filter noise"                       ✓ LLM decides what's interesting
+"Push notifications"                 ✓ Bus, prayer, weather, awareness
+```
+
+### Key Files Changed
+
+| File | Purpose |
+|------|---------|
+| `spatial/awareness.go` | ObservationLog, ProcessAwareness |
+| `spatial/agentic.go` | OODA loop (optional) |
+| `spatial/http.go` | Unified HTTP client |
+| `spatial/stats.go` | API statistics |
+| `spatial/ratelimit.go` | Rate limiting + backoff |
+| `spatial/agent.go` | Observation hooks, awareness processing |
+| `command/observe.go` | /observe, /trigger commands |
+| `command/system.go` | /system command |
+| `command/agentic.go` | /agentic toggle |
+| `server/push.go` | PushAwarenessToArea |
+| `main.go` | Wired callbacks |
+| `README.md` | Updated to match reality |
+
+### Commands Added
+
+| Command | Description |
+|---------|-------------|
+| `/observe` | Show pending observations |
+| `/observe process` | Run awareness filter manually |
+| `/trigger` | Add test observations |
+| `/system` | System stats and API health |
+| `/agentic on/off` | Toggle LLM-based agents |
+
+### Cost Model
+
+- **Deterministic loops**: Free (just API calls)
+- **Awareness filter**: ~1 LLM call per area per 5-10 min when observations pending
+- **User queries**: 1 LLM call per query (Fanar)
+
+### What's Still TODO
+
+1. **User patterns** - Track which routes/areas user frequents for smarter filtering
+2. **Dedupe surfaced items** - Don't tell user same thing twice
+3. **More observation types** - Prayer approaching, notable places nearby
+4. **Timeline integration** - Awareness items should appear in timeline automatically
+
+### JS Version: 273
