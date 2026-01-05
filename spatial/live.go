@@ -32,6 +32,11 @@ const (
 // Live data fetch functions - called by agent loops
 
 func fetchWeather(lat, lon float64) *Entity {
+	// Lock per-area to prevent race between cache check and fetch
+	lock := GetAreaLock(lat, lon)
+	lock.Lock()
+	defer lock.Unlock()
+	
 	// Check spatial cache first - weather valid for ~5km
 	db := Get()
 	cached := db.Query(lat, lon, 5000, EntityWeather, 1)
@@ -196,6 +201,11 @@ func computePrayerDisplay(e *Entity) string {
 }
 
 func fetchPrayerTimes(lat, lon float64) *Entity {
+	// Lock per-area to prevent race between cache check and fetch
+	lock := GetAreaLock(lat, lon)
+	lock.Lock()
+	defer lock.Unlock()
+	
 	// Check spatial cache first - prayer times valid for ~50km (same city)
 	db := Get()
 	cached := db.Query(lat, lon, 50000, EntityPrayer, 1)
@@ -297,6 +307,11 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	if !IsLondon(lat, lon) {
 		return nil // Outside London - don't query TfL
 	}
+	
+	// Lock per-area to prevent race between cache check and fetch
+	lock := GetAreaLock(lat, lon)
+	lock.Lock()
+	defer lock.Unlock()
 	
 	// Check if we have fresh arrivals in this area already
 	db := Get()
@@ -484,6 +499,11 @@ func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 // fetchLocation reverse geocodes and returns an entity for caching
 // Locations are cached for 500m radius - same street basically
 func fetchLocation(lat, lon float64) *Entity {
+	// Lock per-area to prevent race between cache check and fetch
+	lock := GetAreaLock(lat, lon)
+	lock.Lock()
+	defer lock.Unlock()
+	
 	// Check cache first
 	db := Get()
 	cached := db.Query(lat, lon, 500, EntityLocation, 1)
@@ -749,6 +769,11 @@ func getPlacesSummary(db *DB, lat, lon float64) string {
 
 // getPlacesSummaryOrFetch returns cached places, fetching any missing categories
 func getPlacesSummaryOrFetch(db *DB, lat, lon float64) string {
+	// Lock per-area to prevent race between cache check and fetch
+	lock := GetAreaLock(lat, lon)
+	lock.Lock()
+	defer lock.Unlock()
+	
 	categories := []struct {
 		osmTag   string
 		category string
