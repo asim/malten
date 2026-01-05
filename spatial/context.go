@@ -109,14 +109,9 @@ func GetContextData(lat, lon float64) *ContextData {
 	locs := db.Query(lat, lon, 500, EntityLocation, 1)
 	log.Printf("[context] location cache query: %v", time.Since(tLoc))
 	
-	// If no cached location, fetch inline (don't make user wait for agent)
+	// If no cached location, trigger async fetch (don't block user)
 	if len(locs) == 0 {
-		tFetch := time.Now()
-		if loc := fetchLocation(lat, lon); loc != nil {
-			db.Insert(loc)
-			locs = []*Entity{loc}
-			log.Printf("[context] location fetched inline: %v", time.Since(tFetch))
-		}
+		go fetchLocation(lat, lon) // Fetch in background, will be ready next ping
 	}
 	
 	if len(locs) > 0 {
@@ -172,10 +167,7 @@ func GetContextData(lat, lon float64) *ContextData {
 	// Prayer times
 	prayer := db.Query(lat, lon, 50000, EntityPrayer, 1)
 	if len(prayer) == 0 {
-		if p := fetchPrayerTimes(lat, lon); p != nil {
-			db.Insert(p)
-			prayer = []*Entity{p}
-		}
+		go fetchPrayerTimes(lat, lon) // Fetch in background
 	}
 	if len(prayer) > 0 {
 		display := computePrayerDisplay(prayer[0])
