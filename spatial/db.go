@@ -142,12 +142,19 @@ func (d *DB) Insert(entity *Entity) error {
 
 	// Remove existing if updating
 	if existing, ok := d.entities[entity.ID]; ok {
-		d.tree.Remove(existing)
+		removed := d.tree.Remove(existing)
+		if entity.Type == EntityArrival {
+			log.Printf("[db] Updating arrival %s: removed=%v", entity.Name, removed)
+		}
 	}
 
 	point := quadtree.NewPoint(entity.Lat, entity.Lon, entity)
 	if !d.tree.Insert(point) {
+		log.Printf("[db] FAILED to insert %s %s at (%.4f, %.4f)", entity.Type, entity.Name, entity.Lat, entity.Lon)
 		return fmt.Errorf("failed to insert into quadtree")
+	}
+	if entity.Type == EntityArrival {
+		log.Printf("[db] Inserted arrival %s at (%.4f, %.4f)", entity.Name, entity.Lat, entity.Lon)
 	}
 
 	d.entities[entity.ID] = point
@@ -209,6 +216,17 @@ func (d *DB) QueryWithMaxAge(lat, lon, radiusMeters float64, entityType EntityTy
 
 	points := d.tree.KNearest(boundary, limit, filter)
 	
+	// Debug: log when querying arrivals and finding none
+	if entityType == EntityArrival && len(points) == 0 {
+		// Count total arrivals in entities map
+		arrivalCount := 0
+		for _, p := range d.entities {
+			if e, ok := p.Data().(*Entity); ok && e.Type == EntityArrival {
+				arrivalCount++
+			}
+		}
+		log.Printf("[db] QueryWithMaxAge arrivals at %.4f,%.4f r=%.0fm: 0 found (total arrivals in DB: %d)", lat, lon, radiusMeters, arrivalCount)
+	}
 
 	var results []*Entity
 	for _, p := range points {
