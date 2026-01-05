@@ -117,8 +117,7 @@ var state = {
                 if (s.version !== this.version) {
                     this.lat = s.lat || null;
                     this.lon = s.lon || null;
-                    this.cards = [];
-                    this.conversation = s.conversation || null;
+                    this.timeline = [];
                     this.savedPlaces = s.savedPlaces || {};  // Preserve saved places
                     this.steps = s.steps || { count: 0, date: null };  // Preserve steps
                     this.save();
@@ -131,26 +130,16 @@ var state = {
                 this.contextExpanded = s.contextExpanded || false;
                 this.locationHistory = s.locationHistory || [];
                 this.lastBusStop = s.lastBusStop || null;
-                this.cards = s.cards || [];
-                this.seenNewsUrls = s.seenNewsUrls || [];
-                this.conversation = s.conversation || null;
+                this.timeline = s.timeline || s.messages || s.cards || [];  // migration from older versions
                 this.checkedIn = s.checkedIn || null;
                 this.savedPlaces = s.savedPlaces || {};
                 this.steps = s.steps || { count: 0, date: null };
                 this.reminderDate = s.reminderDate || null;
                 this.prayerReminders = s.prayerReminders || {};
-                // Prune old cards on load (24 hour retention)
+                // Prune old messages on load (24 hour retention)
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
-                this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
-                // Prune old news URLs (7 day retention)
-                var newsCutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
-                this.seenNewsUrls = this.seenNewsUrls.filter(function(n) { return n.time > newsCutoff; });
-                // Prune old conversations (24 hour retention)
-                if (this.conversation && this.conversation.time) {
-                    if (this.conversation.time < cutoff) {
-                        this.conversation = null;
-                    }
-                }
+                this.timeline = this.timeline.filter(function(c) { return c.time > cutoff; });
+
             }
         } catch(e) {}
     },
@@ -164,9 +153,7 @@ var state = {
             contextExpanded: this.contextExpanded,
             locationHistory: this.locationHistory.slice(-20),
             lastBusStop: this.lastBusStop,
-            cards: this.cards,
-            seenNewsUrls: this.seenNewsUrls,
-            conversation: this.conversation,
+            timeline: this.timeline,
             checkedIn: this.checkedIn,
             savedPlaces: this.savedPlaces,
             steps: this.steps,
@@ -174,27 +161,7 @@ var state = {
             prayerReminders: this.prayerReminders
         }));
     },
-    hasSeenNews: function(newsText) {
-        // Extract URL from news text
-        var urlMatch = newsText.match(/https?:\/\/[^\s]+/);
-        if (!urlMatch) return false;
-        var url = urlMatch[0];
-        for (var i = 0; i < this.seenNewsUrls.length; i++) {
-            if (this.seenNewsUrls[i].url === url) return true;
-        }
-        return false;
-    },
-    markNewsSeen: function(newsText) {
-        var urlMatch = newsText.match(/https?:\/\/[^\s]+/);
-        if (!urlMatch) return;
-        var url = urlMatch[0];
-        this.seenNewsUrls.push({ url: url, time: Date.now() });
-        // Keep only last 50 URLs
-        if (this.seenNewsUrls.length > 50) {
-            this.seenNewsUrls = this.seenNewsUrls.slice(-50);
-        }
-        this.save();
-    },
+
     setLocation: function(lat, lon) {
         var prevLat = this.lat;
         var prevLon = this.lon;
@@ -244,10 +211,10 @@ var state = {
             lat: this.lat,
             lon: this.lon
         };
-        this.cards.push(card);
+        this.timeline.push(card);
         // Prune cards older than 24 hours
         var cutoff = Date.now() - (24 * 60 * 60 * 1000);
-        this.cards = this.cards.filter(function(c) { return c.time > cutoff; });
+        this.timeline = this.timeline.filter(function(c) { return c.time > cutoff; });
         this.save();
     },
     isMoving: function() {
@@ -280,8 +247,7 @@ var state = {
     contextExpanded: false,
     locationHistory: [],
     lastBusStop: null,
-    cards: [],
-    seenNewsUrls: [],
+    timeline: [],
     checkedIn: null,  // {name, lat, lon, time} - manual location override
     savedPlaces: {},  // Private named places: { "Home": {lat, lon}, "Work": {lat, lon} }
     steps: { count: 0, date: null },  // Daily step counter
@@ -366,7 +332,7 @@ state.load();
 // =============================================================================
 
 // THE way to add anything to the timeline (saves + renders)
-function addToTimeline(text, type) {
+function addToTimeline(text, type, timestamp, skipSave) {
     if (!text) return;
     
     // Augment check-in prompts with saved places
@@ -374,9 +340,11 @@ function addToTimeline(text, type) {
         text = augmentCheckInPrompt(text);
     }
     
+    var time = timestamp || Date.now();
+    
     // Dedupe: skip if same text added in last 60 seconds
-    if (state.cards && state.cards.length > 0) {
-        var lastCard = state.cards[state.cards.length - 1];
+    if (state.timeline && state.timeline.length > 0) {
+        var lastCard = state.timeline[state.timeline.length - 1];
         var isDupe = lastCard.text === text && (Date.now() - lastCard.time) < 60000;
         if (isDupe) {
             return; // Skip duplicate
@@ -386,35 +354,39 @@ function addToTimeline(text, type) {
     var item = {
         text: text,
         type: type || getTimelineType(text),
-        time: Date.now(),
+        time: time,
         lat: state.lat,
         lon: state.lon
     };
     
-    // Don't persist transient status messages
+    // Don't persist transient or server-loaded messages
     var isTransient = text.indexOf('Acquiring location') >= 0;
     
-    if (!isTransient) {
+    if (!isTransient && !skipSave) {
         // Save to state
-        state.cards.push(item);
+        state.timeline.push(item);
         
         // Prune old items (24 hour retention)
         var cutoff = Date.now() - (24 * 60 * 60 * 1000);
-        state.cards = state.cards.filter(function(c) { return c.time > cutoff; });
+        state.timeline = state.timeline.filter(function(c) { return c.time > cutoff; });
         state.save();
     }
     
     // Render
     renderTimelineItem(item);
-    scrollToBottom();
+    if (!skipSave) scrollToBottom(); // Don't scroll when loading history
 }
 
 // Load timeline from localStorage on startup
 function loadTimeline() {
-    if (!state.cards || !state.cards.length) return;
+    if (!state.timeline || !state.timeline.length) return;
+    
+    // Clear existing DOM items first (prevents duplicates on hot reload)
+    var container = document.getElementById('messages');
+    if (container) container.innerHTML = '';
     
     // Sort oldest first
-    var sorted = state.cards.slice().sort(function(a, b) { return a.time - b.time; });
+    var sorted = state.timeline.slice().sort(function(a, b) { return a.time - b.time; });
     
     sorted.forEach(function(item) {
         if (item.text) {
@@ -423,13 +395,20 @@ function loadTimeline() {
     });
 }
 
-// Render single item to DOM
+// Render single item to DOM in chronological order
 function renderTimelineItem(item) {
     var type = item.type || getTimelineType(item.text);
     var time = item.time || Date.now();
     
     var li = document.createElement('li');
-    var html = makeCheckInClickable(item.text).replace(/\n/g, '<br>');
+    var html;
+    
+    if (type === 'user') {
+        // User message - escape HTML, no clickable processing
+        html = escapeHTML(item.text);
+    } else {
+        html = makeCheckInClickable(item.text).replace(/\n/g, '<br>');
+    }
     
     li.innerHTML = '<div class="card card-' + type + '" data-timestamp="' + time + '">' +
         '<span class="card-time">' + formatTimeAgo(time) + '</span>' +
@@ -544,18 +523,30 @@ function clipMessages() {
 }
 
 function displayMessages(array, direction) {
-    // Display oldest first so newest ends up on top
+    // Sort oldest first
     var sorted = array.slice().sort(function(a, b) {
         return a.Created - b.Created;
     });
     
     for (var i = 0; i < sorted.length; i++) {
-        if (sorted[i].Id in seen) continue;
-        seen[sorted[i].Id] = sorted[i];
+        var msg = sorted[i];
+        if (msg.Id in seen) continue;
+        seen[msg.Id] = msg;
         
-        // Use card format with timestamp from message
-        var timestamp = sorted[i].Created / 1e6; // Convert from nanos to millis
-        addToTimeline(sorted[i].Text, timestamp);
+        // Server timestamp in nanos -> millis
+        var serverTime = msg.Created / 1e6;
+        
+        // Check if already in localStorage (by exact text match)
+        // localStorage is source of truth - don't reinsert old messages
+        var alreadyHave = state.timeline && state.timeline.some(function(c) {
+            return c.text === msg.Text;
+        });
+        
+        if (!alreadyHave) {
+            // New message - add with CURRENT time so it appears at bottom
+            // (Server timestamp is only for ordering within this batch)
+            addToTimeline(msg.Text);
+        }
     }
 
     if (direction >= 0 && array.length > 0) {
@@ -630,6 +621,7 @@ function connectWebSocket() {
             if (pendingCommand) {
                 displayResponse(ev.Text);
             } else {
+                // Server broadcast - save with current timestamp
                 addToTimeline(ev.Text);
             }
             clipMessages();
@@ -652,15 +644,24 @@ function connectWebSocket() {
     };
 }
 
-function initialLoad() {
-    clearMessages();
-    // User's timeline comes from localStorage (their worldline)
-    // Server messages are for real-time stream events, not persistence
-    // Per spacetime model: private experiences belong in localStorage
+// Load messages from server stream and subscribe to WebSocket
+function loadMessages() {
+    var stream = getStream();
+    
+    // Subscribe to real-time updates
     connectWebSocket();
     
+    // Fetch recent messages from server
+    $.get(messageUrl + '?stream=' + stream + '&limit=50', function(data) {
+        if (data && data.length > 0) {
+            displayMessages(data, 1);
+            scrollToBottom();
+        }
+    });
+    
+    // Set form stream
     var form = document.getElementById('form');
-    form.elements["stream"].value = getStream();
+    form.elements["stream"].value = stream;
     form.elements["prompt"].focus();
 }
 
@@ -854,10 +855,11 @@ function submitCommand() {
         info += 'Stream: ' + getStream() + '\n';
         info += 'Location: ' + (state.hasLocation() ? state.lat.toFixed(4) + ', ' + state.lon.toFixed(4) : 'none') + '\n';
         info += 'Context cached: ' + (state.context ? 'yes' : 'none') + '\n';
-        info += 'Cards: ' + (state.cards ? state.cards.length : 0) + '\n';
+        info += 'Cards: ' + (state.timeline ? state.timeline.length : 0) + ' (DOM: ' + document.querySelectorAll('#messages li').length + ')\n';
         info += 'Saved places: ' + Object.keys(state.savedPlaces || {}).join(', ') + '\n';
+        info += 'Checked in: ' + (state.checkedIn ? state.checkedIn.name + ' (' + state.checkedIn.lat.toFixed(4) + ', ' + state.checkedIn.lon.toFixed(4) + ')' : 'no') + '\n';
         info += 'State version: ' + (state.version || 'unknown') + '\n';
-        info += 'JS version: 232';
+        info += 'JS version: 251';
         addToTimeline(info);
         return false;
     }
@@ -969,12 +971,15 @@ function requestLocation() {
     navigator.geolocation.getCurrentPosition(
         function(pos) {
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
-            $.post(commandUrl, {
+            var loc = state.getEffectiveLocation();
+            var params = {
                 prompt: '/ping',
                 stream: getStream(),
-                lat: state.lat,
-                lon: state.lon
-            }).done(function(data) {
+                lat: loc.lat,
+                lon: loc.lon
+            };
+            if (loc.isCheckedIn) params.checkin = loc.name;
+            $.post(commandUrl, params).done(function(data) {
                 if (data && data.length > 0) {
                     state.setContext(data);
                     displayContext(data);
@@ -1300,12 +1305,15 @@ function displayReminderCard(r) {
 
 function fetchContext() {
     if (!state.hasLocation()) return;
-    $.post(commandUrl, {
+    var loc = state.getEffectiveLocation();
+    var params = {
         prompt: '/ping',
         stream: getStream(),
-        lat: state.lat,
-        lon: state.lon
-    }).done(function(response) {
+        lat: loc.lat,
+        lon: loc.lon
+    };
+    if (loc.isCheckedIn) params.checkin = loc.name;
+    $.post(commandUrl, params).done(function(response) {
         if (response && response.length > 0) {
             state.setContext(response);
             displayContext(response);
@@ -1720,70 +1728,39 @@ function humanizeCommand(text) {
     return text;
 }
 
-// Display user command as a terminal-style line (not a card)
+// Display user message
 function displayUserMessage(text) {
-    var ts = Date.now();
     var displayText = humanizeCommand(text);
     
-    var li = document.createElement('li');
-    li.innerHTML = '<div class="card card-user" data-timestamp="' + ts + '">' +
-        '<span class="card-time">' + formatTimeAgo(ts) + '</span>' +
-        escapeHTML(displayText) +
-        '</div>';
-    
-    var messages = document.getElementById('messages');
-    messages.appendChild(li);
-    scrollToBottom();
+    // Store in cards with role marker - ONE storage location
+    addToTimeline(displayText, 'user');
     
     // Track pending command for response matching
-    pendingCommand = { element: li, text: text, ts: ts };
-    
-    // Save to conversation state (save display text, not raw command)
-    if (!state.conversation) {
-        state.conversation = { time: ts, messages: [] };
-    }
-    state.conversation.messages.push({ role: 'user', text: displayText });
-    state.save();
+    pendingCommand = { text: text };
 }
 
 var pendingCommand = null;
 
-// Display AI response as a card below the command
+// Display AI response
 function displayResponse(text) {
-    // Add to timeline (persisted) - this is the ONE way
-    addToTimeline(text);
-    
-    // Also save to conversation for context
-    if (state.conversation) {
-        state.conversation.messages.push({ role: 'assistant', text: text });
-        state.save();
-    }
-    
+    // Store in cards - ONE storage location
+    addToTimeline(text, 'assistant');
     pendingCommand = null;
 }
 
-// No longer need conversation timeout with new format
-function restoreConversation() {
-    if (!state.conversation || !state.conversation.messages) return;
+// Build conversation context from recent cards for LLM
+function getConversationContext() {
+    if (!state.timeline) return [];
     
-    var ts = state.conversation.time;
-    var messages = document.getElementById('messages');
-    
-    // Restore each message in the new format
-    state.conversation.messages.forEach(function(msg) {
-        var li = document.createElement('li');
-        if (msg.role === 'user') {
-            li.innerHTML = '<div class="card card-user" data-timestamp="' + ts + '">' +
-                '<span class="card-time">' + formatTimeAgo(ts) + '</span>' +
-                escapeHTML(msg.text) + '</div>';
-        } else {
-            var html = makeClickable(msg.text).replace(/\n/g, '<br>');
-            var cardType = getCardType(msg.text);
-            li.innerHTML = '<div class="card ' + cardType + '" data-timestamp="' + ts + '">' + html + '</div>';
+    // Get last 10 user/assistant messages for context
+    var context = [];
+    for (var i = state.timeline.length - 1; i >= 0 && context.length < 10; i--) {
+        var card = state.timeline[i];
+        if (card.type === 'user' || card.type === 'assistant') {
+            context.unshift({ role: card.type, text: card.text });
         }
-        messages.appendChild(li);
-    });
-    scrollToBottom();
+    }
+    return context;
 }
 
 function getCardType(text) {
@@ -1815,16 +1792,18 @@ function sendLocation(lat, lon) {
         movementTracker.reset();
     }
     
-    $.post(commandUrl, {
+    var loc = state.getEffectiveLocation();
+    var params = {
         prompt: '/ping',
         stream: newStream,
-        lat: lat,
-        lon: lon
-    }).done(function(data) {
+        lat: loc.isCheckedIn ? loc.lat : lat,
+        lon: loc.isCheckedIn ? loc.lon : lon
+    };
+    if (loc.isCheckedIn) params.checkin = loc.name;
+    $.post(commandUrl, params).done(function(data) {
         if (data && data.length > 0) {
             state.setContext(data);
             displayContext(data);
-            // Server pushes location changes via WebSocket, no need to duplicate here
         }
     });
 }
@@ -1868,13 +1847,18 @@ function silentLocationRefresh() {
     navigator.geolocation.getCurrentPosition(
         function(pos) {
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
-            // Ping server for fresh context
-            $.post(commandUrl, {
+            // Ping server for fresh context - use check-in location if set
+            var loc = state.getEffectiveLocation();
+            var params = {
                 prompt: '/ping',
                 stream: getStream(),
-                lat: state.lat,
-                lon: state.lon
-            }).done(function(data) {
+                lat: loc.lat,
+                lon: loc.lon
+            };
+            if (loc.isCheckedIn) {
+                params.checkin = loc.name;
+            }
+            $.post(commandUrl, params).done(function(data) {
                 if (data) {
                     var ctx = typeof data === 'string' ? JSON.parse(data) : data;
                     state.setContext(ctx);
@@ -1956,14 +1940,17 @@ function requestLocationForContext() {
                 connectWebSocket();
             }
             
-            // Ping returns context
-            debugLog('Ping', state.lat, state.lon);
-            $.post(commandUrl, {
+            // Ping returns context - use check-in location if set
+            var loc = state.getEffectiveLocation();
+            debugLog('Ping', loc.lat, loc.lon, loc.isCheckedIn ? '(checked in)' : '');
+            var params = {
                 prompt: '/ping',
                 stream: newStream,
-                lat: state.lat,
-                lon: state.lon
-            }).done(function(data) {
+                lat: loc.lat,
+                lon: loc.lon
+            };
+            if (loc.isCheckedIn) params.checkin = loc.name;
+            $.post(commandUrl, params).done(function(data) {
                 debugLog('Ping response', data ? data.substring(0, 100) : '(empty)');
                 if (data && data.length > 0) {
                     // Parse JSON if string
@@ -2520,14 +2507,16 @@ $(document).ready(function() {
     });
     
     loadListeners();
-    initialLoad();
     
     // Load command metadata from server
     loadCommandMeta();
     
-    // Load persisted cards and conversation from localStorage
+    // Load persisted cards from localStorage first
     loadTimeline();
-    restoreConversation();
+    // Conversation now stored in cards - no separate restore needed
+    
+    // Then fetch server messages and merge
+    loadMessages();
     
     // Fetch daily reminder (shows once per day at top)
     fetchReminder();
@@ -2650,8 +2639,21 @@ function showLocationNeeded(reason) {
 $(document).on('click', '.checkin-option, .checkin-link', function(e) {
     e.preventDefault();
     var name = $(this).data('name') || $(this).data('place');
-    var lat = parseFloat($(this).data('lat')) || state.lat;
-    var lon = parseFloat($(this).data('lon')) || state.lon;
+    var lat = parseFloat($(this).data('lat'));
+    var lon = parseFloat($(this).data('lon'));
+    
+    // If no lat/lon on button, check saved places
+    if ((!lat || !lon) && state.savedPlaces && state.savedPlaces[name]) {
+        var saved = state.savedPlaces[name];
+        lat = saved.lat;
+        lon = saved.lon;
+    }
+    
+    // Fall back to current GPS if still no coordinates
+    if (!lat || !lon) {
+        lat = state.lat;
+        lon = state.lon;
+    }
     
     // Send check-in as a command
     $.post(commandUrl, {
@@ -2670,7 +2672,7 @@ $(document).on('click', '.checkin-option, .checkin-link', function(e) {
     var $li = $(this).closest('li');
     var cardTime = parseInt($li.find('.card').data('timestamp'));
     if (cardTime) {
-        state.cards = state.cards.filter(function(c) { return c.time !== cardTime; });
+        state.timeline = state.timeline.filter(function(c) { return c.time !== cardTime; });
         state.save();
     }
     $li.remove();
@@ -2681,7 +2683,7 @@ $(document).on('click', '.checkin-dismiss', function(e) {
     var $li = $(this).closest('li');
     var cardTime = parseInt($li.find('.card').data('timestamp'));
     if (cardTime) {
-        state.cards = state.cards.filter(function(c) { return c.time !== cardTime; });
+        state.timeline = state.timeline.filter(function(c) { return c.time !== cardTime; });
         state.save();
     }
     $li.remove();

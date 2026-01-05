@@ -258,9 +258,11 @@ func main() {
 			return
 		}
 		
-		// No caching for JS/CSS - service worker caching caused too many issues
-		if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css") {
+		// No caching for HTML/JS/CSS - PWA caching caused too many issues
+		if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".html") || path == "/" {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
 		}
 		
 		http.FileServer(staticFS).ServeHTTP(w, r)

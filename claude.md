@@ -244,12 +244,13 @@ renderTimelineItem(item)    // Render single item to DOM (internal)
 getTimelineType(text)       // Determine type from emoji in text
 ```
 
-**Item types:** `location`, `transport`, `weather`, `prayer`, `reminder`, `default`
+**Item types:** `location`, `transport`, `weather`, `prayer`, `reminder`, `user`, `assistant`, `default`
 
 **How it works:**
-1. `addToTimeline()` dedupes, saves to `state.cards`, prunes 24h, renders, scrolls
-2. `loadTimeline()` called on startup, renders all persisted cards
-3. Everything persists across reloads - no more disappearing cards
+1. `addToTimeline()` dedupes, saves to `state.timeline`, prunes 24h, renders, scrolls
+2. `loadTimeline()` called on startup, renders all persisted items
+3. Everything persists across reloads - no more disappearing messages
+4. User messages and AI responses both stored in `state.timeline` with type marker
 
 **NEVER:**
 - Render directly to DOM without saving
@@ -306,7 +307,7 @@ Like a database shard key - helps organize data and assign agents to areas. User
 
 | Key | Type | Purpose |
 |-----|------|----------|
-| `malten_state` | localStorage | Personal timeline - cards, conversation, location, context |
+| `malten_state` | localStorage | Personal timeline, location, context |
 | `malten_session` | cookie | Session token for private server channels |
 
 #### `malten_state` Structure (v3)
@@ -324,12 +325,8 @@ Like a database shard key - helps organize data and assign agents to areas. User
     },
     contextTime: 1234567890, // When context was fetched
     locationHistory: [...],  // Last 20 location points
-    cards: [...],            // Timeline cards (24hr retention)
-    seenNewsUrls: [...],     // Dedup news (7 day retention)
-    conversation: {          // Active conversation
-        time: 1234567890,
-        messages: [{role: 'user', text: '...'}, ...]
-    },
+    timeline: [...],          // All messages (24hr retention) - user, assistant, system
+                              // Each item: {text, type, time, lat, lon}
     checkedIn: null          // Manual location override {name, lat, lon, time}
 }
 ```
@@ -387,13 +384,14 @@ Like a database shard key - helps organize data and assign agents to areas. User
 ### Version Migration
 When `state.version` changes, old localStorage is cleared EXCEPT:
 - `lat`, `lon` (location preserved)
-- `conversation` (preserved)
+- `savedPlaces` (preserved)
+- `steps` (preserved)
 - Everything else reset to defaults
 
 **Version History:**
 - v1: Initial
 - v2: Added conversation persistence
-- v3: Context changed from string to JSON object (Jan 3 2026)
+- v3: Context changed from string to JSON object, timeline replaces cards+conversation (Jan 5 2026)
 
 ## Session Flow
 
@@ -409,7 +407,7 @@ User sends message
   → Server stores to stream's @{session} channel
   → Response returned directly (HTTP)
   → Also broadcast to user's WebSocket (channel filtered)
-  → Client saves to localStorage (cards/conversation)
+  → Client saves to localStorage (timeline)
 
 User moves location
   → Geohash changes → new stream ID
@@ -1146,8 +1144,7 @@ Unless they're in the same channel - then they see shared conversation.
     version: 3,
     lat: 51.5, lon: -0.1,           // Current position  
     context: {...},                  // Current view of surroundings
-    cards: [...],                    // Timeline of events/responses
-    conversation: {...},             // Active conversation
+    timeline: [...],                 // All messages (user, assistant, system)
     locationHistory: [...],          // Your path through spacetime
     checkedIn: null                  // Manual location override
 }
@@ -1183,10 +1180,10 @@ On restart:
 - Channel-scoped messages (conversations between people)
 
 **localStorage handles (client-side):**
-- User's timeline (cards)
-- Conversation history  
+- User's timeline (all messages - user, assistant, system)
 - Location history
 - Context cache
+- Saved places
 - All private user data
 
 ### Rebuilding from Events

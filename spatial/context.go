@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"time"
 )
@@ -128,20 +129,33 @@ func GetContextData(lat, lon float64) *ContextData {
 	log.Printf("[context] weather: %v", time.Since(tWeather))
 	if len(weather) > 0 {
 		w := weather[0]
-		ctx.Weather = &WeatherInfo{
-			Condition: w.Name,
+		ctx.Weather = &WeatherInfo{}
+		
+		// Get temp and build condition string (avoid "-0" display)
+		var tempInt int
+		if temp, ok := w.Data["temp_c"].(float64); ok {
+			tempInt = int(math.Round(temp))
+			if tempInt == 0 {
+				tempInt = 0 // Ensure no -0
+			}
+			ctx.Weather.Temp = tempInt
 		}
-		if temp, ok := w.Data["temp"].(float64); ok {
-			ctx.Weather.Temp = int(temp)
+		
+		// Build condition from weather code + temp
+		icon := ""
+		if code, ok := w.Data["weather_code"].(float64); ok {
+			icon = weatherIcon(int(code))
 		}
-		if icon, ok := w.Data["icon"].(string); ok {
-			ctx.Weather.Icon = icon
+		if icon == "" {
+			icon = "🌡️"
 		}
+		ctx.Weather.Condition = fmt.Sprintf("%s %d°C", icon, tempInt)
+		
 		if rf, ok := w.Data["rain_forecast"].(string); ok && rf != "" {
 			ctx.Weather.RainWarning = rf
 			rainForecast = rf
 		}
-		headerParts = append(headerParts, w.Name)
+		headerParts = append(headerParts, ctx.Weather.Condition)
 	}
 
 	// Prayer times

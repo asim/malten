@@ -53,6 +53,7 @@ input:focus { outline: none; }
 }
 
 #bottom-fixed {
+  position: relative;
   flex-shrink: 0;
   background: #fff;
   border-top: 1px solid #eee;

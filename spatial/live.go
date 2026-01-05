@@ -82,7 +82,12 @@ func fetchWeather(lat, lon float64) *Entity {
 		}
 	}
 	
-	name := fmt.Sprintf("%s %.0f°C", weatherIcon(data.Current.WeatherCode), data.Current.Temperature)
+	// Round temperature, but avoid "-0" (show "0" instead)
+	tempRounded := int(math.Round(data.Current.Temperature))
+	if tempRounded == 0 {
+		tempRounded = 0 // Ensure we don't have -0
+	}
+	name := fmt.Sprintf("%s %d°C", weatherIcon(data.Current.WeatherCode), tempRounded)
 	
 	expiry := time.Now().Add(weatherTTL)
 	return &Entity{
