@@ -80,7 +80,7 @@ func init() {
 		LoadingText: "Checking bus times...",
 		Match: func(input string) (bool, []string) {
 			lower := strings.ToLower(input)
-			patterns := []string{"next bus", "bus time", "when is the bus", "buses"}
+			patterns := []string{"next bus", "bus time", "when is the bus", "buses", "how long till the bus", "till the bus", "long till bus"}
 			for _, p := range patterns {
 				if strings.Contains(lower, p) {
 					return true, nil

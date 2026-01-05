@@ -28,6 +28,16 @@ type Street struct {
 	FetchedAt time.Time   `json:"fetched_at"`
 }
 
+// PointsToInterface converts [][]float64 to []interface{} for storage
+// This ensures consistent types whether data comes from JSON or runtime
+func (s *Street) PointsToInterface() []interface{} {
+	result := make([]interface{}, len(s.Points))
+	for i, pt := range s.Points {
+		result[i] = []interface{}{pt[0], pt[1]}
+	}
+	return result
+}
+
 // FetchStreetGeometry fetches the street geometry between two points from OSRM
 // Returns the decoded polyline as a series of [lon, lat] coordinates
 func FetchStreetGeometry(fromLat, fromLon, toLat, toLon float64) (*Street, error) {
@@ -158,7 +168,7 @@ func IndexStreetsAroundAgent(agent *Entity, maxRoutes int) int {
 			Lat:  midLat,
 			Lon:  midLon,
 			Data: map[string]interface{}{
-				"points":   street.Points,
+				"points":   street.PointsToInterface(),
 				"length":   street.Length,
 				"agent_id": agent.ID,
 				"from_lat": agent.Lat,

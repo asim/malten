@@ -2641,3 +2641,272 @@ The quadtree doesn't need TTL support. TTL is application-specific (arrivals exp
 curl -s -X POST 'http://localhost:9090/commands' -d 'prompt=/ping&lat=51.4179&lon=-0.3706' | jq -r '.html'
 # Should show bus times consistently
 ```
+
+
+## Session: Jan 5, 2026 - Bus Time Stale Fix
+
+### Problem
+Bus times weren't decreasing over time. If fetched at "11m, 12m, 15m", they would stay at those values even 5 minutes later.
+
+### Root Cause
+Arrivals were stored with `minutes` (a point-in-time calculation) instead of absolute arrival time. When read back, the stale minute values were displayed as-is.
+
+### Fix Applied
+
+1. **Changed busArrival struct** (`spatial/live.go`):
+   ```go
+   // Before
+   type busArrival struct {
+       Line        string `json:"line"`
+       Destination string `json:"destination"`
+       Minutes     int    `json:"minutes"`
+   }
+   
+   // After
+   type busArrival struct {
+       Line        string    `json:"line"`
+       Destination string    `json:"destination"`
+       ArrivalTime time.Time `json:"arrival_time"` // Absolute time bus arrives
+   }
+   ```
+
+2. **Added MinutesUntil() method**:
+   ```go
+   func (b busArrival) MinutesUntil() int {
+       mins := int(time.Until(b.ArrivalTime).Minutes())
+       if mins < 0 {
+           return 0
+       }
+       return mins
+   }
+   ```
+
+3. **Updated all display code** to use `MinutesUntil()` instead of `Minutes`
+
+4. **Backward compatible JSON parsing** - reads both formats:
+   ```go
+   if arrTimeStr, ok := amap["arrival_time"].(string); ok {
+       // New format - parse and calculate
+   } else if minsFloat, ok := amap["minutes"].(float64); ok {
+       // Legacy format - use as-is (will be stale)
+   }
+   ```
+
+### Testing
+```bash
+# First query
+curl -s -X POST 'http://localhost:9090/commands' -d 'prompt=/bus&lat=51.4179&lon=-0.3706'
+# 🚏 Priory Road: 111 → Kingston in 4m
+
+# After 60 seconds
+# 🚏 Priory Road: 111 → Kingston in 3m  ← Time decreased!
+```
+
+### Files Changed
+- `spatial/live.go` - busArrival struct, MinutesUntil(), all display code
+
+### Note
+After making this change, need to either:
+1. Wait for old data to expire and be refreshed, OR
+2. Run `/cleanup` to force removal of old data
+
+## Session: Jan 5, 2026 - Bus Data Type Mismatch Bug
+
+### Problem
+Bus times would work after restart, then break after the first update cycle.
+
+### Root Cause
+**Type mismatch between JSON-loaded data and runtime-inserted data.**
+
+When data is loaded from JSON (on restart):
+- `arr.Data["arrivals"]` is `[]interface{}` (JSON deserializes arrays this way)
+
+When data is inserted at runtime:
+- `arr.Data["arrivals"]` was `[]busArrival` (Go struct slice)
+
+The reading code did:
+```go
+arrData, _ := arr.Data["arrivals"].([]interface{})
+```
+
+This type assertion FAILS silently when the underlying type is `[]busArrival`, returning `nil, false`. So `arrData` was empty, and "No bus times available" was shown.
+
+### Fix
+Convert `[]busArrival` to `[]interface{}` before storing:
+
+```go
+func arrivalsToInterface(arrivals []busArrival) []interface{} {
+    result := make([]interface{}, len(arrivals))
+    for i, a := range arrivals {
+        result[i] = map[string]interface{}{
+            "line":         a.Line,
+            "destination":  a.Destination,
+            "arrival_time": a.ArrivalTime.Format(time.RFC3339Nano),
+        }
+    }
+    return result
+}
+```
+
+Now all storage paths use `arrivalsToInterface(arrivals)` so the type is consistent.
+
+### Key Insight
+In Go, you cannot type assert `interface{}` to `[]interface{}` if the underlying type is `[]SomeStruct`. The types are different at runtime. You CAN assert back to the original type (`[]SomeStruct`), but if you need a generic interface slice, you must convert element by element.
+
+### Not a Quadtree Bug
+The quadtree was working correctly. Insert succeeded, DebugFind found the point. The issue was that the Entity's Data contained the wrong type, so the display code couldn't read it.
+
+### Files Changed
+- `spatial/live.go` - Added `arrivalsToInterface()`, use it everywhere arrivals are stored
+
+## Session Checkpoint: Jan 5, 2026 - Entity Type Refactor
+
+### Problem Solved This Session
+Bus times would work after restart, then break after updates. Root cause: **Go type assertion mismatch**.
+
+- JSON deserializes `[]interface{}`
+- Runtime code stored `[]busArrival`  
+- `.([]interface{})` silently fails on `[]busArrival`
+
+Fixed with `arrivalsToInterface()` conversion - but this is a band-aid.
+
+### The Real Problem
+`Entity.Data` is `map[string]interface{}` - a generic bag that:
+- Has no type safety
+- JSON round-trip changes types
+- Forces ugly runtime assertions everywhere
+
+### The Solution: Typed Entity Data
+New architecture:
+
+```go
+type Entity struct {
+    ID       string
+    Type     string                 // "arrival", "weather", "place", etc
+    Lat, Lon float64
+    Metadata map[string]interface{} // expiry, timestamps, agent_id
+    Data     interface{}            // *Arrival, *Weather, *Place
+}
+
+type Arrival struct {
+    StopID   string
+    StopName string
+    Arrivals []BusArrival  // Properly typed!
+}
+
+type Weather struct {
+    TempC       float64
+    Code        int
+    RainWarning string
+}
+
+type Place struct {
+    Name     string
+    Category string
+    Tags     map[string]string
+}
+
+type Prayer struct {
+    Timings map[string]string
+    Current string
+    Next    string
+}
+
+type Street struct {
+    Points [][]float64
+    Length float64
+    ToName string
+}
+```
+
+### Query Pattern
+```go
+for _, e := range entities {
+    switch e.Type {
+    case "arrival":
+        arr := e.Data.(*Arrival)
+        for _, bus := range arr.Arrivals {
+            // bus.Line, bus.ArrivalTime - all typed
+        }
+    case "weather":
+        w := e.Data.(*Weather)
+        // w.TempC is float64, not interface{}
+    }
+}
+```
+
+### JSON Backward Compatibility
+Custom UnmarshalJSON that:
+1. Reads Type field first
+2. Deserializes Data into correct struct based on Type
+3. Falls back to map[string]interface{} for unknown types (old data)
+
+```go
+func (e *Entity) UnmarshalJSON(b []byte) error {
+    var raw struct {
+        ID       string                 `json:"id"`
+        Type     string                 `json:"type"`
+        Lat      float64                `json:"lat"`
+        Lon      float64                `json:"lon"`
+        Metadata map[string]interface{} `json:"metadata"`
+        Data     json.RawMessage        `json:"data"`
+        // Legacy fields for backward compat
+        OldData  map[string]interface{} `json:"data,omitempty"`
+    }
+    if err := json.Unmarshal(b, &raw); err != nil {
+        return err
+    }
+    
+    e.ID, e.Type, e.Lat, e.Lon, e.Metadata = raw.ID, raw.Type, raw.Lat, raw.Lon, raw.Metadata
+    
+    switch raw.Type {
+    case "arrival":
+        var arr Arrival
+        if err := json.Unmarshal(raw.Data, &arr); err != nil {
+            // Fallback: try legacy format
+            e.Data = raw.OldData
+            return nil
+        }
+        e.Data = &arr
+    case "weather":
+        var w Weather
+        json.Unmarshal(raw.Data, &w)
+        e.Data = &w
+    // ... other types
+    default:
+        // Unknown type - keep as map for backward compat
+        var m map[string]interface{}
+        json.Unmarshal(raw.Data, &m)
+        e.Data = m
+    }
+    return nil
+}
+```
+
+### Migration Strategy
+1. New Entity struct with typed Data
+2. Custom JSON marshal/unmarshal for backward compat
+3. Update all code that reads Entity.Data to use type switch
+4. Update all code that creates entities to use typed structs
+5. Old data loads fine (falls back to map), new data is typed
+
+### Files to Change
+- `spatial/entity.go` - New typed structs, custom JSON handling
+- `spatial/db.go` - Query helpers that return typed data
+- `spatial/live.go` - Create typed Arrival, Weather, Prayer entities
+- `spatial/agent.go` - Create typed Place entities
+- `spatial/streets.go` - Create typed Street entities
+- `spatial/context.go` - Read typed data
+- `command/*.go` - Any code reading Entity.Data
+
+### Next Session: Start Here
+1. Define new typed structs in `spatial/entity.go`
+2. Add custom UnmarshalJSON with backward compat
+3. Update entity creation code (one type at a time, start with Arrival)
+4. Update reading code
+5. Test with existing spatial.json (must load old data)
+
+### Also Fixed This Session
+- Push notification duplicates: history now cleared after fetch
+- `[][]float64` for streets: added `PointsToInterface()`
+- Test files updated for new ArrivalTime field

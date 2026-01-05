@@ -154,16 +154,16 @@ func TestShortDest(t *testing.T) {
 
 // TestBusArrivalFormatting tests the arrival struct formatting
 func TestBusArrivalFormatting(t *testing.T) {
+	now := time.Now()
 	arrivals := []busArrival{
-		{Line: "111", Destination: "Heathrow Airport", Minutes: 3},
-		{Line: "216", Destination: "Kingston Station", Minutes: 7},
+		{Line: "111", Destination: "Heathrow Airport", ArrivalTime: now.Add(3 * time.Minute)},
+		{Line: "216", Destination: "Kingston Station", ArrivalTime: now.Add(7 * time.Minute)},
 	}
 	
-	// Verify Minutes calculation (60 seconds per minute)
-	rawSeconds := 180 // 3 minutes
-	expected := rawSeconds / 60
-	if arrivals[0].Minutes != expected {
-		t.Errorf("Minutes calculation: got %d, want %d", arrivals[0].Minutes, expected)
+	// Verify MinutesUntil calculation
+	mins := arrivals[0].MinutesUntil()
+	if mins < 2 || mins > 4 {
+		t.Errorf("MinutesUntil: got %d, want ~3", mins)
 	}
 }
 
@@ -175,7 +175,7 @@ func TestArrivalEntityDataStructure(t *testing.T) {
 	stopType := "NaptanPublicBusCoachTram"
 	
 	arrivals := []busArrival{
-		{Line: "111", Destination: "Heathrow", Minutes: 5},
+		{Line: "111", Destination: "Heathrow", ArrivalTime: time.Now().Add(5 * time.Minute)},
 	}
 	
 	entity := &Entity{
@@ -188,7 +188,7 @@ func TestArrivalEntityDataStructure(t *testing.T) {
 			"stop_id":   naptanID,
 			"stop_name": stopName,
 			"stop_type": stopType,
-			"arrivals":  arrivals,
+			"arrivals":  arrivalsToInterface(arrivals),
 		},
 	}
 	
@@ -203,16 +203,20 @@ func TestArrivalEntityDataStructure(t *testing.T) {
 		t.Errorf("stop_type mismatch: got %v, want %s", entity.Data["stop_type"], stopType)
 	}
 	
-	// Verify arrivals stored correctly
-	storedArrivals, ok := entity.Data["arrivals"].([]busArrival)
+	// Verify arrivals stored correctly as []interface{} (consistent with JSON)
+	storedArrivals, ok := entity.Data["arrivals"].([]interface{})
 	if !ok {
-		t.Fatal("arrivals not stored as []busArrival")
+		t.Fatalf("arrivals not stored as []interface{}, got %T", entity.Data["arrivals"])
 	}
 	if len(storedArrivals) != 1 {
 		t.Errorf("arrivals count: got %d, want 1", len(storedArrivals))
 	}
-	if storedArrivals[0].Line != "111" {
-		t.Errorf("arrival line: got %s, want 111", storedArrivals[0].Line)
+	firstArr, ok := storedArrivals[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("first arrival not map[string]interface{}, got %T", storedArrivals[0])
+	}
+	if firstArr["line"] != "111" {
+		t.Errorf("arrival line: got %v, want 111", firstArr["line"])
 	}
 }
 
@@ -331,26 +335,27 @@ func TestStopTypeConstants(t *testing.T) {
 
 // TestArrivalSorting verifies arrivals are sorted by time
 func TestArrivalSorting(t *testing.T) {
+	now := time.Now()
 	arrivals := []busArrival{
-		{Line: "111", Minutes: 10},
-		{Line: "216", Minutes: 3},
-		{Line: "290", Minutes: 7},
+		{Line: "111", ArrivalTime: now.Add(10 * time.Minute)},
+		{Line: "216", ArrivalTime: now.Add(3 * time.Minute)},
+		{Line: "290", ArrivalTime: now.Add(7 * time.Minute)},
 	}
 	
 	// Verify they're in increasing order (as they should be after sort)
 	// This tests the expected output format, not the actual sort (which happens in fetchStopArrivals)
 	sorted := []busArrival{
-		{Line: "216", Minutes: 3},
-		{Line: "290", Minutes: 7},
-		{Line: "111", Minutes: 10},
+		{Line: "216", ArrivalTime: now.Add(3 * time.Minute)},
+		{Line: "290", ArrivalTime: now.Add(7 * time.Minute)},
+		{Line: "111", ArrivalTime: now.Add(10 * time.Minute)},
 	}
 	
-	if sorted[0].Minutes > sorted[1].Minutes || sorted[1].Minutes > sorted[2].Minutes {
-		t.Error("Arrivals should be sorted by Minutes ascending")
+	if sorted[0].MinutesUntil() > sorted[1].MinutesUntil() || sorted[1].MinutesUntil() > sorted[2].MinutesUntil() {
+		t.Error("Arrivals should be sorted by MinutesUntil ascending")
 	}
 	
 	// Original array should still be unsorted (we didn't sort in place)
-	if arrivals[0].Minutes != 10 {
+	if arrivals[0].MinutesUntil() < arrivals[1].MinutesUntil() {
 		t.Error("Original array was modified unexpectedly")
 	}
 }

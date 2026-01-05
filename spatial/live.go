@@ -396,7 +396,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 				break
 			}
 			times = append(times, fmt.Sprintf("%s→%s %dm",
-				arr.Line, shortDest(arr.Destination), arr.Minutes))
+				arr.Line, shortDest(arr.Destination), arr.MinutesUntil()))
 		}
 		
 		expiry := time.Now().Add(arrivalTTL)
@@ -410,7 +410,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 				"stop_id":    stop.NaptanID,
 				"stop_name":  stop.CommonName,
 				"stop_type":  stopType,
-				"arrivals":   arrivals,
+				"arrivals":   arrivalsToInterface(arrivals),
 			},
 			ExpiresAt: &expiry,
 		}
@@ -423,9 +423,32 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 }
 
 type busArrival struct {
-	Line        string `json:"line"`
-	Destination string `json:"destination"`
-	Minutes     int    `json:"minutes"`
+	Line        string    `json:"line"`
+	Destination string    `json:"destination"`
+	ArrivalTime time.Time `json:"arrival_time"` // Absolute time bus arrives
+}
+
+// MinutesUntil calculates minutes until arrival from now
+func (b busArrival) MinutesUntil() int {
+	mins := int(time.Until(b.ArrivalTime).Minutes())
+	if mins < 0 {
+		return 0
+	}
+	return mins
+}
+
+// arrivalsToInterface converts []busArrival to []interface{} for storage
+// This ensures consistent types whether data comes from JSON or runtime
+func arrivalsToInterface(arrivals []busArrival) []interface{} {
+	result := make([]interface{}, len(arrivals))
+	for i, a := range arrivals {
+		result[i] = map[string]interface{}{
+			"line":         a.Line,
+			"destination":  a.Destination,
+			"arrival_time": a.ArrivalTime.Format(time.RFC3339Nano),
+		}
+	}
+	return result
 }
 
 func fetchStopArrivals(naptanID string) []busArrival {
@@ -440,7 +463,7 @@ func fetchStopArrivals(naptanID string) []busArrival {
 	var data []struct {
 		LineName        string `json:"lineName"`
 		DestinationName string `json:"destinationName"`
-		TimeToStation   int    `json:"timeToStation"`
+		TimeToStation   int    `json:"timeToStation"` // seconds
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil
@@ -451,12 +474,13 @@ func fetchStopArrivals(naptanID string) []busArrival {
 		return data[i].TimeToStation < data[j].TimeToStation
 	})
 	
+	now := time.Now()
 	var arrivals []busArrival
 	for _, d := range data {
 		arrivals = append(arrivals, busArrival{
 			Line:        d.LineName,
 			Destination: d.DestinationName,
-			Minutes:     d.TimeToStation / 60,
+			ArrivalTime: now.Add(time.Duration(d.TimeToStation) * time.Second),
 		})
 	}
 	return arrivals
@@ -630,11 +654,24 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 			if amap, ok := a.(map[string]interface{}); ok {
 				line, _ := amap["line"].(string)
 				dest, _ := amap["destination"].(string)
-				mins, _ := amap["minutes"].(float64)
+				
+				// Calculate minutes from arrival_time (new format) or use minutes (old format)
+				var mins int
+				if arrTimeStr, ok := amap["arrival_time"].(string); ok {
+					if arrTime, err := time.Parse(time.RFC3339Nano, arrTimeStr); err == nil {
+						mins = int(time.Until(arrTime).Minutes())
+						if mins < 0 {
+							continue // Bus already gone
+						}
+					}
+				} else if minsFloat, ok := amap["minutes"].(float64); ok {
+					mins = int(minsFloat)
+				}
+				
 				if mins <= 1 {
 					lines = append(lines, fmt.Sprintf("   %s → %s arriving now", line, shortDest(dest)))
 				} else {
-					lines = append(lines, fmt.Sprintf("   %s → %s in %.0fm", line, shortDest(dest), mins))
+					lines = append(lines, fmt.Sprintf("   %s → %s in %dm", line, shortDest(dest), mins))
 				}
 			}
 		}
@@ -650,7 +687,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 						Name:      fmt.Sprintf("🚌 %s", stopName),
 						Lat:       arr.Lat,
 						Lon:       arr.Lon,
-						Data:      map[string]interface{}{"stop_id": stopID, "stop_name": stopName, "arrivals": arrs},
+						Data:      map[string]interface{}{"stop_id": stopID, "stop_name": stopName, "arrivals": arrivalsToInterface(arrs)},
 						ExpiresAt: &expiry,
 					})
 					log.Printf("[arrivals] Background refresh for %s complete", stopName)
@@ -723,7 +760,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 				"stop_id":    stop.NaptanID,
 				"stop_name":  stop.CommonName,
 				"stop_type":  "NaptanPublicBusCoachTram",
-				"arrivals":   fetchedArrivals,
+				"arrivals":   arrivalsToInterface(fetchedArrivals),
 			},
 			ExpiresAt: &expiry,
 		}
@@ -742,10 +779,11 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 			if i >= 3 {
 				break
 			}
-			if arr.Minutes <= 1 {
+			mins := arr.MinutesUntil()
+			if mins <= 1 {
 				lines = append(lines, fmt.Sprintf("   %s → %s arriving now", arr.Line, shortDest(arr.Destination)))
 			} else {
-				lines = append(lines, fmt.Sprintf("   %s → %s in %dm", arr.Line, shortDest(arr.Destination), arr.Minutes))
+				lines = append(lines, fmt.Sprintf("   %s → %s in %dm", arr.Line, shortDest(arr.Destination), mins))
 			}
 		}
 		return strings.Join(lines, "\n")
@@ -1122,15 +1160,18 @@ type BusArrivalInfo struct {
 }
 
 // GetNearestBusArrivals returns structured bus arrival data from cache
+// If cached arrivals are depleted (all buses gone), triggers background refresh
 func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 	db := Get()
 	
 	// Query quadtree for arrivals - allow stale data up to 10 minutes past expiry
 	arrivals := db.QueryWithMaxAge(lat, lon, 500, EntityArrival, 5, 600)
+
 	
 	// Find first stop with actual arrivals
 	for _, arr := range arrivals {
 		stopName, _ := arr.Data["stop_name"].(string)
+		stopID, _ := arr.Data["stop_id"].(string)
 		arrData, _ := arr.Data["arrivals"].([]interface{})
 		
 		if len(arrData) == 0 {
@@ -1140,21 +1181,62 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 		isStale := arr.ExpiresAt != nil && time.Now().After(*arr.ExpiresAt)
 		dist := int(haversine(lat, lon, arr.Lat, arr.Lon) * 1000)
 		
+		// Count valid (future) arrivals and collect display strings
 		var arrivalStrings []string
-		for i, a := range arrData {
-			if i >= 3 {
-				break
-			}
+		validCount := 0
+		for _, a := range arrData {
 			if amap, ok := a.(map[string]interface{}); ok {
 				line, _ := amap["line"].(string)
 				dest, _ := amap["destination"].(string)
-				mins, _ := amap["minutes"].(float64)
-				if mins <= 1 {
-					arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s arriving now", line, shortDest(dest)))
-				} else {
-					arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s in %.0fm", line, shortDest(dest), mins))
+				
+				// Calculate minutes from arrival_time (new format) or use minutes (old format)
+				var mins int
+				if arrTimeStr, ok := amap["arrival_time"].(string); ok {
+					if arrTime, err := time.Parse(time.RFC3339Nano, arrTimeStr); err == nil {
+						mins = int(time.Until(arrTime).Minutes())
+						if mins < 0 {
+							continue // Bus already gone
+						}
+					}
+				} else if minsFloat, ok := amap["minutes"].(float64); ok {
+					// Legacy format - use as-is (will be stale)
+					mins = int(minsFloat)
+				}
+				
+				validCount++
+				if len(arrivalStrings) < 3 {
+					if mins <= 1 {
+						arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s arriving now", line, shortDest(dest)))
+					} else {
+						arrivalStrings = append(arrivalStrings, fmt.Sprintf("%s → %s in %dm", line, shortDest(dest), mins))
+					}
 				}
 			}
+		}
+		
+		// If we have few valid arrivals left, trigger background refresh
+		// This ensures we fetch new data before running out completely
+		if validCount <= 1 && stopID != "" {
+			go func(sid, sname string, slat, slon float64) {
+				log.Printf("[bus] Low arrivals for %s (%d left), fetching fresh data", sname, validCount)
+				if arrs := fetchStopArrivals(sid); len(arrs) > 0 {
+					expiry := time.Now().Add(arrivalTTL)
+					db.Insert(&Entity{
+						ID:        GenerateID(EntityArrival, slat, slon, sid),
+						Type:      EntityArrival,
+						Name:      fmt.Sprintf("🚌 %s", sname),
+						Lat:       slat,
+						Lon:       slon,
+						Data:      map[string]interface{}{"stop_id": sid, "stop_name": sname, "arrivals": arrivalsToInterface(arrs)},
+						ExpiresAt: &expiry,
+					})
+					log.Printf("[bus] Refreshed %s with %d arrivals", sname, len(arrs))
+				}
+			}(stopID, stopName, arr.Lat, arr.Lon)
+		}
+		
+		if len(arrivalStrings) == 0 {
+			continue // All arrivals have passed, try next stop
 		}
 		
 		return &BusArrivalInfo{

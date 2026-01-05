@@ -404,6 +404,8 @@ func HandlePushHistory(w http.ResponseWriter, r *http.Request) {
 	var history []PushHistoryItem
 	if exists && user.PushHistory != nil {
 		history = user.PushHistory
+		// Clear history after fetching (will be re-populated by new pushes)
+		pm.ClearPushHistory(sessionID)
 	} else {
 		history = []PushHistoryItem{}
 	}

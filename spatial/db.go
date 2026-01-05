@@ -13,11 +13,12 @@ import (
 
 // DB is the spatial database
 type DB struct {
-	mu       sync.RWMutex
-	tree     *quadtree.QuadTree
-	store    quadtree.Store
-	entities map[string]*quadtree.Point
-	eventLog *EventLog
+	mu            sync.RWMutex
+	tree          *quadtree.QuadTree
+	store         quadtree.Store
+	entities      map[string]*quadtree.Point
+	eventLog      *EventLog
+
 }
 
 var (
@@ -142,10 +143,13 @@ func (d *DB) Insert(entity *Entity) error {
 
 	// Remove existing if updating
 	if existing, ok := d.entities[entity.ID]; ok {
+		oldX, oldY := existing.Coordinates()
 		removed := d.tree.Remove(existing)
 		if entity.Type == EntityArrival {
-			log.Printf("[db] Updating arrival %s: removed=%v", entity.Name, removed)
+			log.Printf("[db] Updating arrival %s: removed=%v (old coords: %.4f,%.4f new coords: %.4f,%.4f)", 
+				entity.Name, removed, oldX, oldY, entity.Lat, entity.Lon)
 		}
+		delete(d.entities, entity.ID) // Ensure old reference is gone
 	}
 
 	point := quadtree.NewPoint(entity.Lat, entity.Lon, entity)
@@ -153,9 +157,7 @@ func (d *DB) Insert(entity *Entity) error {
 		log.Printf("[db] FAILED to insert %s %s at (%.4f, %.4f)", entity.Type, entity.Name, entity.Lat, entity.Lon)
 		return fmt.Errorf("failed to insert into quadtree")
 	}
-	if entity.Type == EntityArrival {
-		log.Printf("[db] Inserted arrival %s at (%.4f, %.4f)", entity.Name, entity.Lat, entity.Lon)
-	}
+
 
 	d.entities[entity.ID] = point
 
@@ -216,18 +218,6 @@ func (d *DB) QueryWithMaxAge(lat, lon, radiusMeters float64, entityType EntityTy
 
 	points := d.tree.KNearest(boundary, limit, filter)
 	
-	// Debug: log when querying arrivals and finding none
-	if entityType == EntityArrival && len(points) == 0 {
-		// Count total arrivals in entities map
-		arrivalCount := 0
-		for _, p := range d.entities {
-			if e, ok := p.Data().(*Entity); ok && e.Type == EntityArrival {
-				arrivalCount++
-			}
-		}
-		log.Printf("[db] QueryWithMaxAge arrivals at %.4f,%.4f r=%.0fm: 0 found (total arrivals in DB: %d)", lat, lon, radiusMeters, arrivalCount)
-	}
-
 	var results []*Entity
 	for _, p := range points {
 		if entity, ok := p.Data().(*Entity); ok {
@@ -613,6 +603,7 @@ func (d *DB) CleanupStore() (expired int, duplicates int, err error) {
 }
 
 // StartBackgroundCleanup starts a goroutine that periodically cleans expired arrivals
+// and rebuilds the quadtree to fix corruption from Insert/Remove cycles
 func (d *DB) StartBackgroundCleanup(interval time.Duration) {
 	go func() {
 		ticker := time.NewTicker(interval)
@@ -657,4 +648,33 @@ func (d *DB) cleanupExpiredArrivals() {
 	if len(toDelete) > 0 {
 		log.Printf("[db] Background cleanup: removed %d expired arrivals", len(toDelete))
 	}
+}
+
+// RebuildTree recreates the quadtree from the entities map
+// Call this periodically to fix tree corruption from Insert/Remove cycles
+func (d *DB) RebuildTree() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.rebuildTreeUnlocked()
+}
+
+// rebuildTreeUnlocked rebuilds the tree without acquiring the lock
+// Caller must hold d.mu.Lock()
+func (d *DB) rebuildTreeUnlocked() {
+	// Create new tree
+	center := quadtree.NewPoint(0, 0, nil)
+	half := quadtree.NewPoint(90, 180, nil)
+	boundary := quadtree.NewAABB(center, half)
+	newTree := quadtree.New(boundary, 0, nil)
+	
+	// Re-insert all entities
+	count := 0
+	for _, point := range d.entities {
+		if newTree.Insert(point) {
+			count++
+		}
+	}
+	
+	d.tree = newTree
+	log.Printf("[db] Rebuilt tree with %d entities", count)
 }
