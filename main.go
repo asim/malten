@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -271,13 +270,7 @@ func main() {
 	http.HandleFunc("/events", server.GetEvents)
 	http.HandleFunc("/agents", server.AgentsHandler)
 	http.HandleFunc("/agents/", server.AgentsHandler)
-	
-	// Command metadata for client
-	http.HandleFunc("/commands/meta", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(command.GetMeta())
-	})
-	
+	http.HandleFunc("/debug", server.DebugHandler)
 	http.HandleFunc("/commands", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":

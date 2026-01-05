@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"malten.ai/agent"
 	"malten.ai/command"
+	"malten.ai/spatial"
 )
 
 var (
@@ -25,18 +27,8 @@ func JsonError(w http.ResponseWriter, message string, code int) {
 }
 
 func GetCommandsHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-
-	// return list of commands
-	help := `Available commands:
-/help - Show this help
-/commands - Show this help
-/streams - List public streams
-/new - Create a new stream
-/goto <stream> - Switch to a stream`
-
-	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte(help))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(command.GetMeta())
 }
 
 func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
@@ -318,3 +310,34 @@ func WithCors(h http.Handler) http.Handler {
 		h.ServeHTTP(w, r)
 	})
 }
+
+// DebugHandler returns server debug info (memory, entities, uptime)
+func DebugHandler(w http.ResponseWriter, r *http.Request) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	db := spatial.Get()
+	stats := db.Stats()
+
+	data := map[string]interface{}{
+		"memory": map[string]interface{}{
+			"alloc_mb": float64(m.Alloc) / 1024 / 1024,
+			"sys_mb":   float64(m.Sys) / 1024 / 1024,
+			"gc":       m.NumGC,
+		},
+		"entities": map[string]interface{}{
+			"total":    stats.Total,
+			"agents":   stats.Agents,
+			"weather":  stats.Weather,
+			"prayer":   stats.Prayer,
+			"arrivals": stats.Arrivals,
+			"places":   stats.Places,
+		},
+		"uptime": time.Since(startTime).Round(time.Second).String(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+var startTime = time.Now()

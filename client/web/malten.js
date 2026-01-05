@@ -856,8 +856,14 @@ function submitCommand() {
         info += 'JS: v252';
         addToTimeline(info);
         // Also fetch server status
-        $.post(commandUrl, { prompt: '/status' }).done(function(response) {
-            if (response) addToTimeline(response);
+        $.get('/debug').done(function(data) {
+            if (data) {
+                var s = '🔧 SERVER\n';
+                s += 'Memory: ' + data.memory.alloc_mb.toFixed(1) + ' MB\n';
+                s += 'Entities: ' + data.entities.total + ' (' + data.entities.places + ' places, ' + data.entities.agents + ' agents)\n';
+                s += 'Uptime: ' + data.uptime;
+                addToTimeline(s);
+            }
         });
         return false;
     }
@@ -1693,7 +1699,7 @@ var commandMeta = {};
 
 // Load command metadata from server
 function loadCommandMeta() {
-    $.get('/commands/meta').done(function(data) {
+    $.get('/commands').done(function(data) {
         if (Array.isArray(data)) {
             data.forEach(function(cmd) {
                 commandMeta[cmd.name] = cmd;
