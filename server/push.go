@@ -203,6 +203,10 @@ func (pm *PushManager) UpdateLocation(sessionID string, lat, lon float64) {
 
 // isQuietHours checks if it's between 10pm and 7am in user's timezone
 func (pm *PushManager) isQuietHours(user *PushUser) bool {
+	return pm.isQuietHoursLocked(user)
+}
+
+func (pm *PushManager) isQuietHoursLocked(user *PushUser) bool {
 	if user.Timezone == nil {
 		return false
 	}
@@ -213,13 +217,19 @@ func (pm *PushManager) isQuietHours(user *PushUser) bool {
 
 // canPush checks rate limits and quiet hours
 func (pm *PushManager) canPush(user *PushUser) bool {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	return pm.canPushLocked(user)
+}
+
+func (pm *PushManager) canPushLocked(user *PushUser) bool {
 	// No subscription
 	if user.Subscription == nil {
 		return false
 	}
 
 	// Quiet hours (10pm-7am local time)
-	if pm.isQuietHours(user) {
+	if pm.isQuietHoursLocked(user) {
 		return false
 	}
 
@@ -247,17 +257,29 @@ type PushNotification struct {
 
 // SendPush sends a push notification to a user
 func (pm *PushManager) SendPush(sessionID string, notification *PushNotification) error {
-	pm.mu.RLock()
+	pm.mu.Lock()
 	user, exists := pm.users[sessionID]
-	pm.mu.RUnlock()
-
 	if !exists || user.Subscription == nil {
+		pm.mu.Unlock()
 		return nil
 	}
 
-	if !pm.canPush(user) {
+	if !pm.canPushLocked(user) {
+		pm.mu.Unlock()
 		return nil
 	}
+
+	// Content-based deduplication
+	contentKey := extractContentKey(notification.Title, notification.Body)
+	if pm.hasRecentlyPushed(user, contentKey) {
+		log.Printf("[push] Skipping duplicate for %s: %s", sessionID[:8], contentKey)
+		pm.mu.Unlock()
+		return nil
+	}
+	
+	// Mark as pushed before sending
+	pm.markContentPushed(user, contentKey)
+	pm.mu.Unlock()
 
 	payload, _ := json.Marshal(notification)
 
