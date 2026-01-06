@@ -129,8 +129,11 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 					Default.Events <- NewChannelMessage(msg, stream, "@"+token)
 				}
 			} else {
-				// AI handling
-				handleAI(input, stream, token)
+				// AI handling (async mode)
+				result := handleAI(input, stream, token, false)
+				if result != "" {
+					Default.Events <- NewCommandResult(cmdID, result, stream, "@"+token)
+				}
 			}
 			// Handle location-based prompts
 			if locUpdate != nil {
@@ -175,14 +178,22 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Everything else goes to AI with tool selection
-	// Response goes to session channel
-	go handleAI(input, stream, token)
+	// Sync mode: wait for AI response and return it
+	reply := handleAI(input, stream, token, true)
+	if reply != "" {
+		w.Write([]byte(reply))
+	}
 }
 
-func handleAI(prompt, stream, token string) {
+// handleAI processes AI queries. If sync is true, returns the response string.
+// If sync is false, sends response via WebSocket and returns empty string.
+func handleAI(prompt, stream, token string, sync bool) string {
 	if agent.Client == nil {
+		if sync {
+			return "AI not available"
+		}
 		Default.Events <- NewChannelMessage("AI not available", stream, "@"+token)
-		return
+		return ""
 	}
 
 	// Set token context for location lookups
@@ -214,12 +225,22 @@ func handleAI(prompt, stream, token string) {
 	reply, err := agent.Prompt(systemPrompt, ctx, prompt)
 	if err != nil {
 		fmt.Println("AI error:", err)
-		return
+		if sync {
+			return "Sorry, I encountered an error processing your request."
+		}
+		return ""
 	}
 
-	// Send to session's channel
+	if sync {
+		// Sync mode: return the response directly
+		log.Printf("[handleAI] Returning sync reply for stream=%s", stream)
+		return reply
+	}
+
+	// Async mode: Send to session's channel
 	log.Printf("[handleAI] Sending reply to stream=%s channel=@%s", stream, token)
 	Default.Events <- NewChannelMessage(reply, stream, "@"+token)
+	return ""
 }
 
 func GetHandler(w http.ResponseWriter, r *http.Request) {
