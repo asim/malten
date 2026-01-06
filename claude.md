@@ -3671,3 +3671,134 @@ Nudges you to move if inactive for 1 hour:
 - Courier maps slowly in background
 - User's actual walks fill in their real routes
 - No API hammering, organic growth
+
+## Session Checkpoint: Jan 6, 2026 - Notifications & State Management
+
+### What We Built Today
+
+1. **Unified notification deduplication** (`server/dedupe.go`)
+   - Shared tracker for push + WebSocket messages
+   - Content key extraction (rain_21, rain_now, etc.)
+   - 6 hour TTL, 24 hour cleanup
+
+2. **LLM-based deduplication** (`server/dedupe_llm.go`)
+   - LLM decides if notification is meaningfully different
+   - Handles edge cases naturally (60% vs 65% rain = same)
+   - Falls back to rule-based if LLM unavailable
+   - Uses Fanar model
+
+3. **Async mode for UI**
+   - Web client sends `async=true`
+   - Responses come via WebSocket
+   - API callers get sync response by default
+
+4. **Nature reminders** (`spatial/nature.go`, `command/nature.go`)
+   - Stars, moon, sunset reminders based on time/weather
+   - Optional Quranic verses
+   - Once per day in evening (7-10pm)
+
+5. **Dedupe state persistence**
+   - Load from `push_subscriptions.json` on restart
+   - Sync back on save
+   - But notification history (actual text) still lost on restart
+
+### The State Problem
+
+State is scattered across multiple files and in-memory maps:
+
+| State | Location | Persisted? |
+|-------|----------|------------|
+| Spatial index | `spatial.json` | ✅ |
+| Push subscriptions | `push_subscriptions.json` | ✅ |
+| Dedupe keys | `push_subscriptions.json` (PushedContent) | ✅ |
+| Notification history (text) | In-memory `notificationHistory` | ❌ Lost on restart |
+| Courier state | `courier_state.json` | ✅ |
+| Regional couriers | `regional_couriers.json` | ✅ |
+| Event log | `events.jsonl` | ✅ |
+| Session locations | In-memory `command.locations` | ❌ Lost on restart |
+| WebSocket observers | In-memory `server.observers` | ❌ Expected |
+
+### Proposed: Unified Data Package
+
+```go
+package data
+
+// Store provides unified state management
+type Store struct {
+    // Persistent state (auto-saved)
+    Spatial     *quadtree.DB
+    Push        *PushState
+    Couriers    *CourierState
+    
+    // In-memory state (survives in single process)
+    Sessions    *SessionState
+    Dedupe      *DedupeState
+    
+    // Event log
+    Events      *EventLog
+}
+
+// Get returns the global store
+func Get() *Store
+
+// Save persists all state
+func (s *Store) Save() error
+
+// Load loads all state from disk
+func (s *Store) Load() error
+```
+
+### Proposed: Event-Based Deduplication
+
+Instead of tracking dedupe state separately, use the event log:
+
+1. Every notification sent = event in `events.jsonl`
+2. Before sending, query event log: "Was similar notification sent in last 6 hours?"
+3. LLM can use event log as context
+4. Single source of truth
+
+```go
+// Query recent notifications for a session
+events := data.Get().Events.Query(
+    EventTypeNotification,
+    WithSession(sessionID),
+    WithMaxAge(6 * time.Hour),
+)
+
+// LLM decides based on history
+shouldSend := llm.ShouldSendNotification(newNotification, events)
+```
+
+### Files Changed This Session
+
+| File | Changes |
+|------|---------|
+| `server/dedupe.go` | NEW: Shared dedupe tracker |
+| `server/dedupe_llm.go` | NEW: LLM-based deduplication |
+| `server/push.go` | Use LLM dedupe, load/save state |
+| `server/server.go` | WebSocket broadcast dedupe |
+| `main.go` | Wire up dedupe client |
+| `spatial/nature.go` | NEW: Nature reminders |
+| `command/nature.go` | NEW: /nature command |
+| `client/web/malten.js` | Async mode, nature check |
+
+### Next Session: Data Package
+
+1. Create `data/` package with unified Store
+2. Move all state management there
+3. Single Save/Load for everything
+4. Consider event log for dedupe (space observer pattern)
+5. Proper shutdown handling (save on SIGTERM)
+
+### Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `/nature` | Get a nature reminder (stars, moon, etc.) |
+| `/trigger` | Add test observations (for debugging) |
+| `/observe` | Show pending observations |
+| `/observe process` | Run awareness filter and push |
+
+### JS Version: Check malten.js for current
+### Go Build: Working
+### Server: Running on port 9090
