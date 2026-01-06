@@ -9,6 +9,7 @@ import (
 // Context provides user context to commands
 type Context struct {
 	Session      string
+	Stream       string   // Geohash stream
 	Lat          float64
 	Lon          float64
 	Accuracy     float64  // GPS accuracy in meters (0 if not provided)
@@ -37,10 +38,11 @@ type Command struct {
 // Registry holds all registered commands
 var Registry = make(map[string]*Command)
 
-// Bus notification callbacks - set by main.go to avoid import cycle
+// Callbacks - set by main.go to avoid import cycle
 var (
 	GetBusNotifyCallback func(sessionID string) bool
 	SetBusNotifyCallback func(sessionID string, enabled bool)
+	ResetSessionCallback func(stream, sessionID string) int // Returns cleared message count
 )
 
 // Register adds a command to the registry

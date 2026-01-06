@@ -50,6 +50,133 @@ var pendingAsyncCommands = {};
 var isAcquiringLocation = false;
 var lastAcquiringShown = 0;
 
+// Centralized location manager - serializes all location updates
+var locationManager = {
+    pending: false,      // Is a ping in flight?
+    lastPing: 0,         // Timestamp of last ping sent
+    lastLat: null,       // Last pinged coordinates
+    lastLon: null,
+    minInterval: 3000,   // Min 3s between pings
+    callbacks: [],       // Callbacks waiting for current ping to complete
+    
+    // Request a location update. Returns promise that resolves with context.
+    // If a ping is already in flight, queues callback to receive same result.
+    // If recent ping exists and position hasn't changed much, returns cached.
+    update: function(options) {
+        options = options || {};
+        var force = options.force || false;
+        var self = this;
+        
+        return new Promise(function(resolve, reject) {
+            var now = Date.now();
+            var timeSinceLast = now - self.lastPing;
+            
+            // If we have fresh context and position hasn't changed, use cached
+            if (!force && state.context && timeSinceLast < self.minInterval) {
+                if (state.lat && state.lon && self.lastLat && self.lastLon) {
+                    var dist = haversineDistance(state.lat, state.lon, self.lastLat, self.lastLon);
+                    if (dist < 20) { // Less than 20m movement
+                        resolve(state.context);
+                        return;
+                    }
+                }
+            }
+            
+            // If ping already in flight, queue this callback
+            if (self.pending) {
+                self.callbacks.push({ resolve: resolve, reject: reject });
+                return;
+            }
+            
+            // Start new ping
+            self.pending = true;
+            self.callbacks.push({ resolve: resolve, reject: reject });
+            
+            // Get fresh GPS first
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(pos) {
+                        var lat = pos.coords.latitude;
+                        var lon = pos.coords.longitude;
+                        state.setLocation(lat, lon);
+                        state.gpsAccuracy = pos.coords.accuracy;
+                        self.doPing(lat, lon);
+                    },
+                    function(err) {
+                        // Use cached location if GPS fails
+                        if (state.lat && state.lon) {
+                            self.doPing(state.lat, state.lon);
+                        } else {
+                            self.complete(null, 'No location available');
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 1000 }
+                );
+            } else if (state.lat && state.lon) {
+                self.doPing(state.lat, state.lon);
+            } else {
+                self.complete(null, 'No location available');
+            }
+        });
+    },
+    
+    doPing: function(lat, lon) {
+        var self = this;
+        var loc = state.getEffectiveLocation();
+        var params = {
+            prompt: '/ping',
+            stream: getStream(),
+            lat: loc.isCheckedIn ? loc.lat : lat,
+            lon: loc.isCheckedIn ? loc.lon : lon
+        };
+        if (loc.isCheckedIn) params.checkin = loc.name;
+        if (state.gpsAccuracy) params.accuracy = Math.round(state.gpsAccuracy);
+        
+        $.post(commandUrl, params).done(function(data) {
+            if (data && (typeof data === 'object' || data.length > 0)) {
+                self.lastPing = Date.now();
+                self.lastLat = lat;
+                self.lastLon = lon;
+                state.setContext(data);
+                displayContext(data);
+                self.complete(data, null);
+            } else {
+                self.complete(state.context, null); // Return cached on empty response
+            }
+        }).fail(function(err) {
+            self.complete(state.context, err); // Return cached on error
+        });
+    },
+    
+    complete: function(ctx, err) {
+        this.pending = false;
+        var callbacks = this.callbacks;
+        this.callbacks = [];
+        callbacks.forEach(function(cb) {
+            if (err) {
+                cb.reject(err);
+            } else {
+                cb.resolve(ctx);
+            }
+        });
+    },
+    
+    // Get current location name (from cache or fetch)
+    getLocationName: function() {
+        var self = this;
+        return this.update().then(function(ctx) {
+            if (ctx && ctx.location && ctx.location.name) {
+                return ctx.location.name;
+            }
+            // Fallback to coordinates
+            if (state.lat && state.lon) {
+                return state.lat.toFixed(4) + ', ' + state.lon.toFixed(4);
+            }
+            return 'Unknown location';
+        });
+    }
+};
+
 // Screen Wake Lock - prevent phone from sleeping while tracking
 var wakeLock = {
     lock: null,
@@ -181,6 +308,7 @@ var state = {
                 this.reminderDate = s.reminderDate || null;
                 this.prayerReminders = s.prayerReminders || {};
                 this.photos = s.photos || [];
+                this.startFrom = s.startFrom || 0;
                 // Prune old messages on load (24 hour retention)
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.timeline = this.timeline.filter(function(c) { return c.time > cutoff; });
@@ -205,7 +333,8 @@ var state = {
                 steps: this.steps,
                 reminderDate: this.reminderDate,
                 prayerReminders: this.prayerReminders,
-                photos: this.photos
+                photos: this.photos,
+                startFrom: this.startFrom
             }));
         } catch(e) {
             console.error('Failed to save state:', e);
@@ -223,6 +352,16 @@ var state = {
         var prevLon = this.lon;
         this.lat = lat;
         this.lon = lon;
+        
+        // If moved significantly, record movement for sedentary reminder
+        if (prevLat && prevLon) {
+            var dist = haversineDistance(prevLat, prevLon, lat, lon);
+            if (dist > 50) { // Moved more than 50m
+                if (typeof sedentaryReminder !== 'undefined') {
+                    sedentaryReminder.recordMovement();
+                }
+            }
+        }
         
         // Track location history for movement detection
         this.locationHistory.push({
@@ -259,13 +398,13 @@ var state = {
         var match = html.match(/📍 ([^\n]+)/);
         return match ? match[1].trim() : null;
     },
-    // Check if we're near a saved place (within 50m)
+    // Check if we're near a saved place (within 20m - roughly a house/building)
     getNearSavedPlace: function() {
         if (!this.lat || !this.lon || !this.savedPlaces) return null;
         for (var name in this.savedPlaces) {
             var place = this.savedPlaces[name];
             var dist = haversineDistance(this.lat, this.lon, place.lat, place.lon);
-            if (dist < 50) return name; // Within 50m
+            if (dist < 20) return name; // Within 20m
         }
         return null;
     },
@@ -320,6 +459,7 @@ var state = {
     reminderDate: null,  // Last date daily reminder was shown (YYYY-MM-DD)
     prayerReminders: {},  // Track which prayer reminders shown today: {fajr: '2026-01-04', ...}
     photos: [],  // Captured photos with location: [{id, dataUrl, lat, lon, time, location}]
+    startFrom: 0,  // Timestamp - only show server messages after this (set by /reset)
     motionDetected: false,  // Movement detected via accelerometer while GPS stuck
     
     // Check if user has manually checked in to a location
@@ -412,6 +552,20 @@ function addToTimeline(text, type, timestamp, skipSave) {
         text = augmentCheckInPrompt(text);
     }
     
+    // Arrival/passing messages: enhance with saved place name if applicable
+    if (text.indexOf('📍 Arrived at') >= 0 || text.indexOf('🚶 Passing') >= 0) {
+        var nearSaved = state.nearSavedPlace();
+        if (nearSaved) {
+            // Replace "Arrived at X" with "Arrived home" (or other saved place)
+            if (text.indexOf('Arrived at') >= 0) {
+                text = '🏠 Arrived ' + nearSaved.toLowerCase() + '\n\n📷 Take a photo?';
+            } else {
+                // "Passing X" near a saved place - don't show (you know you're near home)
+                return;
+            }
+        }
+    }
+    
     var time = timestamp || Date.now();
     
     // Dedupe: skip if same text exists in timeline within last 5 minutes
@@ -499,6 +653,9 @@ function renderTimelineItem(item) {
     } else if (type === 'photo') {
         // Photo - already contains HTML with img tag
         html = item.text;
+    } else if (type === 'assistant' || type === 'default') {
+        // Assistant/system messages - render markdown
+        html = renderMarkdown(item.text);
     } else {
         html = makeCheckInClickable(item.text).replace(/\n/g, '<br>');
     }
@@ -602,6 +759,13 @@ function escapeHTML(str) {
     return div.innerHTML.replace(/(?:\r\n|\r|\n)/g, '<br>');
 }
 
+// Simple markdown: **bold**, `code`, newlines
+function renderMarkdown(str) {
+    return str
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')  // **bold**
+        .replace(/`([^`]+)`/g, '<code>$1</code>')           // `code`
+        .replace(/\n/g, '<br>');                            // newlines
+}
 
 
 
@@ -753,8 +917,12 @@ function loadMessages() {
     // Subscribe to real-time updates
     connectWebSocket();
     
-    // Fetch recent messages from server
-    $.get(messageUrl + '?stream=' + stream + '&limit=50', function(data) {
+    // Fetch recent messages from server (after startFrom if set)
+    var params = '?stream=' + stream + '&limit=50';
+    if (state.startFrom > 0) {
+        params += '&last=' + state.startFrom;
+    }
+    $.get(messageUrl + params, function(data) {
         if (data && data.length > 0) {
             displayMessages(data, 1);
             scrollToBottom();
@@ -795,8 +963,69 @@ function submitCommand() {
         return false;
     }
     
-    // Handle clear command - reset all local state
+    // Handle help command - show all commands
+    if (prompt.match(/^\/?help$/i)) {
+        form.elements["prompt"].value = '';
+        var helpText = '📋 **Commands**\n\n';
+        commands.forEach(function(c) {
+            helpText += '`' + c.cmd + '` - ' + c.desc;
+            if (c.usage) helpText += ' (' + c.usage + ')';
+            helpText += '\n';
+        });
+        addToTimeline(helpText, 'assistant');
+        return false;
+    }
+    
+    // Handle clear command - reset timeline but keep photos and saved places
     if (prompt.match(/^\/?clear$/i)) {
+        form.elements["prompt"].value = '';
+        // Preserve photos and saved places
+        var photos = state.photos || [];
+        var savedPlaces = state.savedPlaces || {};
+        // Clear state
+        state.timeline = [];
+        state.context = null;
+        state.contextTime = 0;
+        state.checkedIn = null;
+        state.reminderDate = null;
+        state.prayerReminders = {};
+        state.locationHistory = [];
+        // Restore preserved data
+        state.photos = photos;
+        state.savedPlaces = savedPlaces;
+        state.save();
+        // Clear DOM
+        document.getElementById('messages').innerHTML = '';
+        addToTimeline('🗑️ Cleared timeline. Photos and saved places kept.');
+        return false;
+    }
+    
+    // Handle reset command - set startFrom timestamp so server messages before now are invisible
+    if (prompt.match(/^\/?reset$/i)) {
+        form.elements["prompt"].value = '';
+        // Set startFrom to now (in nanoseconds to match server Created timestamps)
+        state.startFrom = Date.now() * 1000000;
+        // Also clear local timeline
+        var photos = state.photos || [];
+        var savedPlaces = state.savedPlaces || {};
+        state.timeline = [];
+        state.context = null;
+        state.contextTime = 0;
+        state.checkedIn = null;
+        state.reminderDate = null;
+        state.prayerReminders = {};
+        state.locationHistory = [];
+        state.photos = photos;
+        state.savedPlaces = savedPlaces;
+        state.save();
+        // Clear DOM
+        document.getElementById('messages').innerHTML = '';
+        addToTimeline('🔄 Reset complete. Fresh start.');
+        return false;
+    }
+    
+    // Handle clear all command - truly nuke everything
+    if (prompt.match(/^\/?clear\s+all$/i)) {
         form.elements["prompt"].value = '';
         localStorage.clear();
         // Unregister service worker
@@ -805,8 +1034,7 @@ function submitCommand() {
                 registrations.forEach(function(r) { r.unregister(); });
             });
         }
-        // Show feedback then reload
-        addToTimeline('🗑️ Cleared all local data. Reloading...');
+        addToTimeline('🗑️ Cleared ALL data. Reloading...');
         setTimeout(function() { location.reload(); }, 1000);
         return false;
     }
@@ -1180,6 +1408,7 @@ function handleLocationError(err) {
     }
 }
 
+// These are now managed by locationManager, keeping for backward compat with getPingInterval
 var lastPingSent = 0;
 var lastPingLat = 0;
 var lastPingLon = 0;
@@ -1371,13 +1600,13 @@ var turnTracker = {
 // Adaptive ping interval based on speed
 // Driving (>10 m/s): 5s, Walking (2-10 m/s): 10s, Stationary: 30s
 function getPingInterval() {
-    if (!lastPingTime || !lastPingLat) return 15000;
+    if (!locationManager.lastPing || !locationManager.lastLat) return 15000;
     
     var now = Date.now();
-    var elapsed = (now - lastPingTime) / 1000; // seconds
+    var elapsed = (now - locationManager.lastPing) / 1000; // seconds
     if (elapsed < 2) return 15000; // need time to measure
     
-    var distance = haversineDistance(lastPingLat, lastPingLon, state.lat, state.lon);
+    var distance = haversineDistance(locationManager.lastLat, locationManager.lastLon, state.lat, state.lon);
     var speed = distance / elapsed; // m/s
     
     if (speed > 10) return 5000;   // Driving: every 5s
@@ -1397,20 +1626,9 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
-// Send fresh location immediately (bypasses throttle)
+// Send fresh location immediately (uses location manager)
 function sendFreshLocation() {
-    if (!navigator.geolocation) return;
-    
-    navigator.geolocation.getCurrentPosition(
-        function(pos) {
-            lastPingSent = Date.now();
-            sendLocation(pos.coords.latitude, pos.coords.longitude);
-        },
-        function(err) {
-            console.log("Fresh location error:", err.message);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
+    locationManager.update({ force: true });
 }
 
 function startLocationWatch() {
@@ -1425,7 +1643,7 @@ function startLocationWatch() {
         function(pos) {
             var lat = pos.coords.latitude;
             var lon = pos.coords.longitude;
-            var accuracy = pos.coords.accuracy; // GPS accuracy in meters
+            var accuracy = pos.coords.accuracy;
             var now = Date.now();
             
             // Update movement tracker (before updating state)
@@ -1437,10 +1655,11 @@ function startLocationWatch() {
             // Track GPS accuracy
             state.gpsAccuracy = accuracy;
             
-            // Always update local state immediately
+            // Check if moved significantly
             var moved = false;
+            var distance = 0;
             if (state.lat && state.lon) {
-                var distance = haversineDistance(state.lat, state.lon, lat, lon);
+                distance = haversineDistance(state.lat, state.lon, lat, lon);
                 moved = distance > 20; // More than 20m = significant movement
             }
             
@@ -1450,26 +1669,14 @@ function startLocationWatch() {
             // Check for movement heartbeat
             movementTracker.heartbeat();
             
-            // If significant movement, ping immediately
-            if (moved || !lastPingSent) {
-                debugLog('Ping: moved=' + Math.round(moved ? haversineDistance(state.lat, state.lon, lat, lon) : 0) + 'm');
-                lastPingLat = lat;
-                lastPingLon = lon;
-                lastPingTime = now;
-                lastPingSent = now;
-                sendLocation(lat, lon);
-            } else {
-                // Otherwise respect throttle interval
-                var interval = getPingInterval();
-                var timeSincePing = now - lastPingSent;
-                if (timeSincePing >= interval) {
-                    debugLog('Ping: throttle interval ' + Math.round(interval/1000) + 's elapsed');
-                    lastPingLat = lat;
-                    lastPingLon = lon;
-                    lastPingTime = now;
-                    lastPingSent = now;
-                    sendLocation(lat, lon);
-                }
+            // Use location manager for pings - it handles throttling and deduplication
+            var timeSincePing = now - locationManager.lastPing;
+            var interval = getPingInterval();
+            
+            if (moved || !locationManager.lastPing || timeSincePing >= interval) {
+                debugLog('Location update: ' + Math.round(distance) + 'm moved, interval=' + Math.round(interval/1000) + 's');
+                // Location manager will handle the actual ping
+                locationManager.update();
             }
         },
         function(err) {
@@ -1736,10 +1943,17 @@ function buildContextSummary(ctx, needsAction) {
     
     var parts = [];
     
-    // Date/time
-    var now = new Date();
-    var dateStr = now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-    parts.push(dateStr);
+    // Location - street name (most important for awareness)
+    // Check saved places using CURRENT GPS, not context location
+    var nearPlace = state.getNearSavedPlace();
+    debugLog('buildContextSummary: lat=' + state.lat + ', nearPlace=' + nearPlace);
+    if (nearPlace) {
+        parts.push('📍 ' + nearPlace + ' ⭐');
+    } else if (ctx.location && ctx.location.name) {
+        // Just the street name, not postcode
+        var street = ctx.location.name.split(',')[0].trim();
+        parts.push('📍 ' + street);
+    }
     
     // Temperature
     if (ctx.weather && ctx.weather.condition) {
@@ -2094,21 +2308,8 @@ function sendLocation(lat, lon) {
         movementTracker.reset();
     }
     
-    var loc = state.getEffectiveLocation();
-    var params = {
-        prompt: '/ping',
-        stream: newStream,
-        lat: loc.isCheckedIn ? loc.lat : lat,
-        lon: loc.isCheckedIn ? loc.lon : lon
-    };
-    if (loc.isCheckedIn) params.checkin = loc.name;
-    if (state.gpsAccuracy) params.accuracy = Math.round(state.gpsAccuracy);
-    $.post(commandUrl, params).done(function(data) {
-        if (data && data.length > 0) {
-            state.setContext(data);
-            displayContext(data);
-        }
-    });
+    // Use location manager for the actual ping
+    locationManager.update();
 }
 
 // Get location and refresh context
@@ -2142,6 +2343,12 @@ function checkIfMoved() {
 
 // Refresh location without showing "Acquiring" message
 function silentLocationRefresh() {
+    // Use location manager - handles everything
+    locationManager.update({ force: true });
+}
+
+// Legacy function kept for reference - now handled by locationManager
+function _oldSilentLocationRefresh() {
     if (!navigator.geolocation) {
         return;
     }
@@ -2421,13 +2628,13 @@ var commands = [
     { cmd: '/export', desc: 'Backup to file' },
     { cmd: '/import', desc: 'Restore from file' },
     { cmd: '/refresh', desc: 'Force reload' },
-    { cmd: '/clear', desc: 'Reset all data' },
+    { cmd: '/clear', desc: 'Clear local timeline (keeps photos)' },
+    { cmd: '/clear all', desc: 'Nuke everything' },
+    { cmd: '/reset', desc: 'Fresh start (hide old server messages)' },
     { cmd: '/debug', desc: 'Show debug info' },
     { cmd: '/system', desc: 'Server status' },
     { cmd: '/wakelock', desc: 'Prevent phone sleep', usage: '/wakelock on|off' },
-    
-    // Pro
-    { cmd: '/pro', desc: 'Pro membership info' },
+    { cmd: '/help', desc: 'Show all commands' },
 ];
 
 function showCommandPalette(filter) {
@@ -2547,6 +2754,53 @@ function updateTimestamps() {
     });
 }
 
+// Sedentary reminder - nudge to move if inactive
+var sedentaryReminder = {
+    lastMovement: Date.now(),
+    lastReminder: 0,
+    checkInterval: null,
+    reminderIntervalMs: 60 * 60 * 1000, // 1 hour
+    
+    init: function() {
+        var self = this;
+        // Check every 5 minutes
+        this.checkInterval = setInterval(function() {
+            self.check();
+        }, 5 * 60 * 1000);
+    },
+    
+    recordMovement: function() {
+        this.lastMovement = Date.now();
+    },
+    
+    check: function() {
+        var now = Date.now();
+        var timeSinceMovement = now - this.lastMovement;
+        var timeSinceReminder = now - this.lastReminder;
+        
+        // If no movement for 1 hour and haven't reminded recently
+        if (timeSinceMovement > this.reminderIntervalMs && timeSinceReminder > this.reminderIntervalMs) {
+            this.remind();
+        }
+    },
+    
+    remind: function() {
+        this.lastReminder = Date.now();
+        var mins = Math.round((Date.now() - this.lastMovement) / 60000);
+        var msg = '🚶 You\'ve been sitting for ' + mins + ' minutes. Time for a walk?';
+        addToTimeline(msg, 'reminder');
+        
+        // Also try to send notification if app is backgrounded
+        if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification('Time to move!', {
+                body: 'You\'ve been sitting for ' + mins + ' minutes.',
+                icon: '/icon-192.png',
+                tag: 'sedentary'
+            });
+        }
+    }
+};
+
 // Step counter and motion detection
 var stepDetector = {
     lastAccel: 0,
@@ -2628,6 +2882,9 @@ var stepDetector = {
         this.stepsSinceLastPing++;
         state.save();
         
+        // Record movement for sedentary reminder
+        sedentaryReminder.recordMovement();
+        
         // Update display if visible
         this.updateDisplay();
     },
@@ -2661,10 +2918,10 @@ var lastCheckInPrompt = 0;
 
 function checkMotionGpsStuck() {
     // If we're moving (accelerometer) but GPS hasn't changed
-    if (stepDetector.isMoving() && lastPingLat && lastPingLon) {
-        var timeSinceMove = Date.now() - lastPingTime;
+    if (stepDetector.isMoving() && locationManager.lastLat && locationManager.lastLon) {
+        var timeSinceMove = Date.now() - locationManager.lastPing;
         if (timeSinceMove > 60000) {  // GPS stuck for 1+ minute
-            var distance = haversineDistance(lastPingLat, lastPingLon, state.lat, state.lon);
+            var distance = haversineDistance(locationManager.lastLat, locationManager.lastLon, state.lat, state.lon);
             if (distance < 20) {  // GPS moved less than 20m
                 state.motionDetected = true;
                 
@@ -2968,6 +3225,9 @@ $(document).ready(function() {
     // Initialize step counter
     stepDetector.init();
     
+    // Initialize sedentary reminder
+    sedentaryReminder.init();
+    
     // Check for motion vs GPS stuck periodically
     setInterval(checkMotionGpsStuck, 10000);
     
@@ -3150,12 +3410,24 @@ function handleCameraCapture(input) {
 }
 
 function showPhotoCompose(dataUrl) {
-    // Get current location
-    var loc = state.getEffectiveLocation();
-    var lat = loc ? loc.lat : state.lat;
-    var lon = loc ? loc.lon : state.lon;
-    var locationText = state.context && state.context.location ? state.context.location.name : 
-        (lat && lon ? lat.toFixed(4) + ', ' + lon.toFixed(4) : 'Unknown location');
+    // Use centralized location manager - ensures fresh location without duplicate pings
+    locationManager.update({ force: true }).then(function(ctx) {
+        var lat = state.lat;
+        var lon = state.lon;
+        var locationText = (ctx && ctx.location && ctx.location.name) ? ctx.location.name :
+            (lat && lon ? lat.toFixed(4) + ', ' + lon.toFixed(4) : 'Unknown location');
+        showPhotoComposeWithLocation(dataUrl, lat, lon, locationText);
+    }).catch(function() {
+        // Fallback to cached
+        var lat = state.lat;
+        var lon = state.lon;
+        var locationText = state.context && state.context.location ? state.context.location.name :
+            (lat && lon ? lat.toFixed(4) + ', ' + lon.toFixed(4) : 'Unknown location');
+        showPhotoComposeWithLocation(dataUrl, lat, lon, locationText);
+    });
+}
+
+function showPhotoComposeWithLocation(dataUrl, lat, lon, locationText) {
     
     // Create compose overlay
     var overlay = document.createElement('div');

@@ -104,27 +104,35 @@ func GetContextData(lat, lon float64) *ContextData {
 		}
 	}
 
-	// Location - check cache first, fetch inline if empty
+	// Location - find nearest location point or create one
+	// GPS jitter tolerance: 10m - if we have a point within 10m, use it
+	// Otherwise fetch from Nominatim and store a NEW point at these exact coords
 	tLoc := time.Now()
-	locs := db.Query(lat, lon, 500, EntityLocation, 1)
-	log.Printf("[context] location cache query: %v", time.Since(tLoc))
+	loc := db.GetNearestLocation(lat, lon, 10) // 10m tolerance for GPS jitter
+	log.Printf("[context] location lookup: %v", time.Since(tLoc))
 	
-	// If no cached location, trigger async fetch (don't block user)
-	if len(locs) == 0 {
-		go fetchLocation(lat, lon) // Fetch in background, will be ready next ping
+	var locationName string
+	if loc != nil {
+		locationName = loc.Name
+	} else {
+		// No point nearby - fetch and create one at THESE coords
+		newLoc := fetchLocation(lat, lon)
+		if newLoc != nil {
+			locationName = newLoc.Name
+		}
 	}
 	
-	if len(locs) > 0 {
+	if locationName != "" {
 		ctx.Location = &LocationInfo{
-			Name: locs[0].Name,
+			Name: locationName,
 			Lat:  lat,
 			Lon:  lon,
 		}
 		// Extract postcode if in name
-		if parts := strings.Split(locs[0].Name, ", "); len(parts) > 1 {
+		if parts := strings.Split(locationName, ", "); len(parts) > 1 {
 			ctx.Location.Postcode = parts[len(parts)-1]
 		}
-		htmlParts = append(htmlParts, "📍 "+locs[0].Name)
+		htmlParts = append(htmlParts, "📍 "+locationName)
 	}
 
 	// Weather - cache only

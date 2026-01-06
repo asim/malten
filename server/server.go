@@ -445,6 +445,32 @@ func (s *Server) Retrieve(message string, streem string, direction, last, limit 
 	return []*Message{}
 }
 
+// ClearSessionChannel removes all messages in a session's private channel
+func (s *Server) ClearSessionChannel(streem, session string) int {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	stream, ok := s.streams[streem]
+	if !ok {
+		return 0
+	}
+
+	channel := "@" + session
+	var kept []*Message
+	cleared := 0
+
+	for _, msg := range stream.Messages {
+		if msg.Channel == channel {
+			cleared++
+		} else {
+			kept = append(kept, msg)
+		}
+	}
+
+	stream.Messages = kept
+	return cleared
+}
+
 // RetrieveForSession gets messages visible to a session (public + their @channel)
 func (s *Server) RetrieveForSession(streem, session string, last, limit int64) []*Message {
 	s.mtx.RLock()

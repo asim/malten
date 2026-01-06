@@ -117,9 +117,10 @@ const (
 	gpsStuckDuration      = 5 * time.Minute
 	checkInPromptCooldown = 10 * time.Minute
 	checkInExpiry         = 2 * time.Hour
-	arrivalSpeedThreshold = 2.0   // m/s - below this is "stopped"
-	arrivalMovingThreshold = 5.0  // m/s - above this is "was moving"
-	arrivalPOIRadius      = 100.0 // meters - look for POIs within this distance
+	arrivalSpeedThreshold  = 1.0  // m/s - below this is "stopped" (slow stroll)
+	passingSpeedThreshold  = 2.0  // m/s - above this is "passing" (normal walk)
+	arrivalMovingThreshold = 1.5  // m/s - above this means "was moving" (reduced from 5.0)
+	arrivalPOIRadius       = 50.0 // meters - look for POIs within this distance (reduced from 100)
 )
 
 // Global location store (token -> location)
@@ -210,7 +211,9 @@ func cleanupLocations() {
 // LocationUpdate contains the result of a location update
 type LocationUpdate struct {
 	ShouldPromptCheckIn bool   // GPS appears stuck, prompt for check-in
-	ArrivedAt           string // POI name if arrival detected, empty otherwise
+	ArrivedAt           string // POI name if stopped near POI
+	PassingBy           string // POI name if moving past POI
+	IsHome              bool   // True if arrived at a saved place
 }
 
 // SetLocation stores location for a session token and updates their view
@@ -259,18 +262,26 @@ func SetLocation(token string, lat, lon float64) *LocationUpdate {
 	}
 	locationsMu.Unlock()
 	
-	// Detect arrival (was moving, now stopped near POI)
+	// Detect proximity to POI (arriving or passing)
 	// Only if not already checked in and not recently prompted
 	locationsMu.Lock()
-	canPromptArrival := loc.CheckedIn == nil && time.Since(loc.LastArrivalAt) > checkInPromptCooldown
+	canPrompt := loc.CheckedIn == nil && time.Since(loc.LastArrivalAt) > checkInPromptCooldown
 	locationsMu.Unlock()
 	
-	if !result.ShouldPromptCheckIn && canPromptArrival {
-		result.ArrivedAt = detectArrival(historyCopy, lat, lon)
-		if result.ArrivedAt != "" {
-			locationsMu.Lock()
-			loc.LastArrivalAt = time.Now()
-			locationsMu.Unlock()
+	if !result.ShouldPromptCheckIn && canPrompt {
+		proximity := detectProximity(historyCopy, lat, lon)
+		if proximity != nil {
+			if proximity.IsStopped {
+				result.ArrivedAt = proximity.POIName
+				locationsMu.Lock()
+				loc.LastArrivalAt = time.Now()
+				locationsMu.Unlock()
+			} else {
+				// Only show "passing" if moving at normal walking speed or faster
+				if proximity.RecentSpeed >= passingSpeedThreshold {
+					result.PassingBy = proximity.POIName
+				}
+			}
 		}
 	}
 	
@@ -322,68 +333,59 @@ func haversineMeters(lat1, lon1, lat2, lon2 float64) float64 {
 	return R * c
 }
 
-// detectArrival checks if user was moving and has now stopped near a POI
-// Returns the POI name if arrival detected, empty string otherwise
-func detectArrival(history []LocationPoint, lat, lon float64) string {
-	log.Printf("[nearby] detectArrival called with %d history points", len(history))
-	if len(history) < 4 {
-		log.Printf("[nearby] detectArrival: not enough history (%d < 4)", len(history))
-		return ""
-	}
+// ProximityInfo contains info about nearby POI detection
+type ProximityInfo struct {
+	POIName     string
+	IsStopped   bool    // true = arrived, false = passing
+	RecentSpeed float64 // for debugging
+}
+
+// detectProximity checks if user is near a POI and whether they've stopped or are passing
+func detectProximity(history []LocationPoint, lat, lon float64) *ProximityInfo {
+	log.Printf("[nearby] detectProximity called with %d history points", len(history))
 	
-	// Need at least 30 seconds of history (reduced from 60s for faster detection)
-	oldest := history[0]
-	newest := history[len(history)-1]
-	duration := newest.Time.Sub(oldest.Time)
-	if duration < 30*time.Second {
-		log.Printf("[nearby] detectArrival: history too short (%.0fs < 30s)", duration.Seconds())
-		return ""
-	}
-	
-	// Calculate recent speed (last 2 points) vs previous speed (earlier points)
-	if len(history) < 3 {
-		return ""
-	}
-	
-	// Previous speed: first half of history
-	midpoint := len(history) / 2
-	prevDist := haversineMeters(history[0].Lat, history[0].Lon, history[midpoint].Lat, history[midpoint].Lon)
-	prevTime := history[midpoint].Time.Sub(history[0].Time).Seconds()
-	prevSpeed := 0.0
-	if prevTime > 0 {
-		prevSpeed = prevDist / prevTime
-	}
-	
-	// Recent speed: second half of history
-	recentDist := haversineMeters(history[midpoint].Lat, history[midpoint].Lon, newest.Lat, newest.Lon)
-	recentTime := newest.Time.Sub(history[midpoint].Time).Seconds()
-	recentSpeed := 0.0
-	if recentTime > 0 {
-		recentSpeed = recentDist / recentTime
-	}
-	
-	log.Printf("[nearby] detectArrival: history=%d, duration=%.0fs, prevSpeed=%.1f m/s, recentSpeed=%.1f m/s", 
-		len(history), newest.Time.Sub(oldest.Time).Seconds(), prevSpeed, recentSpeed)
-	
-	// Arrival = was moving (>5 m/s) and now stopped (<2 m/s)
-	if prevSpeed < arrivalMovingThreshold || recentSpeed > arrivalSpeedThreshold {
-		log.Printf("[nearby] Not arrival: need prevSpeed>=%.1f (got %.1f) and recentSpeed<=%.1f (got %.1f)",
-			arrivalMovingThreshold, prevSpeed, arrivalSpeedThreshold, recentSpeed)
-		return ""
-	}
-	
-	log.Printf("[nearby] Possible arrival: prevSpeed=%.1f m/s, recentSpeed=%.1f m/s", prevSpeed, recentSpeed)
-	
-	// Check for nearby POI
+	// Check for nearby POI first - if nothing nearby, skip the speed calc
 	db := spatial.Get()
 	pois := db.Query(lat, lon, arrivalPOIRadius, spatial.EntityPlace, 1)
 	if len(pois) == 0 {
-		log.Printf("[nearby] No POI within %.0fm", arrivalPOIRadius)
-		return ""
+		return nil
 	}
 	
-	log.Printf("[nearby] Arrival detected at %s", pois[0].Name)
-	return pois[0].Name
+	poiName := pois[0].Name
+	
+	// Need some history to calculate speed
+	if len(history) < 3 {
+		// Not enough history - assume passing (don't know if stopped)
+		return &ProximityInfo{POIName: poiName, IsStopped: false, RecentSpeed: -1}
+	}
+	
+	// Calculate recent speed from last few points
+	recentPoints := history
+	if len(recentPoints) > 5 {
+		recentPoints = history[len(history)-5:]
+	}
+	
+	// Speed = distance covered / time
+	first := recentPoints[0]
+	last := recentPoints[len(recentPoints)-1]
+	dist := haversineMeters(first.Lat, first.Lon, last.Lat, last.Lon)
+	duration := last.Time.Sub(first.Time).Seconds()
+	
+	recentSpeed := 0.0
+	if duration > 0 {
+		recentSpeed = dist / duration
+	}
+	
+	log.Printf("[nearby] Near %s: recentSpeed=%.2f m/s (stopped<%.1f, passing>%.1f)", 
+		poiName, recentSpeed, arrivalSpeedThreshold, passingSpeedThreshold)
+	
+	isStopped := recentSpeed < arrivalSpeedThreshold
+	
+	return &ProximityInfo{
+		POIName:     poiName,
+		IsStopped:   isStopped,
+		RecentSpeed: recentSpeed,
+	}
 }
 
 func updateUserInSpatialIndex(token string, lat, lon float64) {
@@ -1444,6 +1446,9 @@ func handlePing(ctx *Context, args []string) (string, error) {
 	}
 	
 	// Note: SetLocation already called by handler.go for all commands with lat/lon
+	
+	// Record location for route tracking (captures user's actual paths)
+	spatial.RecordLocation(ctx.Session, ctx.Lat, ctx.Lon)
 	
 	// Update push manager with current location (for background notifications)
 	UpdatePushLocation(ctx.Session, ctx.Lat, ctx.Lon)

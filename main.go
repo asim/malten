@@ -223,9 +223,16 @@ func main() {
 	server.SetWeatherNotificationBuilder(buildWeatherNotification)
 	server.SetPrayerNotificationBuilder(buildPrayerNotification)
 	
-	// Wire up bus notification callbacks for command package
+	// Wire up callbacks for command package
 	command.GetBusNotifyCallback = pm.GetBusNotify
 	command.SetBusNotifyCallback = pm.SetBusNotify
+	command.ResetSessionCallback = func(stream, session string) int {
+		// Clear channel messages
+		cleared := server.Default.ClearSessionChannel(stream, session)
+		// Clear push subscription
+		pm.Unsubscribe(session)
+		return cleared
+	}
 
 	// Awareness push callback
 	spatial.SetAwarenessPushCallback(func(lat, lon float64, items []struct{ Emoji, Message string }) {

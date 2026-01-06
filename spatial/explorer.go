@@ -441,3 +441,8 @@ func GetAgentExplorationStats(agent *Entity) (totalSteps int, homeLat, homeLon f
 func DistanceFromHome(state *ExplorerState) float64 {
 	return distanceMeters(state.CurrentLat, state.CurrentLon, state.HomeLat, state.HomeLon)
 }
+
+// DistanceMeters calculates distance between two points in meters (exported)
+func DistanceMeters(lat1, lon1, lat2, lon2 float64) float64 {
+	return distanceMeters(lat1, lon1, lat2, lon2)
+}

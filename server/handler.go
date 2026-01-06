@@ -68,6 +68,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	// Build context for command dispatch
 	ctx := &command.Context{
 		Session: token,
+		Stream:  stream,
 		Input:   input,
 	}
 	// First try location from POST (inline with command)
@@ -140,6 +141,9 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 				if locUpdate.ArrivedAt != "" {
 					sendArrivalPrompt(token, stream, locUpdate.ArrivedAt, ctx.Lat, ctx.Lon)
 				}
+				if locUpdate.PassingBy != "" {
+					sendPassingPrompt(token, stream, locUpdate.PassingBy)
+				}
 			}
 		}()
 		return
@@ -163,6 +167,9 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			if locUpdate.ArrivedAt != "" {
 				go sendArrivalPrompt(token, stream, locUpdate.ArrivedAt, ctx.Lat, ctx.Lon)
+			}
+			if locUpdate.PassingBy != "" {
+				go sendPassingPrompt(token, stream, locUpdate.PassingBy)
 			}
 		}
 		return

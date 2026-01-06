@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v14 2026-01-06 dynamic-legend -->
+<!-- v16 2026-01-06 dynamic-legend -->
 <html>
 <head>
     <meta charset="UTF-8">
@@ -350,7 +350,33 @@ function draw() {
         });
     }
     
-    // Agents work invisibly - not rendered on map
+    // Draw area names from agents (at moderate zoom levels)
+    if (mapData.agents && viewState.metersPerPixel >= 2 && viewState.metersPerPixel <= 100) {
+        ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        mapData.agents.forEach(agent => {
+            const pos = latLonToXY(agent.lat, agent.lon);
+            
+            // Skip if off screen
+            if (pos.x < -100 || pos.x > canvas.width + 100 || pos.y < -50 || pos.y > canvas.height + 50) return;
+            
+            // Extract area name (remove ", Greater London" etc)
+            let areaName = agent.name;
+            if (areaName.includes(',')) {
+                areaName = areaName.split(',')[0].trim();
+            }
+            if (areaName.startsWith('Area ')) return; // Skip unnamed agents
+            
+            // Draw text with white outline for visibility
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.strokeText(areaName, pos.x, pos.y);
+            ctx.fillStyle = '#444';
+            ctx.fillText(areaName, pos.x, pos.y);
+        });
+    }
     
     // Track drawn places for click detection
     renderedPlaces = [];
@@ -866,27 +892,33 @@ canvas.addEventListener('mouseleave', () => {
 canvas.addEventListener('wheel', e => {
     e.preventDefault();
     const factor = e.deltaY > 0 ? 1.2 : 0.8;
+    zoomAtPoint(e.clientX, e.clientY, factor);
+}, { passive: false });
+
+// Zoom at a specific screen point, keeping that point's lat/lon stationary
+function zoomAtPoint(clientX, clientY, factor) {
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    
+    // Get lat/lon at this point before zoom
+    const pointLatLon = xyToLatLon(x, y);
+    
+    // Apply zoom
     const oldMpp = viewState.metersPerPixel;
     const newMpp = Math.max(0.5, Math.min(500, oldMpp * factor));
-    
-    // Zoom around mouse position
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    
-    // Distance from screen center to mouse in pixels
-    const dxFromCenter = mouseX - canvas.width / 2 - viewState.offsetX;
-    const dyFromCenter = mouseY - canvas.height / 2 - viewState.offsetY;
-    
-    // Adjust offset to keep mouse point stationary
-    const scaleChange = oldMpp / newMpp;
-    viewState.offsetX = viewState.offsetX * scaleChange + dxFromCenter * (1 - scaleChange);
-    viewState.offsetY = viewState.offsetY * scaleChange + dyFromCenter * (1 - scaleChange);
-    
     viewState.metersPerPixel = newMpp;
+    
+    // Get where that lat/lon would appear after zoom (without offset adjustment)
+    const newPos = latLonToXY(pointLatLon.lat, pointLatLon.lon);
+    
+    // Adjust offset so the point stays at the same screen position
+    viewState.offsetX += x - newPos.x;
+    viewState.offsetY += y - newPos.y;
+    
     draw();
     updateStats();
-}, { passive: false });
+}
 
 function showTooltip(x, y) {
     if (!mapData) return;
@@ -971,37 +1003,19 @@ canvas.addEventListener('touchmove', e => {
         const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         
-        if (lastTouchDist > 0 && lastTouchCenter) {
+        if (lastTouchDist > 0) {
             const factor = lastTouchDist / dist;
-            const oldMpp = viewState.metersPerPixel;
-            const newMpp = Math.max(0.5, Math.min(500, oldMpp * factor));
-            
-            // Zoom around the pinch center point
-            // The pinch center should stay at the same lat/lon after zoom
-            const rect = canvas.getBoundingClientRect();
-            const pinchX = lastTouchCenter.x - rect.left;
-            const pinchY = lastTouchCenter.y - rect.top;
-            
-            // Calculate how much the view shifts due to zoom
-            // Distance from screen center to pinch point in old meters
-            const dxFromCenter = pinchX - canvas.width / 2 - viewState.offsetX;
-            const dyFromCenter = pinchY - canvas.height / 2 - viewState.offsetY;
-            
-            // After zoom, the same lat/lon should appear at the same screen position
-            // This means we need to adjust offset to compensate for the scale change
-            const scaleChange = oldMpp / newMpp;
-            viewState.offsetX = viewState.offsetX * scaleChange + dxFromCenter * (1 - scaleChange);
-            viewState.offsetY = viewState.offsetY * scaleChange + dyFromCenter * (1 - scaleChange);
-            
-            viewState.metersPerPixel = newMpp;
-            draw();
-            updateStats();
+            zoomAtPoint(centerX, centerY, factor);
         }
         
         lastTouchDist = dist;
         lastTouchCenter = { x: centerX, y: centerY };
     }
 }, { passive: false });
+
+let lastTapTime = 0;
+let lastTapX = 0;
+let lastTapY = 0;
 
 canvas.addEventListener('touchend', e => {
     viewState.isDragging = false;
@@ -1011,11 +1025,26 @@ canvas.addEventListener('touchend', e => {
     // Detect tap: short duration and no significant movement
     const touchDuration = Date.now() - touchStartTime;
     if (!touchMoved && touchDuration < 300) {
-        // This was a tap!
+        const now = Date.now();
         const rect = canvas.getBoundingClientRect();
         const x = touchStartX - rect.left;
         const y = touchStartY - rect.top;
-        handleTap(x, y);
+        
+        // Check for double-tap (within 300ms and 50px)
+        const timeSinceLastTap = now - lastTapTime;
+        const distFromLastTap = Math.sqrt(Math.pow(x - lastTapX, 2) + Math.pow(y - lastTapY, 2));
+        
+        if (timeSinceLastTap < 300 && distFromLastTap < 50) {
+            // Double-tap! Zoom in at this point
+            zoomAtPoint(touchStartX, touchStartY, 0.5); // 0.5 = zoom in (smaller mpp)
+            lastTapTime = 0; // Reset to avoid triple-tap
+        } else {
+            // Single tap
+            handleTap(x, y);
+            lastTapTime = now;
+            lastTapX = x;
+            lastTapY = y;
+        }
     }
     
     // Check if we need to load more data after panning/zooming

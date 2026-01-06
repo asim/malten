@@ -517,18 +517,18 @@ func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 
 
 // fetchLocation reverse geocodes and returns an entity for caching
-// Locations are cached for 500m radius - same street basically
+// fetchLocation reverse geocodes the given coordinates and stores a point
+// The caller should check if a nearby point already exists before calling
 func fetchLocation(lat, lon float64) *Entity {
-	// Lock per-area to prevent race between cache check and fetch
+	// Lock per-area to prevent duplicate fetches for same location
 	lock := GetAreaLock(lat, lon)
 	lock.Lock()
 	defer lock.Unlock()
 	
-	// Check cache first
+	// Double-check under lock - another goroutine may have just fetched this
 	db := Get()
-	cached := db.Query(lat, lon, 500, EntityLocation, 1)
-	if len(cached) > 0 && cached[0].ExpiresAt != nil && time.Now().Before(*cached[0].ExpiresAt) {
-		return nil // Already have fresh data
+	if existing := db.GetNearestLocation(lat, lon, 10); existing != nil {
+		return existing
 	}
 	
 	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?lat=%f&lon=%f&format=json&zoom=18",

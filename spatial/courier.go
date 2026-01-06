@@ -21,6 +21,7 @@ type CourierState struct {
 	TripsComplete int       `json:"trips_complete"`
 	MetersWalked  float64   `json:"meters_walked"`
 	Enabled       bool      `json:"enabled"`
+	ManualTarget  bool      `json:"manual_target"`    // If true, don't auto-pick next destination
 }
 
 var courierState *CourierState

@@ -402,6 +402,35 @@ func (d *DB) QueryByNameContains(lat, lon, radiusMeters float64, nameContains st
 	return result
 }
 
+// GetNearestLocation finds the nearest location entity to the given coordinates
+// Returns nil if no location exists within toleranceMeters (typically 10m for GPS jitter)
+func (d *DB) GetNearestLocation(lat, lon, toleranceMeters float64) *Entity {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	center := quadtree.NewPoint(lat, lon, nil)
+	half := center.HalfPoint(toleranceMeters)
+	boundary := quadtree.NewAABB(center, half)
+
+	filter := func(p *quadtree.Point) bool {
+		entity, ok := p.Data().(*Entity)
+		if !ok {
+			return false
+		}
+		return entity.Type == EntityLocation
+	}
+
+	points := d.tree.KNearest(boundary, 1, filter)
+	if len(points) == 0 {
+		return nil
+	}
+	
+	if entity, ok := points[0].Data().(*Entity); ok {
+		return entity
+	}
+	return nil
+}
+
 // DBStats holds statistics about the database
 type DBStats struct {
 	Total    int

@@ -3565,3 +3565,109 @@ Agents now move through space, mapping streets as they go:
 
 ### JS Version: 283
 ### Map Version: v14
+
+## Session: Jan 6, 2026 - Route Tracking, Zones, Sedentary Reminder
+
+### Route Tracking from GPS (Phase 1)
+Your actual GPS movement now gets captured as streets:
+
+**How it works:**
+- Every `/ping` calls `spatial.RecordLocation(session, lat, lon)`
+- Points <20m apart skipped (GPS jitter)
+- After 5 min stationary OR 500 points, track saved as street
+- Douglas-Peucker algorithm simplifies (fewer points, same shape)
+- Dedupes against existing streets
+- Street has no user ID - just anonymous geometry
+
+**Files:**
+- `spatial/track.go` - TrackPoint, UserTrack, RecordLocation, saveTrackAsStreet, simplifyTrack
+- `command/nearby.go` - Added RecordLocation call in handlePing
+
+**Privacy model:**
+- Server extracts street geometry from GPS pings
+- Street stored anonymously (just coordinates, no user link)
+- User's personal history stays in localStorage
+- We're mapping streets, not tracking users
+
+### `/zones` Command
+Shows coverage analysis:
+
+```
+📊 **Coverage Analysis**
+
+**Well connected:** Hampton (67), Whitton (60)
+**Sparse:** Hounslow West (7)
+**Dead zones** (gaps to fill):
+• Hampton Hill ↔ Strawberry Hill (1.6km)
+• Whitton ↔ St Margarets (1.8km)
+```
+
+**File:** `command/zones.go`
+
+### Courier Improvements
+- `/goto <lat,lon>` - Send courier to specific point
+- `/route <lat,lon> <lat,lon> ...` - Multi-waypoint route
+- `ManualTarget` flag prevents auto-switching mid-route
+- Waypoint queue for sequential destinations
+- Courier algorithm now picks FARTHEST isolated component (better coverage)
+
+**Files:**
+- `command/courier_goto.go` - /goto command
+- `command/courier_route.go` - /route command with waypoints
+- `spatial/courier_regional.go` - SendCourierTo, waypoint queue, improved pickRegionalDestination
+
+### Sedentary Reminder
+Nudges you to move if inactive for 1 hour:
+
+> 🚶 You've been sitting for 60 minutes. Time for a walk?
+
+**Triggers:**
+- No steps detected (accelerometer) for 1 hour
+- GPS position unchanged (>50m) for 1 hour
+
+**Implementation:**
+- `sedentaryReminder` object in malten.js
+- Checks every 5 minutes
+- Records movement on: step detected, GPS moved >50m
+- Shows timeline message + browser notification if backgrounded
+
+### Map Improvements
+- Zoom centers on mouse/pinch point (`zoomAtPoint()` function)
+- Double-tap to zoom on mobile
+- Area names displayed (Hampton, Whitton, etc.) at 2-100 m/px zoom
+- Version: v16
+
+### Help & Markdown
+- `/help` command lists all commands
+- `/pro` command removed (not ready)
+- Markdown rendering: `**bold**`, `` `code` ``, newlines
+- `.card code` and `.card strong` CSS styling
+
+### Commands Added This Session
+| Command | Description |
+|---------|-------------|
+| `/help` | List all commands |
+| `/zones` | Coverage analysis, dead zones |
+| `/goto <coords>` | Send courier to point |
+| `/route <coords> ...` | Multi-waypoint courier route |
+
+### JS Version: 300
+### Map Version: v16
+
+### The Plan Going Forward
+
+**What we have:**
+1. User GPS pings → anonymous street geometry (automatic)
+2. Courier explores in background (slow, respects rate limits)
+3. `/zones` shows coverage gaps
+4. `/route` for manual gap-filling when needed
+
+**Future phases:**
+- Heat map on /map showing street density
+- Auto-bridge: courier finds waypoints through dead zones
+- `/bridge <from> <to>` - suggest waypoints between areas
+
+**Philosophy:** "Slow is smooth, smooth is fast"
+- Courier maps slowly in background
+- User's actual walks fill in their real routes
+- No API hammering, organic growth
