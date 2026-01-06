@@ -42,8 +42,17 @@ func handleAwareness(ctx *Context, args []string) (string, error) {
 			return "✓ Processed - nothing worth surfacing right now.", nil
 		}
 
+		// Push to users in area
+		if spatial.AwarenessPushCallback != nil && len(items) > 0 {
+			pushItems := make([]struct{ Emoji, Message string }, len(items))
+			for i, item := range items {
+				pushItems[i] = struct{ Emoji, Message string }{item.Emoji, item.Message}
+			}
+			spatial.AwarenessPushCallback(agent.Lat, agent.Lon, pushItems)
+		}
+
 		var result []string
-		result = append(result, fmt.Sprintf("🔔 %d items to surface:\n", len(items)))
+		result = append(result, fmt.Sprintf("🔔 %d items surfaced and pushed:\n", len(items)))
 		for _, item := range items {
 			result = append(result, fmt.Sprintf("%s %s", item.Emoji, item.Message))
 		}
