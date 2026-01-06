@@ -124,3 +124,21 @@ func (d *NotificationDedupe) LoadFromPush(sessions map[string]map[string]int64) 
 		d.sessions[sessionID] = &SessionDedupe{SentContent: content}
 	}
 }
+
+// GetAllState returns a copy of all session dedupe state (for persistence)
+func (d *NotificationDedupe) GetAllState() map[string]map[string]int64 {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	
+	result := make(map[string]map[string]int64)
+	for sessionID, sess := range d.sessions {
+		if sess.SentContent != nil && len(sess.SentContent) > 0 {
+			copy := make(map[string]int64)
+			for k, v := range sess.SentContent {
+				copy[k] = v
+			}
+			result[sessionID] = copy
+		}
+	}
+	return result
+}

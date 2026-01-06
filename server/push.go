@@ -93,6 +93,9 @@ func (pm *PushManager) load() {
 		return
 	}
 
+	// Also load dedupe state from pushed_content
+	dedupeData := make(map[string]map[string]int64)
+	
 	for _, u := range users {
 		// Recalculate timezone from longitude
 		if u.Lon != 0 {
@@ -100,6 +103,17 @@ func (pm *PushManager) load() {
 			u.Timezone = time.FixedZone("local", offsetHours*3600)
 		}
 		pm.users[u.SessionID] = u
+		
+		// Collect pushed_content for dedupe tracker
+		if u.PushedContent != nil && len(u.PushedContent) > 0 {
+			dedupeData[u.SessionID] = u.PushedContent
+		}
+	}
+	
+	// Load into shared dedupe tracker
+	if len(dedupeData) > 0 {
+		GetDedupe().LoadFromPush(dedupeData)
+		log.Printf("[push] Loaded dedupe state for %d sessions", len(dedupeData))
 	}
 }
 
@@ -126,11 +140,18 @@ func (pm *PushManager) save() {
 // saveAsync saves without taking lock (caller must have copied data or not hold lock)
 func (pm *PushManager) saveAsync() {
 	// Copy users while we still have the lock
+	// Also sync dedupe state from shared tracker
+	dedupeState := GetDedupe().GetAllState()
+	
 	users := make([]*PushUser, 0, len(pm.users))
 	for _, u := range pm.users {
 		// Deep copy the user to avoid race
 		userCopy := *u
-		if u.PushedContent != nil {
+		
+		// Get dedupe state from shared tracker
+		if state, ok := dedupeState[u.SessionID]; ok {
+			userCopy.PushedContent = state
+		} else if u.PushedContent != nil {
 			userCopy.PushedContent = make(map[string]int64)
 			for k, v := range u.PushedContent {
 				userCopy.PushedContent[k] = v
