@@ -75,16 +75,76 @@ Free to use. Considering:
 
 Still figuring this out. If you have thoughts, open an issue.
 
-## Development
+## Installation
+
+### Prerequisites
+
+- Go 1.21+
+- Linux/macOS (Windows untested)
+
+### Build
 
 ```bash
+git clone https://github.com/asim/malten.git
+cd malten
 go build -o malten .
+```
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and configure:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `FANAR_API_KEY` | Yes* | AI API key from [fanar.ai](https://fanar.ai) |
+| `FANAR_API_URL` | Yes* | AI API endpoint |
+| `OPENAI_API_KEY` | Yes* | Alternative: OpenAI API key from [platform.openai.com](https://platform.openai.com) |
+| `VAPID_PUBLIC_KEY` | Optional | Web push public key (if not set, push disabled) |
+| `VAPID_PRIVATE_KEY` | Optional | Web push private key |
+| `FOURSQUARE_API_KEY` | Optional | Places API fallback |
+| `MU_API_TOKEN` | Optional | User authentication |
+
+*Either Fanar or OpenAI required for AI features.
+
+Generate VAPID keys (optional, for push notifications):
+```bash
+npx web-push generate-vapid-keys
+```
+
+### Run
+
+```bash
+# Development (serves from client/web/)
+./malten -web=client/web
+
+# Production (uses embedded files)
 ./malten
 ```
 
-Requires:
-- Go 1.21+
-- API keys for weather, transport, AI (see .env.example)
+Default port: 9090. Access at http://localhost:9090
+
+### Systemd (Production)
+
+```bash
+sudo cp malten.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable malten
+sudo systemctl start malten
+```
+
+## Data Sources
+
+| Data | Source | Notes |
+|------|--------|-------|
+| Weather | [Open-Meteo](https://open-meteo.com) | Free, model-based (may differ from BBC/Google by 1-2°C) |
+| Transport | TfL API | London only, other regions TODO |
+| Places | OpenStreetMap + Foursquare | OSM primary, Foursquare fallback |
+| Prayer Times | Aladhan API | Calculation-based |
+| Routing | OSRM | Walking directions |
 
 ## Related Projects
 
@@ -93,7 +153,7 @@ Requires:
 
 ## License
 
-AGPL-3.0
+GPL-3.0 - See [LICENSE](LICENSE)
 
 ---
 

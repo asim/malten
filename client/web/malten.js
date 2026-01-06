@@ -2391,25 +2391,43 @@ function toggleSpeech() {
 
 // Available commands for autocomplete
 var commands = [
+    // Places & Navigation
     { cmd: '/nearby', desc: 'Find nearby places', usage: '/nearby cafe' },
     { cmd: '/directions', desc: 'Get walking directions', usage: '/directions Waitrose' },
-    { cmd: '/checkin', desc: 'Check in to a place', usage: '/checkin Home' },
+    { cmd: '/place', desc: 'Get place info', usage: '/place Starbucks' },
+    { cmd: '/checkin', desc: 'Check in to a place', usage: '/checkin Costa' },
     { cmd: '/checkout', desc: 'Clear check-in' },
+    { cmd: '/location', desc: 'Current location info' },
+    { cmd: '/summary', desc: 'Quick area summary' },
+    { cmd: '/map', desc: 'Open spatial map' },
+    
+    // Saved places & photos
     { cmd: '/save', desc: 'Save current location', usage: '/save Home' },
     { cmd: '/places', desc: 'List saved places' },
-    { cmd: '/photos', desc: 'View captured photos' },
     { cmd: '/delete', desc: 'Delete saved place', usage: '/delete Home' },
+    { cmd: '/photos', desc: 'View captured photos' },
+    
+    // Context & info
     { cmd: '/weather', desc: 'Current weather' },
-    { cmd: '/bus', desc: 'Bus times' },
+    { cmd: '/bus', desc: 'Bus times', usage: '/bus on|off for notifications' },
     { cmd: '/prayer', desc: 'Prayer times' },
     { cmd: '/reminder', desc: 'Daily verse' },
+    
+    // AI & search
+    { cmd: '/chat', desc: 'Chat with AI', usage: '/chat what time is sunset' },
+    { cmd: '/web', desc: 'Toggle web search', usage: '/web on|off' },
+    
+    // System
     { cmd: '/export', desc: 'Backup to file' },
     { cmd: '/import', desc: 'Restore from file' },
     { cmd: '/refresh', desc: 'Force reload' },
     { cmd: '/clear', desc: 'Reset all data' },
     { cmd: '/debug', desc: 'Show debug info' },
-    { cmd: '/wakelock on', desc: 'Prevent phone sleep' },
-    { cmd: '/wakelock off', desc: 'Allow phone sleep' },
+    { cmd: '/system', desc: 'Server status' },
+    { cmd: '/wakelock', desc: 'Prevent phone sleep', usage: '/wakelock on|off' },
+    
+    // Pro
+    { cmd: '/pro', desc: 'Pro membership info' },
 ];
 
 function showCommandPalette(filter) {
