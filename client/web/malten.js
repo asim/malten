@@ -307,6 +307,7 @@ var state = {
                 this.steps = s.steps || { count: 0, date: null };
                 this.reminderDate = s.reminderDate || null;
                 this.prayerReminders = s.prayerReminders || {};
+                this.natureReminderDate = s.natureReminderDate || null;
                 this.photos = s.photos || [];
                 this.startFrom = s.startFrom || 0;
                 // Prune old messages on load (24 hour retention)
@@ -333,6 +334,7 @@ var state = {
                 steps: this.steps,
                 reminderDate: this.reminderDate,
                 prayerReminders: this.prayerReminders,
+                natureReminderDate: this.natureReminderDate,
                 photos: this.photos,
                 startFrom: this.startFrom
             }));
@@ -458,6 +460,7 @@ var state = {
     steps: { count: 0, date: null },  // Daily step counter
     reminderDate: null,  // Last date daily reminder was shown (YYYY-MM-DD)
     prayerReminders: {},  // Track which prayer reminders shown today: {fajr: '2026-01-04', ...}
+    natureReminderDate: null,  // Last date nature reminder was shown (YYYY-MM-DD)
     photos: [],  // Captured photos with location: [{id, dataUrl, lat, lon, time, location}]
     startFrom: 0,  // Timestamp - only show server messages after this (set by /reset)
     motionDetected: false,  // Movement detected via accelerometer while GPS stuck
@@ -1720,6 +1723,9 @@ function fetchReminder() {
     
     // Prayer-time reminders - check context for current prayer
     checkPrayerReminder();
+    
+    // Nature reminder - once per day in evening
+    checkNatureReminder();
 }
 
 // Check if we should show a prayer-time reminder based on current prayer
@@ -1765,6 +1771,34 @@ function checkPrayerReminder() {
             // Display reminder card
             displayReminderCard(r);
         } catch(e) {}
+    });
+}
+
+// Check if we should show a nature reminder (once per day in evening)
+function checkNatureReminder() {
+    var today = new Date().toISOString().split('T')[0];
+    var hour = new Date().getHours();
+    
+    // Only show in evening (7pm-10pm)
+    if (hour < 19 || hour > 22) return;
+    
+    // Already shown today?
+    if (state.natureReminderDate === today) return;
+    
+    // Mark as shown
+    state.natureReminderDate = today;
+    state.save();
+    
+    // Fetch nature reminder
+    $.post(commandUrl, { 
+        prompt: '/nature', 
+        stream: getStream(),
+        lat: state.lat,
+        lon: state.lon
+    }).done(function(response) {
+        if (response && response.length > 0) {
+            addToTimeline(response, 'reminder');
+        }
     });
 }
 
