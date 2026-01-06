@@ -595,8 +595,8 @@ func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emo
 		return
 	}
 
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 
 	for _, user := range pm.users {
 		// Check if user is in this area (within 2km)
@@ -610,11 +610,96 @@ func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emo
 		}
 
 		for _, item := range items {
+			// Dedupe: check if we already pushed this type today
+			// Use emoji as notification type key
+			notifyType := "awareness_" + item.Emoji
+			if !pm.canPushTodayLocked(user, notifyType) {
+				continue
+			}
+
 			notification := &PushNotification{
 				Title: item.Emoji + " Malten",
 				Body:  item.Message,
 			}
-			go pm.SendPush(user.SessionID, notification)
+			if pm.sendPushLocked(user, notification) {
+				pm.markPushedLocked(user, notifyType)
+			}
 		}
 	}
+}
+
+// canPushTodayLocked checks if we can push this notification type today (caller holds lock)
+func (pm *PushManager) canPushTodayLocked(user *PushUser, notifyType string) bool {
+	now := time.Now()
+	if user.Timezone != nil {
+		now = now.In(user.Timezone)
+	}
+	today := now.Format("2006-01-02")
+
+	if user.DailyPushed == nil {
+		return true
+	}
+
+	lastDate, exists := user.DailyPushed[notifyType]
+	return !exists || lastDate != today
+}
+
+// markPushedLocked marks a notification type as sent today (caller holds lock)
+func (pm *PushManager) markPushedLocked(user *PushUser, notifyType string) {
+	now := time.Now()
+	if user.Timezone != nil {
+		now = now.In(user.Timezone)
+	}
+	today := now.Format("2006-01-02")
+
+	if user.DailyPushed == nil {
+		user.DailyPushed = make(map[string]string)
+	}
+	user.DailyPushed[notifyType] = today
+}
+
+// sendPushLocked sends a push notification (caller holds lock, releases for network call)
+func (pm *PushManager) sendPushLocked(user *PushUser, notification *PushNotification) bool {
+	if user.Subscription == nil {
+		return false
+	}
+
+	// Copy what we need before releasing lock
+	sub := &webpush.Subscription{
+		Endpoint: user.Subscription.Endpoint,
+		Keys: webpush.Keys{
+			P256dh: user.Subscription.Keys.P256dh,
+			Auth:   user.Subscription.Keys.Auth,
+		},
+	}
+	sessionID := user.SessionID
+
+	// Release lock for network call
+	pm.mu.Unlock()
+	defer pm.mu.Lock()
+
+	payload, _ := json.Marshal(notification)
+	resp, err := webpush.SendNotification(payload, sub, &webpush.Options{
+		VAPIDPublicKey:  pm.vapidPublic,
+		VAPIDPrivateKey: pm.vapidPrivate,
+		Subscriber:      pm.subject,
+		TTL:             3600,
+	})
+	if err != nil {
+		log.Printf("[push] Error sending to %s: %v", sessionID[:8], err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		log.Printf("[push] Failed for %s: status %d", sessionID[:8], resp.StatusCode)
+		return false
+	}
+
+	bodyPreview := notification.Body
+	if len(bodyPreview) > 50 {
+		bodyPreview = bodyPreview[:50]
+	}
+	log.Printf("[push] Sent to %s: %s", sessionID[:8], bodyPreview)
+	return true
 }
