@@ -1571,17 +1571,24 @@ function displayReminderCard(r) {
     debugLog('displayReminderCard: name=' + (r.name ? r.name.substring(0,30) : 'none') + ', verse=' + (r.verse ? r.verse.substring(0,30) : 'none'));
     
     if (r.name && r.name.length > 0) {
-        // Name of Allah - show title and brief description
+        // Name of Allah - show just the English name
         var nameParts = r.name.split('\n\n');
-        var title = nameParts[0];
+        var titleLine = nameParts[0];
         var desc = nameParts[1] ? nameParts[1].substring(0, 150) + '...' : '';
+        
+        // Extract English name from "Al Khabeer - الْخَبِيرُ - The All Aware" -> "The All Aware"
+        var englishName = titleLine;
+        var lastDash = titleLine.lastIndexOf(' - ');
+        if (lastDash > 0) {
+            englishName = titleLine.substring(lastDash + 3);
+        }
         
         // Make title a link if we have the name number
         if (r.name_number) {
-            link = 'https://reminder.dev/name/' + r.name_number;
-            text = '📿 <a href="' + link + '" target="_blank" class="reminder-link">' + title + '</a>';
+            link = 'https://reminder.dev/names/' + r.name_number;
+            text = '📿 <a href="' + link + '" target="_blank" class="reminder-link">' + englishName + '</a>';
         } else {
-            text = '📿 ' + title;
+            text = '📿 ' + englishName;
         }
         if (desc) {
             text += '\n' + desc;
