@@ -29,13 +29,13 @@ var (
 	}
 )
 
-// LLM rate limiter (separate, longer interval for Fanar)
+// LLM rate limiter for Fanar (shared 50/min with Mu, we get ~15)
 var llmLimiter = struct {
-	mu          sync.Mutex
-	lastCall    time.Time
-	minInterval time.Duration
+	mu           sync.Mutex
+	lastMinute   []time.Time
+	maxPerMinute int
 }{
-	minInterval: 500 * time.Millisecond,
+	maxPerMinute: 12, // Conservative: 15 budget, use 12
 }
 
 // LLMRateLimitedCall wraps LLM API calls with rate limiting and stats
@@ -49,17 +49,35 @@ func LLMRateLimitedCall(fn func() error) error {
 		time.Sleep(backoff)
 	}
 
+	// Rate limit: max N requests per minute
 	llmLimiter.mu.Lock()
+	now := time.Now()
+	cutoff := now.Add(-time.Minute)
 
-	elapsed := time.Since(llmLimiter.lastCall)
-	if elapsed < llmLimiter.minInterval {
-		wait := llmLimiter.minInterval - elapsed
+	// Remove old entries
+	var recent []time.Time
+	for _, t := range llmLimiter.lastMinute {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+	llmLimiter.lastMinute = recent
+
+	// Check limit
+	if len(llmLimiter.lastMinute) >= llmLimiter.maxPerMinute {
 		llmLimiter.mu.Unlock()
-		time.Sleep(wait)
-		llmLimiter.mu.Lock()
+		// Wait for oldest to expire
+		if len(recent) > 0 {
+			wait := time.Until(recent[0].Add(time.Minute))
+			if wait > 0 {
+				log.Printf("[ratelimit] llm: waiting %.1fs (at limit %d/min)", wait.Seconds(), llmLimiter.maxPerMinute)
+				time.Sleep(wait)
+			}
+		}
+		return LLMRateLimitedCall(fn) // Retry
 	}
 
-	llmLimiter.lastCall = time.Now()
+	llmLimiter.lastMinute = append(llmLimiter.lastMinute, now)
 	llmLimiter.mu.Unlock()
 
 	stats.RecordCall("llm")
