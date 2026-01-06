@@ -3102,6 +3102,58 @@ New agent creation now checks:
 2. Existing agent with same base name (e.g., "Hampton" matches "Hampton, Greater London")
 
 
+## Session: Jan 6, 2026 - Weather Fix
+
+**Bug:** Temperature showing 0°C when actual is -3°C
+
+**Root causes:**
+1. Weather query radius (10km) didn't match fetch radius (5km)
+2. Corrupted entity with no `ExpiresAt` was never filtered out
+3. Legacy data parsing fallback was missing
+
+**Fixes:**
+- Query radius now 5km to match fetch
+- Ephemeral entities (weather, arrivals, prayer) without ExpiresAt treated as expired
+- Added legacy name parsing fallback for temp
+
+---
+
+## Known Gaps (TODO)
+
+### 1. Awareness System Not End-to-End
+- Agents accumulate observations ✅
+- `/observe` shows pending observations ✅  
+- LLM filter to decide what's interesting ✅
+- **MISSING:** Automatic delivery to user's timeline/push
+- Currently: must manually run `/observe process`
+
+### 2. Agent Creation Feedback
+- New agents created silently
+- Should say "Spinning up agent in your area..."
+
+### 3. Regional Transport APIs
+- Only TfL (London) implemented
+- TODO: TfGM (Manchester), TfW (Wales), National Rail, Dublin
+
+### 4. ARCHITECTURE.md Missing
+- README references it but file doesn't exist
+- Should document the spacetime model
+
+### 5. Step Counter
+- Accelerometer access exists
+- Not counting/displaying steps
+
+### 6. Bus Data in Context JSON
+- `"bus": null` in context JSON structure
+- Bus info only in HTML string
+
+### 7. Event Log Improvements
+- No unique event IDs (evt_xxx)
+- No checkpoint markers
+- Rebuild from events not tested
+
+---
+
 ## Session: Jan 5/6, 2026 - Performance Fixes, Async Commands, Courier
 
 ### Major Performance Fix: Batched Disk Writes
