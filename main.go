@@ -244,6 +244,8 @@ func main() {
 		log.Printf("AI not available: %v", err)
 	} else {
 		log.Println("AI initialized")
+		// Share client with dedupe system
+		server.SetDedupeClient(agent.Client)
 	}
 
 	// Get JS version from file mtime (for cache busting)

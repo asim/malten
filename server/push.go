@@ -288,14 +288,14 @@ func (pm *PushManager) SendPush(sessionID string, notification *PushNotification
 		return nil
 	}
 
-	// Content-based deduplication using shared tracker
+	// Content-based deduplication using LLM (falls back to rule-based)
 	content := notification.Title + " " + notification.Body
-	if !GetDedupe().ShouldSend(sessionID, content) {
-		log.Printf("[push] Skipping duplicate for %s: %s", sessionID[:8], ExtractContentKey(content))
-		pm.mu.Unlock()
+	pm.mu.Unlock() // Release lock before LLM call
+	
+	if !ShouldSendLLM(sessionID, content) {
+		log.Printf("[push] Skipping duplicate for %s: %s", sessionID[:8], truncate(content, 40))
 		return nil
 	}
-	pm.mu.Unlock()
 
 	payload, _ := json.Marshal(notification)
 
@@ -682,10 +682,10 @@ func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emo
 		}
 
 		for _, item := range items {
-			// Content-based dedupe using shared tracker
+			// Content-based dedupe using LLM
 			content := item.Emoji + " " + item.Message
-			if !GetDedupe().ShouldSend(user.SessionID, content) {
-				log.Printf("[push] Skipping duplicate for %s: %s", user.SessionID[:8], ExtractContentKey(content))
+			if !ShouldSendLLM(user.SessionID, content) {
+				log.Printf("[push] Skipping duplicate for %s: %s", user.SessionID[:8], truncate(content, 40))
 				continue
 			}
 
