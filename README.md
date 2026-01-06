@@ -1,125 +1,100 @@
 # Malten
 
-Spatial AI for the real world. Context-aware of what's around you.
+A spatial timeline for the real world.
 
-## What It Does
+## What It Is
 
-Open the app → instantly see:
-- 📍 Where you are (street, postcode)
-- ⛅ Weather + rain forecast  
-- 🕌 Current prayer time, next prayer
-- 🚏 Live bus/train arrivals with countdown
-- ☕ Nearby cafes, restaurants, pharmacies, shops
+Malten is a timeline of where you are. Open it and see:
 
-Move → context updates automatically (adaptive: 5s driving, 10s walking, 30s stationary).
+- 📍 Your location - street, area, postcode
+- ⛅ Weather and what's coming
+- 🚏 Live transport - buses, trains, countdowns
+- ☕ What's nearby - cafes, shops, places
+- 🕐 The rhythm of the day - sunrise, sunset, the hours
 
-Ask anything → AI with spatial context answers.
+Move through the world and it updates. Take a photo of the snow falling. Note where you had coffee. Your timeline becomes a record of moments in places.
 
-## The Vision
+## Features
 
-The world is filled with signs (ayat) of the Creator. Malten surfaces these reminders subtly:
-- Prayer times ground you in the rhythm of the day
-- Names of Allah at each prayer - The Provider at Dhuhr, The Light at Maghrib
-- Verses that speak to the moment - "By the morning sunlight" at Duha
+**Context-aware**: Updates based on where you are - walking, driving, stationary.
 
-Utility and purpose, together.
+**Timeline**: Your history of places and moments. Persists locally. Private to you.
 
-## Architecture
+**Commands**: Ask for what you need.
+- `/nearby cafe` - find coffee
+- `/directions home` - walking route
+- `/weather` - forecast
+- `/bus` - next arrivals
 
-### The Spacetime Model
+**AI**: Ask anything. "What's that building?" "Where can I get lunch?" "What time is sunset?"
 
-```
-events.jsonl     = the ledger of spacetime (facts about the world)
-spatial.json     = materialized present (quadtree, rebuildable)
-stream/websocket = real-time propagation of events
-localStorage     = your worldline (private timeline)
-```
+**Notifications**: Get updates when backgrounded - transport times, weather changes.
+
+**Map**: See the spatial index - places, agents, streets we've mapped.
+
+## How It Works
 
 ### Agents
 
-Agents operate invisibly in the background, like angels maintaining the world:
-- One agent per area (geohash-based)
-- Fetch weather, transport, places
-- Store in spatial index
-- Accumulate observations for awareness system
+Invisible agents maintain different areas. They fetch weather, transport, places. They keep the world view fresh. You don't see them working, but they're there.
 
-### Regional Couriers
+### The Spatial Index
 
-Couriers walk between agents to map streets:
-- Cluster agents by proximity (50km)
-- One courier per cluster
-- Routes stored as street geometry
-- Enables the map view
+Everything has a location. Places, weather, transport, moments. All indexed spatially. Query by where you are.
 
-### Awareness System
+### Your Timeline
 
-Agents observe changes. LLM filters noise:
-- 🌧️ Rain starting soon
-- ⚠️ Transport disruption
-- 🕌 Prayer approaching
+Stored locally on your device. Your path through space and time. Private. Exportable. Yours.
 
-## Regional Support
+## Regional Coverage
 
-| Region     | Transport | Weather | Prayer | POIs | Streets |
-|------------|-----------|---------|--------|------|--------|
-| London     | ✓ TfL     | ✓       | ✓      | ✓    | ✓      |
-| Cardiff    | TODO      | ✓       | ✓      | ✓    | ✓      |
-| Dublin     | TODO      | ✓       | ✓      | ✓    | ✓      |
-| Manchester | TODO      | ✓       | ✓      | ✓    | TODO   |
-| USA        | TODO      | ✓       | ✓      | ✓    | Partial |
-| Global     | -         | ✓       | ✓      | ✓    | Via courier |
+| Region | Transport | Weather | Places |
+|--------|-----------|---------|--------|
+| London | ✓ TfL | ✓ | ✓ |
+| UK | Partial | ✓ | ✓ |
+| Ireland | Partial | ✓ | ✓ |
+| Global | - | ✓ | ✓ |
 
-Transport APIs are region-specific. Weather, prayer, and POIs work globally.
+Transport APIs are regional. Weather and places work everywhere.
 
-## Commands
+## Privacy
 
-| Command | Description |
-|---------|-------------|
-| `/ping` | Update location, get context |
-| `/nearby <type>` | Find nearby places |
-| `/directions <place>` | Walking directions |
-| `/weather` | Current weather |
-| `/bus` | Bus times |
-| `/prayer` | Prayer times |
-| `/reminder` | Daily verse and Name of Allah |
-| `/agents` | Agent status |
-| `/couriers` | Regional courier status |
-| `/system` | System stats |
-| `/map` | Link to map view |
+- No ads
+- No tracking
+- No algorithms
+- Timeline stored locally
+- Location used only to show you context
+- We don't sell your data because we don't collect it
 
-## Data Sources
+## Business Model
 
-- **Location**: OpenStreetMap Nominatim
-- **Weather**: Open-Meteo
-- **Prayer times**: Aladhan
-- **Transport**: TfL (London), more regions TODO
-- **Places**: OpenStreetMap + Foursquare fallback
-- **Reminders**: reminder.dev
+Free to use. Considering:
+- Pro subscription for cloud backup, sync across devices, extended history
+- API access for developers
+- No ads, ever
+
+Still figuring this out. If you have thoughts, open an issue.
 
 ## Development
 
 ```bash
-# Build
 go build -o malten .
-
-# Run
-FANAR_API_KEY=xxx FANAR_API_URL=https://api.fanar.qa/v1 ./malten
-
-# Test
-curl -X POST localhost:9090/commands -d 'prompt=/ping&lat=51.45&lon=-0.35'
+./malten
 ```
 
-## Key Files
+Requires:
+- Go 1.21+
+- API keys for weather, transport, AI (see .env.example)
 
-| File | Purpose |
-|------|--------|
-| `claude.md` | Full development context |
-| `events.jsonl` | Event log (don't delete!) |
-| `spatial.json` | Spatial index |
-| `courier_state.json` | Courier state |
-| `regional_couriers.json` | Regional courier state |
-| `push_subscriptions.json` | Push notification subscriptions |
+## Related Projects
+
+- [Reminder](https://reminder.dev) - Daily verses and reflections
+- [Mu](https://mu.xyz) - A personal platform without ads
 
 ## License
 
 AGPL-3.0
+
+---
+
+*The world is full of signs for those who reflect.*

@@ -44,19 +44,61 @@ When changing `state` structure in malten.js:
 
 ## What is Malten
 
-Spatial AI for the real world with contextual awareness. Foursquare if built in the AI era.
+A spatial timeline for the real world. Context-aware of where you are and what's around you.
 
-But internally, Malten is built with the morality and ethics of a Muslim. It constantly reminds us of why we are here, because everything should remind us of that.
+### The Public Face
 
-The world is full of signs (ayat) of the Creator. The design. The complexity. The order. We could never make it. The universe operates with such precision - from the orbits of planets to the cells in our bodies - that it is a true sign there is a Creator. The One. The All-Powerful. Allah.
+To the world, Malten is:
+- A timeline of your movement through space
+- Contextual awareness - weather, transport, places
+- An alternative to algorithmic feeds
+- Mindfulness through noticing the world
+- No ads, no tracking, no manipulation
 
-Malten surfaces these reminders subtly:
-- Prayer times ground you in the rhythm of the day
-- Names of Allah at each prayer - The Provider at Dhuhr, The Light at Maghrib
-- Verses that speak to the moment - "By the morning sunlight" at Duha
-- The natural world as sign - weather, sunrise, moon phases
+### The Internal Purpose
 
-This isn't preachy. It's woven into the fabric of the app. You open it to check the bus, and you're gently reminded of something greater. Utility and purpose, together.
+Internally, Malten is built to bring people back.
+
+Not through preaching. Through pointing at the world and saying *look*.
+
+The world is full of signs (ayat). The snow falling. The sunrise. The precision of everything. For those with eyes to see, these signs point to the Creator. For others, they're simply beautiful. Both are valid entry points.
+
+Malten is the outermost circle of three tools:
+
+| Tool | Audience | Method | The return |
+|------|----------|--------|------------|
+| **Reminder** | Muslims, practicing | Direct - Quran, Hadith, Names of Allah | Through revelation |
+| **Mu** | Engineers, screen-addicts | Subtle - a verse card among the noise | Through interruption |
+| **Malten** | Everyone, Western, English-speaking | Very subtle - reflection on the world itself | Through creation |
+
+Reminder is for those already close. Mu is for those who might be open but are lost. Malten is for those who don't even know they're being called back.
+
+### Design Principles
+
+1. **Subtle, not preachy** - No Arabic terms in the UI for non-Muslim audiences. "The Provider" not "Ar-Razzaq". "Morning light" not "Ad-Duha". The meaning without the barrier.
+
+2. **Universal accessibility** - Works for everyone. A Muslim sees prayer times and knows. A non-Muslim sees sunrise/sunset and finds it beautiful. Both are experiencing the same reality.
+
+3. **Signs in the horizons and within themselves** (41:53) - The external world (weather, places, moments) and the internal reflection (your timeline, your path). Both paths to the same truth.
+
+4. **The tool helps you see, it doesn't tell you what to see** - We surface the world. We don't interpret it for you. Those who want to see deeper will. Those who just want bus times get bus times.
+
+5. **Utility and purpose together** - Every feature has practical value. The spiritual dimension is woven in, not bolted on.
+
+### What This Means Practically
+
+- Prayer times are presented as "rhythm of the day" - useful for anyone, meaningful for Muslims
+- Weather includes sunrise/sunset prominently - natural markers of time
+- The timeline is your "worldline" - a term that works spiritually and scientifically
+- Reminders are optional and subtle - a verse card, not a popup
+- Names of Allah appear contextually - "The Light" at sunset, "The Provider" at noon
+- No forced religious content - it's there for those who look
+
+### The Verse That Guides This
+
+> "We will show them Our signs in the universe and within themselves until it becomes clear to them that this is the truth." (41:53)
+
+The signs are already there. In the horizons (the world around you) and within yourself (your reflection on it). Malten just helps you notice.
 
 **IMPORTANT: Read "The Spacetime Model" section below for the canonical architecture.**
 
@@ -1236,6 +1278,87 @@ This guarantees:
 - POIs, places, weather all survive
 - Users experience continuity
 
+## Monetization Reality
+
+### The Hard Truth
+
+Monetization has never stuck. History:
+- **Corporate sponsorship** (go-micro) - Paying for labour, not product
+- **VC funding** (Micro) - Paying for potential upside, burned out
+- **Paid APIs** (M3O) - Made sense technically, didn't scale
+- **Crypto investments** - Currently paying the bills, not sustainable strategy
+
+30 years of ad-supported "free" software trained consumers not to pay. But ads are surveillance. The model is broken.
+
+### What Others Do
+
+**Kagi** (private search):
+- Launched on HackerNews
+- Founder-funded initially
+- Crowdfunding
+- Now profitable
+- Power users pay for privacy
+
+**Spotify** - People pay for music streaming
+**Instagram** - People won't pay for social feeds
+
+Difference: Spotify provides content they can't get elsewhere. Instagram is "free" because you are the product.
+
+### Malten's Position
+
+We're closer to Kagi than Instagram:
+- Utility tool, not social network
+- Privacy-respecting
+- Power user appeal (developers, privacy-conscious)
+- Can charge for enhanced features
+
+But also different:
+- Spatial/local - harder to demonstrate value before use
+- Competing with "free" Google Maps
+- Muslim-friendly features are niche value-add
+
+### Current Thinking
+
+**Free Tier (generous)**
+- All core features (context, directions, nearby, weather, transport)
+- Local timeline storage
+- Basic reminders
+- Export/import
+
+**Pro Tier (~£3/month or £25/year)**
+- Cloud backup & sync across devices
+- Extended timeline history
+- Saved places sync
+- Priority API responses
+- Timeline sharing with family
+
+**API Access (for developers)**
+- Spatial index queries
+- Contextual AI
+- Pay-per-use or subscription
+
+**NOT doing:**
+- Ads (ever)
+- Selling data
+- "Promoted" places (feels like ads)
+- Enterprise sales (hate it)
+
+### The Honest Uncertainty
+
+Will people pay £3/month for this? Unknown.
+
+Kagi proves some people will pay for privacy and utility. But Kagi is search - used dozens of times daily. Malten might be opened once or twice.
+
+Maybe the answer is:
+1. Build something genuinely useful first
+2. Let it spread organically
+3. Offer Pro tier when there's demand
+4. Trust that provision comes from elsewhere
+
+The reminder.dev model is clear: "We do not ask for a reward. Our reward is with Allah."
+
+Malten can't be that pure - it's a utility, not revelation. But it also doesn't need to be venture-scale. Sustainable is enough.
+
 ## Paid Features (Roadmap)
 
 ### Free Tier
@@ -1269,41 +1392,17 @@ This guarantees:
 
 Option B is simpler and more privacy-friendly. Could offer Option A as premium for those who want cloud backup.
 
-### Pricing Ideas
+### Pricing
 - £2.99/month or £24.99/year
-- Family plan (5 devices)
-- One-time purchase option?
-
-## Business Model
-
-### Revenue Streams
-
-**1. Freemium Subscriptions**
-- Free: core features (context, steps, directions, nearby)
-- Paid (~£3/mo): sync, backup, history, timeline sharing, priority API
-
-**2. Local Business Partnerships**
-- Businesses pay for visibility in nearby results
-- "Promoted" places shown contextually (not ads, just higher ranking)
-- Check-in offers: "You're near Costa, here's 10% off"
-- Aligns naturally with spatial context
-
-**3. Timeline Sharing**
-- Share live location with family/friends (safety use case)
-- "See my day" - share your timeline publicly or with select people
-- Free tier: share with 1 person
-- Paid tier: share with groups, longer history
+- Family plan (5 devices) - £4.99/month
+- One-time purchase option? (Maybe £50-75 lifetime)
 
 ### What We Don't Do
 - Sell personal data
-- Surveillance/tracking without consent
-- Intrusive ads
-
-### Competitive Advantage
-- Privacy-first (localStorage by default)
-- AI-native (not bolted on)
-- Spatial context (not just maps)
-- Muslim-friendly (prayer times built-in, not an afterthought)
+- Surveillance/tracking
+- Ads
+- Enterprise sales
+- Compromise on privacy for revenue
 
 ## Session: Adaptive Ping (Jan 3 2026)
 
