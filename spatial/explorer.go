@@ -12,14 +12,14 @@ import (
 
 // ExplorerState tracks an agent's exploration progress
 type ExplorerState struct {
-	CurrentLat  float64   `json:"current_lat"`
-	CurrentLon  float64   `json:"current_lon"`
-	HomeLat     float64   `json:"home_lat"`
-	HomeLon     float64   `json:"home_lon"`
-	LastMove    time.Time `json:"last_move"`
-	StepsToday  int       `json:"steps_today"`
-	TotalSteps  int       `json:"total_steps"`
-	Exploring   bool      `json:"exploring"`
+	CurrentLat float64   `json:"current_lat"`
+	CurrentLon float64   `json:"current_lon"`
+	HomeLat    float64   `json:"home_lat"`
+	HomeLon    float64   `json:"home_lon"`
+	LastMove   time.Time `json:"last_move"`
+	StepsToday int       `json:"steps_today"`
+	TotalSteps int       `json:"total_steps"`
+	Exploring  bool      `json:"exploring"`
 }
 
 var explorerStates = make(map[string]*ExplorerState)
@@ -42,7 +42,7 @@ func InitExplorer(agent *Entity) *ExplorerState {
 		LastMove:   time.Now(),
 		Exploring:  true,
 	}
-	
+
 	// Load persisted state from agent entity if available
 	if ad := agent.GetAgentData(); ad != nil {
 		if ad.HomeLat != 0 && ad.HomeLon != 0 {
@@ -52,7 +52,7 @@ func InitExplorer(agent *Entity) *ExplorerState {
 		state.TotalSteps = ad.TotalSteps
 		state.StepsToday = ad.StepsToday
 	}
-	
+
 	explorerStates[agent.ID] = state
 	return state
 }
@@ -80,17 +80,17 @@ type RouteGeometry struct {
 func GetWalkingRoute(fromLat, fromLon, toLat, toLon float64) (*RouteGeometry, error) {
 	url := fmt.Sprintf("%s/route/v1/foot/%f,%f;%f,%f?overview=full&geometries=geojson",
 		osrmBaseURL, fromLon, fromLat, toLon, toLat)
-	
+
 	resp, err := OSRMGet(url)
 	if err != nil {
 		return nil, fmt.Errorf("routing failed: %v", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("routing API returned %d", resp.StatusCode)
 	}
-	
+
 	var data struct {
 		Code   string `json:"code"`
 		Routes []struct {
@@ -101,15 +101,15 @@ func GetWalkingRoute(fromLat, fromLon, toLat, toLon float64) (*RouteGeometry, er
 			} `json:"geometry"`
 		} `json:"routes"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("decode failed: %v", err)
 	}
-	
+
 	if data.Code != "Ok" || len(data.Routes) == 0 {
 		return nil, fmt.Errorf("no route found")
 	}
-	
+
 	route := data.Routes[0]
 	return &RouteGeometry{
 		Coordinates: route.Geometry.Coordinates,
@@ -126,39 +126,39 @@ func ExploreStep(agent *Entity) bool {
 		state = InitExplorer(agent)
 		log.Printf("[explorer] %s: initialized explorer state", agent.Name)
 	}
-	
+
 	if !state.Exploring {
 		log.Printf("[explorer] %s: not exploring (state.Exploring=false)", agent.Name)
 		return false
 	}
-	
+
 	// Rate limit: max one move per 10 seconds
 	if time.Since(state.LastMove) < 10*time.Second {
 		// Don't log this - too noisy
 		return false
 	}
 	log.Printf("[explorer] %s: starting explore step", agent.Name)
-	
+
 	db := Get()
-	
+
 	// Strategy: find an unexplored direction or nearby POI
 	destination := pickExplorationTarget(db, state, agent.ID)
 	if destination == nil {
 		log.Printf("[explorer] %s: no exploration target found", agent.Name)
 		return false
 	}
-	
+
 	// Get walking route to destination
 	route, err := GetWalkingRoute(state.CurrentLat, state.CurrentLon, destination.Lat, destination.Lon)
 	if err != nil {
 		log.Printf("[explorer] %s: route error: %v", agent.Name, err)
 		return false
 	}
-	
+
 	if len(route.Coordinates) < 2 {
 		return false
 	}
-	
+
 	// Index the street geometry
 	street := &Entity{
 		ID:   GenerateID(EntityStreet, state.CurrentLat, state.CurrentLon, destination.Name),
@@ -175,28 +175,28 @@ func ExploreStep(agent *Entity) bool {
 		UpdatedAt: time.Now(),
 	}
 	db.Insert(street)
-	
+
 	// Index POIs along the route (every 100m or so)
 	indexPOIsAlongRoute(db, agent.ID, route.Coordinates)
-	
+
 	// Move agent to destination
 	state.CurrentLat = destination.Lat
 	state.CurrentLon = destination.Lon
 	state.LastMove = time.Now()
 	state.StepsToday++
 	state.TotalSteps++
-	
+
 	// Update agent's position in the entity
 	agent.Lat = state.CurrentLat
 	agent.Lon = state.CurrentLon
 	agent.UpdatedAt = time.Now()
-	
+
 	// Save exploration state to agent entity (persists across restarts)
 	SaveExplorerState(agent, state)
-	
-	log.Printf("[explorer] %s: moved to %s (%.4f, %.4f) - %d steps total, %.0fm", 
+
+	log.Printf("[explorer] %s: moved to %s (%.4f, %.4f) - %d steps total, %.0fm",
 		agent.Name, destination.Name, state.CurrentLat, state.CurrentLon, state.TotalSteps, route.Distance)
-	
+
 	return true
 }
 
@@ -212,32 +212,32 @@ func pickExplorationTarget(db *DB, state *ExplorerState, agentID string) *explor
 	if rand.Float64() < 0.3 {
 		return randomExplorationTarget(state)
 	}
-	
+
 	// Strategy 1: Find a nearby POI we haven't visited via a street
 	// Look for places within 500m that we don't have a street to
 	places := db.Query(state.CurrentLat, state.CurrentLon, 500, EntityPlace, 50)
-	
+
 	// Shuffle places so we don't always pick the same one
 	rand.Shuffle(len(places), func(i, j int) {
 		places[i], places[j] = places[j], places[i]
 	})
-	
+
 	for _, place := range places {
 		// Skip if too close (we're already there)
 		dist := distanceMeters(state.CurrentLat, state.CurrentLon, place.Lat, place.Lon)
 		if dist < 50 {
 			continue
 		}
-		
+
 		// Check if we already have a street ending near this place (within 50m)
 		streets := db.Query(place.Lat, place.Lon, 50, EntityStreet, 5)
 		if len(streets) > 0 {
 			continue // Already explored
 		}
-		
+
 		return &explorationTarget{Lat: place.Lat, Lon: place.Lon, Name: place.Name}
 	}
-	
+
 	// No unexplored POIs nearby - explore randomly
 	return randomExplorationTarget(state)
 }
@@ -246,11 +246,11 @@ func pickExplorationTarget(db *DB, state *ExplorerState, agentID string) *explor
 func randomExplorationTarget(state *ExplorerState) *explorationTarget {
 	angle := rand.Float64() * 2 * math.Pi
 	distance := 150 + rand.Float64()*350 // 150-500m
-	
+
 	// Convert to lat/lon offset (approximate)
 	latOffset := (distance / 111000) * math.Cos(angle)
 	lonOffset := (distance / (111000 * math.Cos(state.CurrentLat*math.Pi/180))) * math.Sin(angle)
-	
+
 	return &explorationTarget{
 		Lat:  state.CurrentLat + latOffset,
 		Lon:  state.CurrentLon + lonOffset,
@@ -264,7 +264,7 @@ func compassDirection(radians float64) string {
 		degrees += 360
 	}
 	directions := []string{"N", "NE", "E", "SE", "S", "SW", "W", "NW"}
-	index := int((degrees + 22.5) / 45) % 8
+	index := int((degrees+22.5)/45) % 8
 	return directions[index]
 }
 
@@ -275,17 +275,17 @@ func indexPOIsAlongRoute(db *DB, agentID string, coords [][]float64) {
 	if step < 1 {
 		step = 1
 	}
-	
+
 	indexed := 0
 	for i := 0; i < len(coords); i += step {
 		lon, lat := coords[i][0], coords[i][1] // OSRM returns [lon, lat]
-		
+
 		// Check if we've already indexed this area
 		existing := db.Query(lat, lon, 50, EntityPlace, 1)
 		if len(existing) > 0 {
 			continue // Already indexed
 		}
-		
+
 		// Query OSM for POIs (small radius to be efficient)
 		pois := queryOSMPOIsNearby(lat, lon, 100, agentID)
 		for _, poi := range pois {
@@ -293,7 +293,7 @@ func indexPOIsAlongRoute(db *DB, agentID string, coords [][]float64) {
 			indexed++
 		}
 	}
-	
+
 	if indexed > 0 {
 		log.Printf("[explorer] indexed %d POIs along route", indexed)
 	}
@@ -307,7 +307,7 @@ func queryOSMPOIsNearby(lat, lon, radiusM float64, agentID string) []*Entity {
 		node["shop"](around:%f,%f,%f);
 	);
 	out body;`, radiusM, lat, lon, radiusM, lat, lon)
-	
+
 	apiURL := "https://overpass-api.de/api/interpreter?data=" + url.QueryEscape(query)
 	resp, err := OSMGet(apiURL)
 	if err != nil {
@@ -315,7 +315,7 @@ func queryOSMPOIsNearby(lat, lon, radiusM float64, agentID string) []*Entity {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	var result struct {
 		Elements []struct {
 			ID   int64             `json:"id"`
@@ -327,19 +327,19 @@ func queryOSMPOIsNearby(lat, lon, radiusM float64, agentID string) []*Entity {
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil
 	}
-	
+
 	var entities []*Entity
 	for _, el := range result.Elements {
 		name := el.Tags["name"]
 		if name == "" {
 			continue
 		}
-		
+
 		category := el.Tags["amenity"]
 		if category == "" {
 			category = el.Tags["shop"]
 		}
-		
+
 		entities = append(entities, &Entity{
 			ID:   GenerateID(EntityPlace, el.Lat, el.Lon, name),
 			Type: EntityPlace,
@@ -355,7 +355,7 @@ func queryOSMPOIsNearby(lat, lon, radiusM float64, agentID string) []*Entity {
 			UpdatedAt: time.Now(),
 		})
 	}
-	
+
 	return entities
 }
 
@@ -366,11 +366,11 @@ func distanceMeters(lat1, lon1, lat2, lon2 float64) float64 {
 	phi2 := lat2 * math.Pi / 180
 	deltaPhi := (lat2 - lat1) * math.Pi / 180
 	deltaLambda := (lon2 - lon1) * math.Pi / 180
-	
+
 	a := math.Sin(deltaPhi/2)*math.Sin(deltaPhi/2) +
 		math.Cos(phi1)*math.Cos(phi2)*math.Sin(deltaLambda/2)*math.Sin(deltaLambda/2)
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-	
+
 	return R * c
 }
 
@@ -394,13 +394,13 @@ func DisableExploration(agentID string) {
 // GetExplorerStats returns exploration statistics (from both memory and persisted data)
 func GetExplorerStats() map[string]interface{} {
 	stats := make(map[string]interface{})
-	
+
 	// Count from in-memory state
 	memorySteps := 0
 	for _, state := range explorerStates {
 		memorySteps += state.TotalSteps
 	}
-	
+
 	// Also count from persisted agent data (for agents not yet in memory)
 	persistedSteps := 0
 	db := Get()
@@ -414,10 +414,10 @@ func GetExplorerStats() map[string]interface{} {
 			persistedSteps += ad.TotalSteps
 		}
 	}
-	
+
 	stats["exploring_agents"] = len(explorerStates)
 	stats["total_steps"] = memorySteps + persistedSteps
-	
+
 	return stats
 }
 
@@ -427,13 +427,13 @@ func GetAgentExplorationStats(agent *Entity) (totalSteps int, homeLat, homeLon f
 	if state := GetExplorerState(agent.ID); state != nil {
 		return state.TotalSteps, state.HomeLat, state.HomeLon, DistanceFromHome(state)
 	}
-	
+
 	// Fall back to persisted data
 	if ad := agent.GetAgentData(); ad != nil && ad.TotalSteps > 0 {
 		dist := distanceMeters(agent.Lat, agent.Lon, ad.HomeLat, ad.HomeLon)
 		return ad.TotalSteps, ad.HomeLat, ad.HomeLon, dist
 	}
-	
+
 	return 0, 0, 0, 0
 }
 

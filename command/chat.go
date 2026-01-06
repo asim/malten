@@ -1,7 +1,5 @@
 package command
 
-
-
 func init() {
 	Register(&Command{
 		Name:        "chat",
@@ -15,7 +13,7 @@ func handleChat(ctx *Context, args []string) (string, error) {
 	if len(args) == 0 {
 		return "Please ask a question", nil
 	}
-	
+
 	// Foursquare is POI-only, general chat goes to AI
 	return "Use the main chat for questions. /chat is for web-enhanced queries (not yet implemented).", nil
 }

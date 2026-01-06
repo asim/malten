@@ -14,12 +14,12 @@ func DirectionsTo(destName string, fromLat, fromLon, toLat, toLon float64) (stri
 	if fromLat == 0 && fromLon == 0 {
 		return "📍 Need your location for directions. Enable location?", nil
 	}
-	
+
 	route, err := spatial.GetWalkingDirections(fromLat, fromLon, toLat, toLon)
 	if err != nil {
 		return fmt.Sprintf("🚶 Couldn't get directions to %s: %v", destName, err), nil
 	}
-	
+
 	return fmt.Sprintf("🚶 Walking to %s\n\n%s", destName,
 		spatial.FormatDirectionsWithMap(route, fromLat, fromLon, toLat, toLon, destName)), nil
 }
@@ -28,16 +28,16 @@ func Directions(destination string, fromLat, fromLon float64) (string, error) {
 	if fromLat == 0 && fromLon == 0 {
 		return "📍 Need your location for directions. Enable location?", nil
 	}
-	
+
 	// Clean up destination
 	destination = strings.TrimSpace(destination)
 	destination = strings.TrimPrefix(destination, "to ")
 	destination = strings.TrimPrefix(destination, "the ")
-	
+
 	var destLat, destLon float64
 	var destName string
 	db := spatial.Get()
-	
+
 	// Handle generic terms - find nearest from spatial DB
 	lower := strings.ToLower(destination)
 	switch {
@@ -75,7 +75,7 @@ func Directions(destination string, fromLat, fromLon float64) (string, error) {
 			}
 		}
 	}
-	
+
 	// Try our quadtree first - we may have this place indexed
 	if destLat == 0 {
 		log.Printf("[directions] searching quadtree for %q", destination)
@@ -91,7 +91,7 @@ func Directions(destination string, fromLat, fromLon float64) (string, error) {
 			break
 		}
 	}
-	
+
 	// Fallback to geocoding
 	if destLat == 0 {
 		log.Printf("[directions] geocoding %q near %.4f,%.4f", destination, fromLat, fromLon)
@@ -102,7 +102,7 @@ func Directions(destination string, fromLat, fromLon float64) (string, error) {
 			destName = destination
 		}
 	}
-	
+
 	// Still nothing? Try OSM search
 	if destLat == 0 {
 		results, _ := spatial.SearchOSM(destination, fromLat, fromLon)
@@ -111,18 +111,18 @@ func Directions(destination string, fromLat, fromLon float64) (string, error) {
 			destName = results[0].Name
 		}
 	}
-	
+
 	if destLat == 0 {
 		return fmt.Sprintf("📍 Couldn't find '%s'. Try being more specific?", destination), nil
 	}
-	
+
 	// Get walking directions
 	route, err := spatial.GetWalkingDirections(fromLat, fromLon, destLat, destLon)
 	if err != nil {
 		return fmt.Sprintf("🚶 Couldn't get directions to %s: %v", destName, err), nil
 	}
-	
-	result := fmt.Sprintf("🚶 Walking to %s\n\n%s", destName, 
+
+	result := fmt.Sprintf("🚶 Walking to %s\n\n%s", destName,
 		spatial.FormatDirectionsWithMap(route, fromLat, fromLon, destLat, destLon, destName))
 	return result, nil
 }
@@ -139,12 +139,12 @@ func init() {
 				return "Usage: /directions <place name>", nil
 			}
 			destination := strings.Join(args, " ")
-			
+
 			// If destination coords provided, use them directly
 			if ctx.ToLat != 0 && ctx.ToLon != 0 {
 				return DirectionsTo(destination, ctx.Lat, ctx.Lon, ctx.ToLat, ctx.ToLon)
 			}
-			
+
 			return Directions(destination, ctx.Lat, ctx.Lon)
 		},
 	})

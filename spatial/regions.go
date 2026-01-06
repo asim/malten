@@ -15,31 +15,31 @@ var regions = []Region{
 		Name:      "london",
 		Transport: []string{"tfl"},
 		MinLat:    51.2, MaxLat: 51.7,
-		MinLon:    -0.6, MaxLon: 0.3,
+		MinLon: -0.6, MaxLon: 0.3,
 	},
 	{
 		Name:      "manchester",
 		Transport: []string{"tfgm"}, // Transport for Greater Manchester (TODO)
 		MinLat:    53.3, MaxLat: 53.6,
-		MinLon:    -2.5, MaxLon: -2.0,
+		MinLon: -2.5, MaxLon: -2.0,
 	},
 	{
 		Name:      "edinburgh",
 		Transport: []string{"edinburgh_trams"}, // TODO
 		MinLat:    55.85, MaxLat: 56.0,
-		MinLon:    -3.4, MaxLon: -3.0,
+		MinLon: -3.4, MaxLon: -3.0,
 	},
 	{
 		Name:      "cardiff",
 		Transport: []string{"tfw"}, // Transport for Wales (TODO)
 		MinLat:    51.4, MaxLat: 51.6,
-		MinLon:    -3.3, MaxLon: -3.0,
+		MinLon: -3.3, MaxLon: -3.0,
 	},
 	{
 		Name:      "dublin",
 		Transport: []string{"dublin_bus", "irish_rail"}, // TODO
 		MinLat:    53.2, MaxLat: 53.5,
-		MinLon:    -6.5, MaxLon: -6.0,
+		MinLon: -6.5, MaxLon: -6.0,
 	},
 	// Add more as needed
 }

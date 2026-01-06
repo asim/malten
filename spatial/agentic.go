@@ -183,22 +183,22 @@ What tool to run? Respond ONLY with JSON, nothing else.`,
 
 func parseToolCall(content string) *ToolCall {
 	content = strings.TrimSpace(content)
-	
+
 	// Find JSON object
 	start := strings.Index(content, "{")
 	end := strings.LastIndex(content, "}")
 	if start < 0 || end < 0 || end <= start {
 		return nil
 	}
-	
+
 	jsonStr := content[start : end+1]
-	
+
 	var tc ToolCall
 	if err := json.Unmarshal([]byte(jsonStr), &tc); err != nil {
 		log.Printf("[agent] Failed to parse tool call: %v from %s", err, truncate(jsonStr, 50))
 		return nil
 	}
-	
+
 	return &tc
 }
 

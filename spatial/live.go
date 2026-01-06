@@ -24,10 +24,9 @@ const (
 	prayerTTL          = 1 * time.Hour
 	newsTTL            = 30 * time.Minute
 	disruptionTTL      = 10 * time.Minute // Cache traffic disruptions
-	
-	bbcUKRSS           = "https://feeds.bbci.co.uk/news/uk/rss.xml"
-)
 
+	bbcUKRSS = "https://feeds.bbci.co.uk/news/uk/rss.xml"
+)
 
 // Live data fetch functions - called by agent loops
 
@@ -36,14 +35,14 @@ func fetchWeather(lat, lon float64) *Entity {
 	lock := GetAreaLock(lat, lon)
 	lock.Lock()
 	defer lock.Unlock()
-	
+
 	// Check spatial cache first - weather valid for ~5km
 	db := Get()
 	cached := db.Query(lat, lon, 5000, EntityWeather, 1)
 	if len(cached) > 0 && cached[0].ExpiresAt != nil && time.Now().Before(*cached[0].ExpiresAt) {
 		return nil // Already have fresh data nearby
 	}
-	
+
 	url := fmt.Sprintf("%s?latitude=%.2f&longitude=%.2f&current=temperature_2m,weather_code&hourly=precipitation_probability&timezone=auto&forecast_hours=6",
 		weatherURL, lat, lon)
 	resp, err := WeatherGet(url)
@@ -51,7 +50,7 @@ func fetchWeather(lat, lon float64) *Entity {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	var data struct {
 		Current struct {
 			Temperature float64 `json:"temperature_2m"`
@@ -65,7 +64,7 @@ func fetchWeather(lat, lon float64) *Entity {
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil
 	}
-	
+
 	// Check rain forecast
 	rainForecast := ""
 	for i, prob := range data.Hourly.PrecipProb {
@@ -81,14 +80,14 @@ func fetchWeather(lat, lon float64) *Entity {
 			break
 		}
 	}
-	
+
 	// Round temperature, but avoid "-0" (show "0" instead)
 	tempRounded := int(math.Round(data.Current.Temperature))
 	if tempRounded == 0 {
 		tempRounded = 0 // Ensure we don't have -0
 	}
 	name := fmt.Sprintf("%s %d°C", weatherIcon(data.Current.WeatherCode), tempRounded)
-	
+
 	expiry := time.Now().Add(weatherTTL)
 	entity := &Entity{
 		ID:   GenerateID(EntityWeather, lat, lon, "weather"),
@@ -113,19 +112,19 @@ func computePrayerDisplay(e *Entity) string {
 	if e == nil {
 		return ""
 	}
-	
+
 	prayerData := e.GetPrayerData()
 	if prayerData == nil || len(prayerData.Timings) == 0 {
 		// No timings stored - return cached name (may be stale)
 		return e.Name
 	}
-	
+
 	timings := prayerData.Timings
-	
+
 	// Prayer times in order (Sunrise is not a prayer but marks end of Fajr)
 	prayers := []string{"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"}
 	nowStr := time.Now().Format("15:04")
-	
+
 	var current, next, nextTime string
 	for i, p := range prayers {
 		pTime := timings[p]
@@ -163,7 +162,7 @@ func computePrayerDisplay(e *Entity) string {
 	if len(nextTime) > 5 {
 		nextTime = nextTime[:5]
 	}
-	
+
 	if current != "" {
 		// For Fajr, show when it ends (before sunrise - when threads become distinguishable)
 		if current == "Fajr" {
@@ -177,7 +176,7 @@ func computePrayerDisplay(e *Entity) string {
 				sunriseToday := time.Date(now.Year(), now.Month(), now.Day(), sunriseTime.Hour(), sunriseTime.Minute(), 0, 0, now.Location())
 				fajrEnd := sunriseToday.Add(-10 * time.Minute) // Fajr ends 10 min before sunrise
 				fajrEndStr := fajrEnd.Format("15:04")
-				
+
 				if fajrEnd.Sub(now) <= 15*time.Minute && fajrEnd.Sub(now) > 0 {
 					return fmt.Sprintf("🕌 %s ending %s · %s %s", current, fajrEndStr, next, nextTime)
 				}
@@ -195,29 +194,29 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 	lock := GetAreaLock(lat, lon)
 	lock.Lock()
 	defer lock.Unlock()
-	
+
 	// Check spatial cache first - prayer times valid for ~50km (same city)
 	db := Get()
 	cached := db.Query(lat, lon, 50000, EntityPrayer, 1)
 	if len(cached) > 0 && cached[0].ExpiresAt != nil && time.Now().Before(*cached[0].ExpiresAt) {
 		return nil // Already have fresh data nearby
 	}
-	
+
 	log.Printf("[prayer] Fetching prayer times for %.4f,%.4f", lat, lon)
 	now := time.Now()
 	url := fmt.Sprintf("%s/%s?latitude=%.2f&longitude=%.2f&method=2",
 		prayerTimesURL, now.Format("02-01-2006"), lat, lon)
-	
+
 	resp, err := PrayerGet(url)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return nil
 	}
-	
+
 	var data struct {
 		Data struct {
 			Timings map[string]string `json:"timings"`
@@ -226,11 +225,11 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil
 	}
-	
+
 	// Calculate current and next prayer
 	prayers := []string{"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"}
 	nowStr := now.Format("15:04")
-	
+
 	var current, next, nextTime string
 	for i, p := range prayers {
 		pTime := data.Data.Timings[p]
@@ -256,14 +255,14 @@ func fetchPrayerTimes(lat, lon float64) *Entity {
 	if current == "Sunrise" {
 		current = "Fajr"
 	}
-	
+
 	var name string
 	if current != "" {
 		name = fmt.Sprintf("🕌 %s now · %s %s", current, next, nextTime)
 	} else {
 		name = fmt.Sprintf("🕌 %s %s", next, nextTime)
 	}
-	
+
 	expiry := time.Now().Add(prayerTTL)
 	entity := &Entity{
 		ID:   GenerateID(EntityPrayer, lat, lon, "prayer"),
@@ -300,12 +299,12 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	if !IsLondon(lat, lon) {
 		return nil // Outside London - don't query TfL
 	}
-	
+
 	// Lock per-area to prevent race between cache check and fetch
 	lock := GetAreaLock(lat, lon)
 	lock.Lock()
 	defer lock.Unlock()
-	
+
 	// Check if we have fresh arrivals in this area already
 	db := Get()
 	cached := db.Query(lat, lon, 500, EntityArrival, 3)
@@ -320,18 +319,18 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 		return nil // nil = skipped, don't extend TTL
 	}
 	log.Printf("[transport] Fetching %s arrivals for %.4f,%.4f (cached fresh: %d)", stopType, lat, lon, freshCount)
-	
+
 	// Get nearby stops - use rate limiter to prevent hammering TfL
 	url := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=%s&radius=500",
 		tflBaseURL, lat, lon, stopType)
-	
+
 	resp, err := TfLGet(url)
 	if err != nil {
 		log.Printf("[transport] API error for %s: %v", stopType, err)
 		return []*Entity{} // empty = extend TTL
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode == 429 {
 		log.Printf("[transport] Rate limited (429) for %s", stopType)
 		return []*Entity{} // empty = extend TTL
@@ -340,7 +339,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 		log.Printf("[transport] API returned %d for %s", resp.StatusCode, stopType)
 		return []*Entity{} // empty = extend TTL
 	}
-	
+
 	var stops struct {
 		StopPoints []struct {
 			NaptanID   string  `json:"naptanId"`
@@ -352,10 +351,10 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 	if err := json.NewDecoder(resp.Body).Decode(&stops); err != nil {
 		return nil
 	}
-	
+
 	var entities []*Entity
 	seen := make(map[string]bool)
-	
+
 	for _, stop := range stops.StopPoints {
 		if seen[stop.CommonName] {
 			log.Printf("[transport] Skipping %s (already seen)", stop.CommonName)
@@ -365,7 +364,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 			log.Printf("[transport] Stopping at %s (have 3 entities)", stop.CommonName)
 			break
 		}
-		
+
 		// Get arrivals for this stop
 		arrivals := fetchStopArrivals(stop.NaptanID)
 		if len(arrivals) == 0 {
@@ -375,7 +374,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 		// Only mark as seen once we have arrivals (so we don't skip the other direction)
 		seen[stop.CommonName] = true
 		log.Printf("[transport] Stop %s (%s): %d arrivals", stop.CommonName, stop.NaptanID, len(arrivals))
-		
+
 		// Format arrivals
 		var times []string
 		for i, arr := range arrivals {
@@ -385,7 +384,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 			times = append(times, fmt.Sprintf("%s→%s %dm",
 				arr.Line, shortDest(arr.Destination), arr.MinutesUntil()))
 		}
-		
+
 		expiry := time.Now().Add(arrivalTTL)
 		entity := &Entity{
 			ID:   GenerateID(EntityArrival, stop.Lat, stop.Lon, stop.NaptanID),
@@ -405,7 +404,7 @@ func fetchTransportArrivals(lat, lon float64, stopType, icon string) []*Entity {
 		db.Insert(entity)
 		entities = append(entities, entity)
 	}
-	
+
 	return entities
 }
 
@@ -440,13 +439,13 @@ func (b internalBusArrival) MinutesUntil() int {
 
 func fetchStopArrivals(naptanID string) []internalBusArrival {
 	url := fmt.Sprintf("%s/StopPoint/%s/Arrivals", tflBaseURL, naptanID)
-	
+
 	resp, err := TfLGet(url)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	var data []struct {
 		LineName        string `json:"lineName"`
 		DestinationName string `json:"destinationName"`
@@ -455,12 +454,12 @@ func fetchStopArrivals(naptanID string) []internalBusArrival {
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil
 	}
-	
+
 	// Sort by time
 	sort.Slice(data, func(i, j int) bool {
 		return data[i].TimeToStation < data[j].TimeToStation
 	})
-	
+
 	now := time.Now()
 	var arrivals []internalBusArrival
 	for _, d := range data {
@@ -515,7 +514,6 @@ func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 	return R * c
 }
 
-
 // fetchLocation reverse geocodes and returns an entity for caching
 // fetchLocation reverse geocodes the given coordinates and stores a point
 // The caller should check if a nearby point already exists before calling
@@ -524,22 +522,22 @@ func fetchLocation(lat, lon float64) *Entity {
 	lock := GetAreaLock(lat, lon)
 	lock.Lock()
 	defer lock.Unlock()
-	
+
 	// Double-check under lock - another goroutine may have just fetched this
 	db := Get()
 	if existing := db.GetNearestLocation(lat, lon, 10); existing != nil {
 		return existing
 	}
-	
+
 	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?lat=%f&lon=%f&format=json&zoom=18",
 		lat, lon)
-	
+
 	resp, err := LocationGet(url)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	var data struct {
 		Address struct {
 			Road     string `json:"road"`
@@ -551,7 +549,7 @@ func fetchLocation(lat, lon float64) *Entity {
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil
 	}
-	
+
 	road := data.Address.Road
 	area := data.Address.Postcode
 	if area == "" {
@@ -560,7 +558,7 @@ func fetchLocation(lat, lon float64) *Entity {
 	if area == "" {
 		area = data.Address.Town
 	}
-	
+
 	var name string
 	if road != "" && area != "" {
 		name = road + ", " + area
@@ -569,11 +567,11 @@ func fetchLocation(lat, lon float64) *Entity {
 	} else {
 		name = area
 	}
-	
+
 	if name == "" {
 		return nil
 	}
-	
+
 	// Cache for 1 hour - locations don't change
 	expiry := time.Now().Add(1 * time.Hour)
 	entity := &Entity{
@@ -593,11 +591,11 @@ func fetchLocation(lat, lon float64) *Entity {
 // getNearestStopWithArrivals returns the nearest stop and its arrivals
 func getNearestStopWithArrivals(lat, lon float64) string {
 	db := Get()
-	
+
 	// Query quadtree for arrivals - allow stale data up to 10 minutes past expiry
 	// This ensures buses don't disappear just because a refresh failed
 	arrivals := db.QueryWithMaxAge(lat, lon, 500, EntityArrival, 5, 600)
-	
+
 	// Check if any are actually fresh (not stale)
 	hasFresh := false
 	for _, arr := range arrivals {
@@ -606,17 +604,17 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 			break
 		}
 	}
-	
+
 	// Find first stop with actual arrivals
 	for _, arr := range arrivals {
 		arrData := arr.GetArrivalData()
 		if arrData == nil || len(arrData.Arrivals) == 0 {
 			continue // Skip stops with no arrivals
 		}
-		
+
 		// Check if this particular record is stale
 		isStale := arr.ExpiresAt != nil && time.Now().After(*arr.ExpiresAt)
-		
+
 		// Format arrivals from cached data
 		var lines []string
 		dist := haversine(lat, lon, arr.Lat, arr.Lon) * 1000 // km to m
@@ -631,7 +629,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		} else {
 			lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
 		}
-		
+
 		for i, busArr := range arrData.Arrivals {
 			if i >= 3 {
 				break
@@ -646,7 +644,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 				lines = append(lines, fmt.Sprintf("   %s → %s in %dm", busArr.Line, shortDest(busArr.Destination), mins))
 			}
 		}
-		
+
 		// If we used stale data, try to refresh in background
 		if isStale && !hasFresh {
 			go func(stopID, stopName string, stopLat, stopLon float64) {
@@ -665,28 +663,28 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 				}
 			}(arrData.StopID, arrData.StopName, arr.Lat, arr.Lon)
 		}
-		
+
 		return strings.Join(lines, "\n")
 	}
-	
+
 	// Fallback: no cached data with arrivals, query TfL directly (rate limited)
 	log.Printf("[context] No cached arrivals at %.4f,%.4f - querying TfL directly", lat, lon)
-	
+
 	stopUrl := fmt.Sprintf("%s/StopPoint?lat=%f&lon=%f&stopTypes=NaptanPublicBusCoachTram&radius=500",
 		tflBaseURL, lat, lon)
-	
+
 	resp, err := TfLGet(stopUrl)
 	if err != nil {
 		log.Printf("[context] TfL StopPoint query failed: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		log.Printf("[context] TfL StopPoint returned status %d", resp.StatusCode)
 		return ""
 	}
-	
+
 	var stops struct {
 		StopPoints []struct {
 			NaptanID   string  `json:"naptanId"`
@@ -704,16 +702,16 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		log.Printf("[context] TfL returned no stops near %.4f,%.4f", lat, lon)
 		return ""
 	}
-	
+
 	log.Printf("[context] TfL returned %d stops", len(stops.StopPoints))
-	
+
 	// Find first stop with arrivals
 	for _, stop := range stops.StopPoints {
 		fetchedArrivals := fetchStopArrivals(stop.NaptanID)
 		if len(fetchedArrivals) == 0 {
 			continue
 		}
-		
+
 		// Cache these arrivals so we don't hit TfL again
 		expiry := time.Now().Add(arrivalTTL)
 		stopLat, stopLon := stop.Lat, stop.Lon
@@ -736,7 +734,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 			ExpiresAt: &expiry,
 		}
 		db.Insert(arrEntity)
-		
+
 		// Format: "🚏 Whitton Station" then list next buses
 		var lines []string
 		if stop.Distance < 30 {
@@ -744,7 +742,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		} else {
 			lines = append(lines, fmt.Sprintf("🚏 %s (%.0fm)", stop.CommonName, stop.Distance))
 		}
-		
+
 		// Show next 3 arrivals
 		for i, arr := range fetchedArrivals {
 			if i >= 3 {
@@ -759,7 +757,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 		}
 		return strings.Join(lines, "\n")
 	}
-	
+
 	// No stops with arrivals found
 	log.Printf("[context] No stops with arrivals found")
 	return ""
@@ -768,7 +766,7 @@ func getNearestStopWithArrivals(lat, lon float64) string {
 func getPlacesSummary(db *DB, lat, lon float64) string {
 	categories := []string{"cafe", "restaurant", "pharmacy", "supermarket"}
 	icons := map[string]string{"cafe": "☕", "restaurant": "🍽️", "pharmacy": "💊", "supermarket": "🛒"}
-	
+
 	var summary []string
 	for _, cat := range categories {
 		places := db.QueryPlaces(lat, lon, 500, cat, 10)
@@ -781,7 +779,7 @@ func getPlacesSummary(db *DB, lat, lon float64) string {
 			summary = append(summary, fmt.Sprintf("%s {%s}", icon, strings.Join(placesData, ";;")))
 		}
 	}
-	
+
 	if len(summary) == 0 {
 		return ""
 	}
@@ -794,7 +792,7 @@ func getPlacesSummaryOrFetch(db *DB, lat, lon float64) string {
 	lock := GetAreaLock(lat, lon)
 	lock.Lock()
 	defer lock.Unlock()
-	
+
 	categories := []struct {
 		osmTag   string
 		category string
@@ -805,12 +803,12 @@ func getPlacesSummaryOrFetch(db *DB, lat, lon float64) string {
 		{"amenity=pharmacy", "pharmacy", "💊"},
 		{"shop=supermarket", "supermarket", "🛒"},
 	}
-	
+
 	var results []string
 	for _, c := range categories {
 		// Check cache first
 		places := db.QueryPlaces(lat, lon, 500, c.category, 10)
-		
+
 		// If cache empty for this category, fetch on demand
 		if len(places) == 0 {
 			fetched := fetchPlacesNow(lat, lon, 500, c.osmTag, c.category, 10)
@@ -819,7 +817,7 @@ func getPlacesSummaryOrFetch(db *DB, lat, lon float64) string {
 			}
 			places = fetched
 		}
-		
+
 		if len(places) > 0 {
 			var placesData []string
 			for _, p := range places {
@@ -828,7 +826,7 @@ func getPlacesSummaryOrFetch(db *DB, lat, lon float64) string {
 			results = append(results, fmt.Sprintf("%s {%s}", c.icon, strings.Join(placesData, ";;")))
 		}
 	}
-	
+
 	if len(results) == 0 {
 		return ""
 	}
@@ -843,23 +841,23 @@ func fetchPlacesNow(lat, lon, radius float64, osmTag, category string, limit int
   way[%s](around:%.0f,%f,%f);
 );
 out center %d;`, osmTag, radius, lat, lon, osmTag, radius, lat, lon, limit)
-	
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.PostForm("https://overpass-api.de/api/interpreter", url.Values{"data": {query}})
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return nil
 	}
-	
+
 	var data struct {
 		Elements []struct {
-			ID     int64             `json:"id"`
-			Lat    float64           `json:"lat"`
-			Lon    float64           `json:"lon"`
+			ID     int64   `json:"id"`
+			Lat    float64 `json:"lat"`
+			Lon    float64 `json:"lon"`
 			Center *struct {
 				Lat float64 `json:"lat"`
 				Lon float64 `json:"lon"`
@@ -870,7 +868,7 @@ out center %d;`, osmTag, radius, lat, lon, osmTag, radius, lat, lon, limit)
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil
 	}
-	
+
 	var entities []*Entity
 	for _, el := range data.Elements {
 		elat, elon := el.Lat, el.Lon
@@ -880,12 +878,12 @@ out center %d;`, osmTag, radius, lat, lon, osmTag, radius, lat, lon, limit)
 		if elat == 0 || el.Tags["name"] == "" {
 			continue
 		}
-		
+
 		tags := make(map[string]interface{})
 		for k, v := range el.Tags {
 			tags[k] = v
 		}
-		
+
 		entities = append(entities, &Entity{
 			Type: EntityPlace,
 			Name: el.Tags["name"],
@@ -904,7 +902,7 @@ out center %d;`, osmTag, radius, lat, lon, osmTag, radius, lat, lon, limit)
 // formatPlaceData creates a compact data string with all place info
 func formatPlaceData(e *Entity) string {
 	parts := []string{e.Name}
-	
+
 	// Try to get tags from typed data or legacy map
 	var tags map[string]string
 	if placeData := e.GetPlaceData(); placeData != nil {
@@ -919,7 +917,7 @@ func formatPlaceData(e *Entity) string {
 			}
 		}
 	}
-	
+
 	if len(tags) > 0 {
 		var addr string
 		if num := tags["addr:housenumber"]; num != "" {
@@ -946,18 +944,18 @@ func formatPlaceData(e *Entity) string {
 			parts = append(parts, "📞"+phone)
 		}
 	}
-	
+
 	// Add map link with name for better search (encode apostrophes too)
 	encodedName := strings.ReplaceAll(url.QueryEscape(e.Name), "'", "%27")
 	parts = append(parts, fmt.Sprintf("https://maps.google.com/maps/search/%s/@%f,%f,17z", encodedName, e.Lat, e.Lon))
-	
+
 	return strings.Join(parts, "|")
 }
 
 // getTrafficDisruptions returns cached disruptions or fetches new ones
 func getTrafficDisruptions(lat, lon float64) string {
 	db := Get()
-	
+
 	// Cache only - agents handle fetching
 	cached := db.Query(lat, lon, 10000, EntityDisruption, 1)
 	for _, d := range cached {
@@ -965,7 +963,7 @@ func getTrafficDisruptions(lat, lon float64) string {
 			return d.Name
 		}
 	}
-	
+
 	return ""
 }
 
@@ -973,19 +971,19 @@ func getTrafficDisruptions(lat, lon float64) string {
 func fetchTrafficDisruptions(lat, lon float64) string {
 	db := Get()
 	disruptionUrl := "https://api.tfl.gov.uk/Road/all/Disruption"
-	
+
 	resp, err := TfLGet(disruptionUrl)
 	if err != nil {
 		log.Printf("[disruption] TfL API error: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		log.Printf("[disruption] TfL API returned status %d", resp.StatusCode)
 		return ""
 	}
-	
+
 	var disruptions []struct {
 		Severity  string `json:"severity"`
 		Category  string `json:"category"`
@@ -996,12 +994,12 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 			Coordinates []float64 `json:"coordinates"`
 		} `json:"geography"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&disruptions); err != nil {
 		log.Printf("[disruption] Decode error: %v", err)
 		return ""
 	}
-	
+
 	// Find disruptions within 5km, prioritize serious ones
 	type nearby struct {
 		dist     float64
@@ -1011,14 +1009,14 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 		lon      float64
 	}
 	var found []nearby
-	
+
 	for _, d := range disruptions {
 		if d.Geography.Type != "Point" || len(d.Geography.Coordinates) < 2 {
 			continue
 		}
 		dlon, dlat := d.Geography.Coordinates[0], d.Geography.Coordinates[1]
 		dist := haversine(lat, lon, dlat, dlon)
-		
+
 		if dist < 5 { // within 5km
 			// Only show serious/moderate or collisions
 			if d.Severity == "Serious" || d.Severity == "Moderate" || d.Category == "Collisions" {
@@ -1030,11 +1028,11 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 			}
 		}
 	}
-	
+
 	if len(found) == 0 {
 		return ""
 	}
-	
+
 	// Return closest serious one
 	var best nearby
 	for _, f := range found {
@@ -1042,14 +1040,14 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 			best = f
 		}
 	}
-	
+
 	icon := "🚧"
 	if strings.Contains(strings.ToLower(best.text), "collision") || strings.Contains(strings.ToLower(best.text), "accident") {
 		icon = "🚨"
 	}
-	
+
 	result := fmt.Sprintf("%s %.1fkm: %s", icon, best.dist, best.text)
-	
+
 	// Cache this disruption
 	expiry := time.Now().Add(disruptionTTL)
 	db.Insert(&Entity{
@@ -1061,7 +1059,7 @@ func fetchTrafficDisruptions(lat, lon float64) string {
 		Data:      map[string]interface{}{"severity": best.severity, "text": best.text},
 		ExpiresAt: &expiry,
 	})
-	
+
 	return result
 }
 
@@ -1091,13 +1089,13 @@ func fetchBreakingNews() *Entity {
 			return n
 		}
 	}
-	
+
 	resp, err := NewsGet(bbcUKRSS)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	var rss struct {
 		Channel struct {
 			Items []struct {
@@ -1107,24 +1105,24 @@ func fetchBreakingNews() *Entity {
 			} `xml:"item"`
 		} `xml:"channel"`
 	}
-	
+
 	if err := xml.NewDecoder(resp.Body).Decode(&rss); err != nil {
 		return nil
 	}
-	
+
 	if len(rss.Channel.Items) == 0 {
 		return nil
 	}
-	
+
 	top := rss.Channel.Items[0]
 	expiry := time.Now().Add(newsTTL)
-	
+
 	// Clean up the link (remove tracking params)
 	link := top.Link
 	if idx := strings.Index(link, "?"); idx > 0 {
 		link = link[:idx]
 	}
-	
+
 	return &Entity{
 		ID:        "news-uk-headline",
 		Type:      EntityNews,
@@ -1139,7 +1137,7 @@ func fetchBreakingNews() *Entity {
 // BusArrivalInfo contains structured bus arrival data
 type BusArrivalInfo struct {
 	StopName string
-	Distance int // meters
+	Distance int      // meters
 	Arrivals []string // formatted arrival strings
 	IsStale  bool
 }
@@ -1148,21 +1146,20 @@ type BusArrivalInfo struct {
 // If cached arrivals are depleted (all buses gone), triggers background refresh
 func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 	db := Get()
-	
+
 	// Query quadtree for arrivals - allow stale data up to 10 minutes past expiry
 	arrivals := db.QueryWithMaxAge(lat, lon, 500, EntityArrival, 5, 600)
 
-	
 	// Find first stop with actual arrivals
 	for _, arr := range arrivals {
 		arrData := arr.GetArrivalData()
 		if arrData == nil || len(arrData.Arrivals) == 0 {
 			continue
 		}
-		
+
 		isStale := arr.ExpiresAt != nil && time.Now().After(*arr.ExpiresAt)
 		dist := int(haversine(lat, lon, arr.Lat, arr.Lon) * 1000)
-		
+
 		// Count valid (future) arrivals and collect display strings
 		var arrivalStrings []string
 		validCount := 0
@@ -1171,7 +1168,7 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 			if mins < 0 {
 				continue // Bus already gone
 			}
-			
+
 			validCount++
 			if len(arrivalStrings) < 3 {
 				if mins <= 1 {
@@ -1181,7 +1178,7 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 				}
 			}
 		}
-		
+
 		// If we have few valid arrivals left, trigger background refresh
 		// This ensures we fetch new data before running out completely
 		if validCount <= 1 && arrData.StopID != "" {
@@ -1202,11 +1199,11 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 				}
 			}(arrData.StopID, arrData.StopName, arr.Lat, arr.Lon, validCount)
 		}
-		
+
 		if len(arrivalStrings) == 0 {
 			continue // All arrivals have passed, try next stop
 		}
-		
+
 		return &BusArrivalInfo{
 			StopName: arrData.StopName,
 			Distance: dist,
@@ -1214,7 +1211,7 @@ func GetNearestBusArrivals(lat, lon float64) *BusArrivalInfo {
 			IsStale:  isStale,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1224,7 +1221,7 @@ func getNearestStopCached(lat, lon float64) string {
 	if info == nil {
 		return ""
 	}
-	
+
 	var lines []string
 	stopLabel := info.StopName
 	if info.Distance >= 30 {
@@ -1237,10 +1234,10 @@ func getNearestStopCached(lat, lon float64) string {
 	} else {
 		lines = append(lines, fmt.Sprintf("🚏 %s", stopLabel))
 	}
-	
+
 	for _, arr := range info.Arrivals {
 		lines = append(lines, "   "+arr)
 	}
-	
+
 	return strings.Join(lines, "\n")
 }

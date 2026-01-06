@@ -18,6 +18,6 @@ func handleCleanup(ctx *Context, args []string) (string, error) {
 		db := spatial.Get()
 		db.CleanupStore()
 	}()
-	
+
 	return "🧹 Cleanup started in background. Check logs for results.", nil
 }

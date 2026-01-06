@@ -92,7 +92,7 @@ func sendCheckInPrompt(token, stream string, lat, lon float64) {
 // sendArrivalPrompt notifies user they've arrived at a POI
 func sendArrivalPrompt(token, stream, poiName string, lat, lon float64) {
 	text := fmt.Sprintf("📍 Arrived at %s\n\n📷 Take a photo? · `/checkin %s`", poiName, poiName)
-	
+
 	msg := &Message{
 		Id:      Random(16),
 		Type:    "message",
@@ -101,14 +101,14 @@ func sendArrivalPrompt(token, stream, poiName string, lat, lon float64) {
 		Channel: "@" + token,
 		Created: time.Now().UnixNano(),
 	}
-	
+
 	Default.Broadcast(msg)
 }
 
 // sendPassingPrompt notifies user they're passing a POI
 func sendPassingPrompt(token, stream, poiName string) {
 	text := fmt.Sprintf("🚶 Passing %s", poiName)
-	
+
 	msg := &Message{
 		Id:      Random(16),
 		Type:    "message",
@@ -117,6 +117,6 @@ func sendPassingPrompt(token, stream, poiName string) {
 		Channel: "@" + token,
 		Created: time.Now().UnixNano(),
 	}
-	
+
 	Default.Broadcast(msg)
 }

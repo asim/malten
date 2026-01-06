@@ -6,13 +6,13 @@
 // Channels filter conversations (like radio frequencies in same space).
 //
 // PRIVACY RULE:
-//   channel = ""        -> public broadcast (can persist to events.jsonl)
-//   channel = "@session" -> private to user (NEVER persist, belongs in localStorage)
-//   channel = "#group"   -> shared group (future)
+//
+//	channel = ""        -> public broadcast (can persist to events.jsonl)
+//	channel = "@session" -> private to user (NEVER persist, belongs in localStorage)
+//	channel = "#group"   -> shared group (future)
 //
 // User messages are stored in-memory for real-time delivery but NOT persisted.
 // The user's localStorage is their source of truth for conversation history.
-//
 package server
 
 import (

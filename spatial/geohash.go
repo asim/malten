@@ -5,15 +5,15 @@ package spatial
 // Precision 7 = ~150m x 150m cells
 func Geohash(lat, lon float64, precision int) string {
 	const base32 = "0123456789bcdefghjkmnpqrstuvwxyz"
-	
+
 	minLat, maxLat := -90.0, 90.0
 	minLon, maxLon := -180.0, 180.0
-	
+
 	var hash []byte
 	var bit int
 	var ch byte
 	even := true
-	
+
 	for len(hash) < precision {
 		if even {
 			mid := (minLon + maxLon) / 2
@@ -33,7 +33,7 @@ func Geohash(lat, lon float64, precision int) string {
 			}
 		}
 		even = !even
-		
+
 		bit++
 		if bit == 5 {
 			hash = append(hash, base32[ch])
@@ -41,7 +41,7 @@ func Geohash(lat, lon float64, precision int) string {
 			ch = 0
 		}
 	}
-	
+
 	return string(hash)
 }
 

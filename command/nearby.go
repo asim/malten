@@ -36,14 +36,14 @@ func GeocodeNear(place string, nearLat, nearLon float64) (float64, float64, erro
 	q.Add("q", place)
 	q.Add("format", "json")
 	q.Add("limit", "5") // Get multiple results to pick closest
-	
+
 	// Add viewbox to bias towards user's location (roughly 50km box)
 	if nearLat != 0 && nearLon != 0 {
 		q.Add("viewbox", fmt.Sprintf("%.4f,%.4f,%.4f,%.4f",
 			nearLon-0.5, nearLat+0.5, nearLon+0.5, nearLat-0.5))
 		q.Add("bounded", "0") // Prefer but don't require results in viewbox
 	}
-	
+
 	fullURL := nominatimURL + "?" + q.Encode()
 	resp, err := spatial.LocationGet(fullURL)
 	if err != nil {
@@ -95,13 +95,13 @@ type LocationPoint struct {
 }
 
 type Location struct {
-	Lat       float64
-	Lon       float64
-	UpdatedAt time.Time
-	History   []LocationPoint // Last N location updates
-	CheckedIn       *CheckIn  // Manual location override
-	PromptedAt      time.Time // Last time we prompted for check-in
-	LastArrivalAt   time.Time // Last time we detected arrival (cooldown)
+	Lat           float64
+	Lon           float64
+	UpdatedAt     time.Time
+	History       []LocationPoint // Last N location updates
+	CheckedIn     *CheckIn        // Manual location override
+	PromptedAt    time.Time       // Last time we prompted for check-in
+	LastArrivalAt time.Time       // Last time we detected arrival (cooldown)
 }
 
 type CheckIn struct {
@@ -112,11 +112,11 @@ type CheckIn struct {
 }
 
 const (
-	locationHistorySize   = 20 // Keep 20 points for arrival detection (~60 seconds at 3s intervals)
-	gpsStuckThreshold     = 30.0  // meters - if all points within this, GPS is "stuck"
-	gpsStuckDuration      = 5 * time.Minute
-	checkInPromptCooldown = 10 * time.Minute
-	checkInExpiry         = 2 * time.Hour
+	locationHistorySize    = 20   // Keep 20 points for arrival detection (~60 seconds at 3s intervals)
+	gpsStuckThreshold      = 30.0 // meters - if all points within this, GPS is "stuck"
+	gpsStuckDuration       = 5 * time.Minute
+	checkInPromptCooldown  = 10 * time.Minute
+	checkInExpiry          = 2 * time.Hour
 	arrivalSpeedThreshold  = 1.0  // m/s - below this is "stopped" (slow stroll)
 	passingSpeedThreshold  = 2.0  // m/s - above this is "passing" (normal walk)
 	arrivalMovingThreshold = 1.5  // m/s - above this means "was moving" (reduced from 5.0)
@@ -142,7 +142,7 @@ func init() {
 		Handler:     handleNearby,
 		Match:       matchNearby,
 	})
-	
+
 	// Register place info command (hours, etc)
 	Register(&Command{
 		Name:        "place",
@@ -153,7 +153,7 @@ func init() {
 		Handler:     handlePlaceInfo,
 		Match:       matchPlaceInfo,
 	})
-	
+
 	// Register check-in command
 	Register(&Command{
 		Name:        "checkin",
@@ -163,7 +163,7 @@ func init() {
 		LoadingText: "Checking in to %s...",
 		Handler:     handleCheckIn,
 	})
-	
+
 	Register(&Command{
 		Name:        "checkout",
 		Description: "Clear check-in",
@@ -178,7 +178,7 @@ func init() {
 			return "📍 Not checked in anywhere", nil
 		},
 	})
-	
+
 	// Register ping command (location update + context)
 	Register(&Command{
 		Name:        "ping",
@@ -186,7 +186,7 @@ func init() {
 		Usage:       "/ping (with lat/lon params)",
 		Handler:     handlePing,
 	})
-	
+
 	// Cleanup expired locations every minute
 	go func() {
 		for {
@@ -199,7 +199,7 @@ func init() {
 func cleanupLocations() {
 	locationsMu.Lock()
 	defer locationsMu.Unlock()
-	
+
 	now := time.Now()
 	for token, loc := range locations {
 		if now.Sub(loc.UpdatedAt) > locationTTL {
@@ -222,20 +222,20 @@ func SetLocation(token string, lat, lon float64) *LocationUpdate {
 	log.Printf("[nearby] SetLocation(%s, %f, %f)", token, lat, lon)
 	now := time.Now()
 	result := &LocationUpdate{}
-	
+
 	locationsMu.Lock()
 	loc := locations[token]
 	if loc == nil {
 		loc = &Location{}
 		locations[token] = loc
 	}
-	
+
 	// Add to history
 	loc.History = append(loc.History, LocationPoint{Lat: lat, Lon: lon, Time: now})
 	if len(loc.History) > locationHistorySize {
 		loc.History = loc.History[1:]
 	}
-	
+
 	// Check if user moved significantly from check-in location
 	if loc.CheckedIn != nil {
 		dist := haversineMeters(lat, lon, loc.CheckedIn.Lat, loc.CheckedIn.Lon)
@@ -244,15 +244,15 @@ func SetLocation(token string, lat, lon float64) *LocationUpdate {
 			loc.CheckedIn = nil
 		}
 	}
-	
+
 	loc.Lat = lat
 	loc.Lon = lon
 	loc.UpdatedAt = now
-	
+
 	// Take snapshot of history for detection (to release lock)
 	historyCopy := make([]LocationPoint, len(loc.History))
 	copy(historyCopy, loc.History)
-	
+
 	// Check if GPS is stuck and we should prompt
 	if loc.CheckedIn == nil && isGpsStuck(loc.History) {
 		if now.Sub(loc.PromptedAt) > checkInPromptCooldown {
@@ -261,13 +261,13 @@ func SetLocation(token string, lat, lon float64) *LocationUpdate {
 		}
 	}
 	locationsMu.Unlock()
-	
+
 	// Detect proximity to POI (arriving or passing)
 	// Only if not already checked in and not recently prompted
 	locationsMu.Lock()
 	canPrompt := loc.CheckedIn == nil && time.Since(loc.LastArrivalAt) > checkInPromptCooldown
 	locationsMu.Unlock()
-	
+
 	if !result.ShouldPromptCheckIn && canPrompt {
 		proximity := detectProximity(historyCopy, lat, lon)
 		if proximity != nil {
@@ -284,17 +284,17 @@ func SetLocation(token string, lat, lon float64) *LocationUpdate {
 			}
 		}
 	}
-	
+
 	// Insert/update user in spatial index
 	updateUserInSpatialIndex(token, lat, lon)
-	
+
 	// Ensure agent exists for this area (creates and starts indexing if new)
 	db := spatial.Get()
 	db.FindOrCreateAgent(lat, lon)
-	
+
 	// Context is built on-demand in handlePing, not here
 	// This avoids duplicate calls
-	
+
 	return result
 }
 
@@ -303,14 +303,14 @@ func isGpsStuck(history []LocationPoint) bool {
 	if len(history) < 3 {
 		return false
 	}
-	
+
 	// Need at least gpsStuckDuration of history
 	oldest := history[0]
 	newest := history[len(history)-1]
 	if newest.Time.Sub(oldest.Time) < gpsStuckDuration {
 		return false
 	}
-	
+
 	// Check if all points are within threshold of first point
 	for i := 1; i < len(history); i++ {
 		dist := haversineMeters(oldest.Lat, oldest.Lon, history[i].Lat, history[i].Lon)
@@ -343,44 +343,44 @@ type ProximityInfo struct {
 // detectProximity checks if user is near a POI and whether they've stopped or are passing
 func detectProximity(history []LocationPoint, lat, lon float64) *ProximityInfo {
 	log.Printf("[nearby] detectProximity called with %d history points", len(history))
-	
+
 	// Check for nearby POI first - if nothing nearby, skip the speed calc
 	db := spatial.Get()
 	pois := db.Query(lat, lon, arrivalPOIRadius, spatial.EntityPlace, 1)
 	if len(pois) == 0 {
 		return nil
 	}
-	
+
 	poiName := pois[0].Name
-	
+
 	// Need some history to calculate speed
 	if len(history) < 3 {
 		// Not enough history - assume passing (don't know if stopped)
 		return &ProximityInfo{POIName: poiName, IsStopped: false, RecentSpeed: -1}
 	}
-	
+
 	// Calculate recent speed from last few points
 	recentPoints := history
 	if len(recentPoints) > 5 {
 		recentPoints = history[len(history)-5:]
 	}
-	
+
 	// Speed = distance covered / time
 	first := recentPoints[0]
 	last := recentPoints[len(recentPoints)-1]
 	dist := haversineMeters(first.Lat, first.Lon, last.Lat, last.Lon)
 	duration := last.Time.Sub(first.Time).Seconds()
-	
+
 	recentSpeed := 0.0
 	if duration > 0 {
 		recentSpeed = dist / duration
 	}
-	
-	log.Printf("[nearby] Near %s: recentSpeed=%.2f m/s (stopped<%.1f, passing>%.1f)", 
+
+	log.Printf("[nearby] Near %s: recentSpeed=%.2f m/s (stopped<%.1f, passing>%.1f)",
 		poiName, recentSpeed, arrivalSpeedThreshold, passingSpeedThreshold)
-	
+
 	isStopped := recentSpeed < arrivalSpeedThreshold
-	
+
 	return &ProximityInfo{
 		POIName:     poiName,
 		IsStopped:   isStopped,
@@ -391,7 +391,7 @@ func detectProximity(history []LocationPoint, lat, lon float64) *ProximityInfo {
 func updateUserInSpatialIndex(token string, lat, lon float64) {
 	db := spatial.Get()
 	expiry := time.Now().Add(locationTTL)
-	
+
 	user := &spatial.Entity{
 		ID:        "user-" + token[:8],
 		Type:      spatial.EntityPerson,
@@ -412,7 +412,7 @@ var (
 
 func updateUserContext(token string, lat, lon float64) {
 	ctxData := spatial.GetContextData(lat, lon)
-	
+
 	userContextsMu.Lock()
 	userContexts[token] = ctxData.HTML // Store HTML for AI context
 	userContextsMu.Unlock()
@@ -434,12 +434,12 @@ func GetSpeed(token string) float64 {
 	if loc == nil || len(loc.History) < 2 {
 		return 0
 	}
-	
+
 	// Calculate speed from last 2 points
 	n := len(loc.History)
 	p1 := loc.History[n-2]
 	p2 := loc.History[n-1]
-	
+
 	dist := haversineMeters(p1.Lat, p1.Lon, p2.Lat, p2.Lon)
 	dt := p2.Time.Sub(p1.Time).Seconds()
 	if dt <= 0 {
@@ -451,12 +451,12 @@ func GetSpeed(token string) float64 {
 func GetLocation(token string) *Location {
 	locationsMu.RLock()
 	defer locationsMu.RUnlock()
-	
+
 	loc := locations[token]
 	if loc == nil {
 		return nil
 	}
-	
+
 	// Check if expired
 	if time.Since(loc.UpdatedAt) > locationTTL {
 		return nil
@@ -475,13 +475,13 @@ func ClearLocation(token string) {
 func SetCheckIn(token string, name string, lat, lon float64) {
 	locationsMu.Lock()
 	defer locationsMu.Unlock()
-	
+
 	loc := locations[token]
 	if loc == nil {
 		loc = &Location{}
 		locations[token] = loc
 	}
-	
+
 	loc.CheckedIn = &CheckIn{
 		Name: name,
 		Lat:  lat,
@@ -494,12 +494,12 @@ func SetCheckIn(token string, name string, lat, lon float64) {
 func GetCheckIn(token string) *CheckIn {
 	locationsMu.RLock()
 	defer locationsMu.RUnlock()
-	
+
 	loc := locations[token]
 	if loc == nil || loc.CheckedIn == nil {
 		return nil
 	}
-	
+
 	// Check if expired
 	if time.Since(loc.CheckedIn.Time) > checkInExpiry {
 		return nil
@@ -511,7 +511,7 @@ func GetCheckIn(token string) *CheckIn {
 func ClearCheckIn(token string) {
 	locationsMu.Lock()
 	defer locationsMu.Unlock()
-	
+
 	if loc := locations[token]; loc != nil {
 		loc.CheckedIn = nil
 	}
@@ -561,8 +561,8 @@ var ValidTypes = map[string]bool{
 	"shop": true, "shops": true, "store": true,
 	"gas": true, "petrol": true, "fuel": true, "station": true,
 	"parking": true,
-	"gym": true,
-	"mosque": true, "church": true, "temple": true,
+	"gym":     true,
+	"mosque":  true, "church": true, "temple": true,
 	"hotel": true, "hotels": true,
 	"cinema": true, "cinemas": true, "theatre": true, "theater": true,
 }
@@ -619,48 +619,46 @@ func CheckMultiWordType(words []string) (string, []string) {
 
 // placeTypes maps common terms to OSM amenity/shop types
 var placeTypes = map[string]string{
-	"cafe":        "amenity=cafe",
-	"cafes":       "amenity=cafe",
-	"coffee":      "amenity=cafe",
-	"restaurant":  "amenity=restaurant",
-	"restaurants": "amenity=restaurant",
-	"food":        "amenity=restaurant",
-	"bar":         "amenity=bar",
-	"bars":        "amenity=bar",
-	"pub":         "amenity=pub",
-	"pubs":        "amenity=pub",
-	"pharmacy":    "amenity=pharmacy",
-	"pharmacies":  "amenity=pharmacy",
-	"hospital":    "amenity=hospital",
-	"hospitals":   "amenity=hospital",
-	"bank":        "amenity=bank",
-	"banks":       "amenity=bank",
-	"atm":         "amenity=atm",
-	"atms":        "amenity=atm",
-	"supermarket": "shop=supermarket",
-	"grocery":     "shop=supermarket",
-	"shop":        "shop=convenience",
-	"shops":       "shop=convenience",
-	"store":       "shop=convenience",
-	"gas":         "amenity=fuel",
-	"petrol":      "amenity=fuel",
-	"fuel":        "amenity=fuel",
+	"cafe":           "amenity=cafe",
+	"cafes":          "amenity=cafe",
+	"coffee":         "amenity=cafe",
+	"restaurant":     "amenity=restaurant",
+	"restaurants":    "amenity=restaurant",
+	"food":           "amenity=restaurant",
+	"bar":            "amenity=bar",
+	"bars":           "amenity=bar",
+	"pub":            "amenity=pub",
+	"pubs":           "amenity=pub",
+	"pharmacy":       "amenity=pharmacy",
+	"pharmacies":     "amenity=pharmacy",
+	"hospital":       "amenity=hospital",
+	"hospitals":      "amenity=hospital",
+	"bank":           "amenity=bank",
+	"banks":          "amenity=bank",
+	"atm":            "amenity=atm",
+	"atms":           "amenity=atm",
+	"supermarket":    "shop=supermarket",
+	"grocery":        "shop=supermarket",
+	"shop":           "shop=convenience",
+	"shops":          "shop=convenience",
+	"store":          "shop=convenience",
+	"gas":            "amenity=fuel",
+	"petrol":         "amenity=fuel",
+	"fuel":           "amenity=fuel",
 	"petrol station": "amenity=fuel",
 	"gas station":    "amenity=fuel",
-	"parking":     "amenity=parking",
-	"gym":         "leisure=fitness_centre",
-	"mosque":      "amenity=place_of_worship][religion=muslim",
-	"church":      "amenity=place_of_worship][religion=christian",
-	"temple":      "amenity=place_of_worship",
-	"hotel":       "tourism=hotel",
-	"hotels":      "tourism=hotel",
-	"cinema":      "amenity=cinema",
-	"cinemas":     "amenity=cinema",
-	"theatre":     "amenity=theatre",
-	"theater":     "amenity=theatre",
+	"parking":        "amenity=parking",
+	"gym":            "leisure=fitness_centre",
+	"mosque":         "amenity=place_of_worship][religion=muslim",
+	"church":         "amenity=place_of_worship][religion=christian",
+	"temple":         "amenity=place_of_worship",
+	"hotel":          "tourism=hotel",
+	"hotels":         "tourism=hotel",
+	"cinema":         "amenity=cinema",
+	"cinemas":        "amenity=cinema",
+	"theatre":        "amenity=theatre",
+	"theater":        "amenity=theatre",
 }
-
-
 
 const searchRadius = 2000.0 // 2km default radius
 
@@ -748,7 +746,7 @@ func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 	// Check spatial DB first (use appropriate radius for place type)
 	radius := getSearchRadius(placeType)
 	cached := db.QueryPlaces(lat, lon, radius, category, 20)
-	
+
 	// For cinemas, merge supplementary data with cache
 	if category == "cinema" {
 		supplementary := spatial.GetSupplementaryCinemas(lat, lon, radius)
@@ -764,7 +762,7 @@ func NearbyWithLocation(placeType string, lat, lon float64) (string, error) {
 			}
 		}
 	}
-	
+
 	if len(cached) > 0 {
 		return formatCachedEntities(cached, placeType), nil
 	}
@@ -850,16 +848,16 @@ func normalizeType(placeType string) string {
 	aliases := map[string]string{
 		"cafes": "cafe", "coffee": "cafe",
 		"restaurants": "restaurant", "food": "restaurant",
-		"bars": "bar",
-		"pubs": "pub",
+		"bars":       "bar",
+		"pubs":       "pub",
 		"pharmacies": "pharmacy",
-		"hospitals": "hospital",
-		"banks": "bank",
-		"atms": "atm",
-		"grocery": "supermarket",
-		"shops": "shop", "store": "shop",
+		"hospitals":  "hospital",
+		"banks":      "bank",
+		"atms":       "atm",
+		"grocery":    "supermarket",
+		"shops":      "shop", "store": "shop",
 		"petrol": "fuel", "gas": "fuel", "station": "fuel",
-		"hotels": "hotel",
+		"hotels":  "hotel",
 		"cinemas": "cinema", "theatres": "theatre", "theaters": "theatre",
 	}
 	if canonical, ok := aliases[placeType]; ok {
@@ -935,7 +933,7 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 				}
 			}
 		}
-		
+
 		// Try to get website/phone from tags if not set directly
 		if len(tags) > 0 {
 			if website == "" {
@@ -972,14 +970,14 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 				result.WriteString(fmt.Sprintf("  %s\n", addr))
 			}
 		}
-		
+
 		// Hours
 		if tags != nil {
 			if hours := tags["opening_hours"]; hours != "" {
 				result.WriteString(fmt.Sprintf("  🕐 %s\n", hours))
 			}
 		}
-		
+
 		// Phone
 		if phone != "" {
 			result.WriteString(fmt.Sprintf("  📞 %s\n", phone))
@@ -1067,6 +1065,7 @@ func formatAddress(tags map[string]string) string {
 
 	return strings.Join(parts, ", ")
 }
+
 // matchNearby detects nearby queries in natural language
 func matchNearby(input string) (bool, []string) {
 	input = strings.TrimSpace(input)
@@ -1075,7 +1074,7 @@ func matchNearby(input string) (bool, []string) {
 	if len(parts) == 0 {
 		return false, nil
 	}
-	
+
 	// Don't match question patterns - those go to AI or place command
 	questionPhrases := []string{"what time", "when does", "is .* open", "opening hours", "hours for", "what about", "tell me about", "info on", "information about", "how do i", "how to", "get to", "directions to", "way to"}
 	for _, q := range questionPhrases {
@@ -1083,7 +1082,7 @@ func matchNearby(input string) (bool, []string) {
 			return false, nil
 		}
 	}
-	
+
 	// Don't match "where is" questions - those go to AI with context
 	if strings.HasPrefix(lower, "where is") || strings.HasPrefix(lower, "where's") {
 		return false, nil
@@ -1136,11 +1135,11 @@ func matchNearby(input string) (bool, []string) {
 	if !isNearbyQuery && len(cleaned) == 1 && IsValidPlaceType(strings.ToLower(cleaned[0])) {
 		isNearbyQuery = true
 	}
-	
+
 	if isNearbyQuery {
 		return true, cleaned
 	}
-	
+
 	return false, nil
 }
 
@@ -1203,7 +1202,7 @@ func handleNearby(ctx *Context, args []string) (string, error) {
 // "What time does Sainsbury's close", "Is Boots open", "Sainsbury's hours"
 func matchPlaceInfo(input string) (bool, []string) {
 	lower := strings.ToLower(input)
-	
+
 	// Patterns that indicate a place-specific question
 	patterns := []string{
 		"what time does",
@@ -1214,7 +1213,7 @@ func matchPlaceInfo(input string) (bool, []string) {
 		"opening hours",
 		"closing time",
 	}
-	
+
 	for _, p := range patterns {
 		if strings.Contains(lower, p) || matchWildcard(lower, p) {
 			// Extract the place name
@@ -1224,7 +1223,7 @@ func matchPlaceInfo(input string) (bool, []string) {
 			}
 		}
 	}
-	
+
 	// Also match just "X hours" or "X closing"
 	if strings.HasSuffix(lower, " hours") || strings.HasSuffix(lower, " closing") || strings.HasSuffix(lower, " open") {
 		name := extractPlaceName(input)
@@ -1232,7 +1231,7 @@ func matchPlaceInfo(input string) (bool, []string) {
 			return true, []string{name}
 		}
 	}
-	
+
 	return false, nil
 }
 
@@ -1265,7 +1264,7 @@ func getKeys(m map[string]interface{}) []string {
 
 func extractPlaceName(input string) string {
 	lower := strings.ToLower(input)
-	
+
 	// Remove common question phrases first (order matters - longer first)
 	phrases := []string{
 		"what time does", "when does", "opening hours", "hours for",
@@ -1274,7 +1273,7 @@ func extractPlaceName(input string) string {
 	for _, p := range phrases {
 		lower = strings.ReplaceAll(lower, p, " ")
 	}
-	
+
 	// Remove individual words (as whole words only)
 	words := strings.Fields(lower)
 	removeWords := map[string]bool{
@@ -1282,7 +1281,7 @@ func extractPlaceName(input string) string {
 		"hours": true, "the": true, "a": true, "today": true, "now": true,
 		"is": true, "are": true, "?": true,
 	}
-	
+
 	var kept []string
 	for _, w := range words {
 		w = strings.Trim(w, "?")
@@ -1290,7 +1289,7 @@ func extractPlaceName(input string) string {
 			kept = append(kept, w)
 		}
 	}
-	
+
 	return strings.Join(kept, " ")
 }
 
@@ -1298,19 +1297,19 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 	if len(args) == 0 {
 		return "Which place?", nil
 	}
-	
+
 	placeName := strings.Join(args, " ")
 	log.Printf("[place] Looking for %q at %.4f,%.4f", placeName, ctx.Lat, ctx.Lon)
-	
+
 	if !ctx.HasLocation() {
 		return "Enable location to find places near you", nil
 	}
-	
+
 	// Search spatial index for this place
 	db := spatial.Get()
 	places := db.Query(ctx.Lat, ctx.Lon, 5000, spatial.EntityPlace, 100) // 5km radius
 	log.Printf("[place] Found %d places in 2km radius", len(places))
-	
+
 	// Find matching place
 	var match *spatial.Entity
 	for _, p := range places {
@@ -1320,7 +1319,7 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 			break
 		}
 	}
-	
+
 	if match == nil {
 		// Log first few names to debug
 		for i, p := range places {
@@ -1331,11 +1330,11 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 		return fmt.Sprintf("No %s found nearby", placeName), nil
 	}
 	log.Printf("[place] Found match: %s", match.Name)
-	
+
 	// Build response with hours
 	var result strings.Builder
 	result.WriteString(fmt.Sprintf("📍 %s\n", match.Name))
-	
+
 	// Extract place details from typed data or legacy
 	var hours, phone, addr string
 	var tags map[string]string
@@ -1346,7 +1345,7 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 		hours, _ = m["opening_hours"].(string)
 		phone, _ = m["phone"].(string)
 		addr, _ = m["address"].(string)
-		
+
 		// Try tags (OSM data structure)
 		if tagsRaw, ok := m["tags"].(map[string]interface{}); ok {
 			tags = make(map[string]string)
@@ -1357,7 +1356,7 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 			}
 		}
 	}
-	
+
 	// Fill in from tags if available
 	if len(tags) > 0 {
 		if hours == "" {
@@ -1383,7 +1382,7 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 			}
 		}
 	}
-	
+
 	if addr != "" {
 		result.WriteString(fmt.Sprintf("%s\n", addr))
 	}
@@ -1395,11 +1394,11 @@ func handlePlaceInfo(ctx *Context, args []string) (string, error) {
 	if phone != "" {
 		result.WriteString(fmt.Sprintf("📞 %s\n", phone))
 	}
-	
+
 	// Add map link
 	result.WriteString(fmt.Sprintf("https://maps.google.com/maps/search/%s/@%.6f,%.6f,17z",
 		strings.ReplaceAll(match.Name, " ", "+"), match.Lat, match.Lon))
-	
+
 	return result.String(), nil
 }
 
@@ -1408,17 +1407,17 @@ func handleCheckIn(ctx *Context, args []string) (string, error) {
 	if len(args) == 0 {
 		return "Usage: /checkin <place name>", nil
 	}
-	
+
 	placeName := strings.Join(args, " ")
-	
+
 	if !ctx.HasLocation() {
 		return "Enable location first", nil
 	}
-	
+
 	// Search nearby POIs for matching name
 	db := spatial.Get()
 	pois := db.Query(ctx.Lat, ctx.Lon, 500, spatial.EntityPlace, 50)
-	
+
 	var match *spatial.Entity
 	lowerName := strings.ToLower(placeName)
 	for _, p := range pois {
@@ -1427,15 +1426,15 @@ func handleCheckIn(ctx *Context, args []string) (string, error) {
 			break
 		}
 	}
-	
+
 	if match == nil {
 		return fmt.Sprintf("No place matching %q found nearby", placeName), nil
 	}
-	
+
 	// Set the check-in
 	SetCheckIn(ctx.Session, match.Name, match.Lat, match.Lon)
 	log.Printf("[checkin] %s checked in to %s (%.4f, %.4f)", ctx.Session, match.Name, match.Lat, match.Lon)
-	
+
 	return fmt.Sprintf("📍 Checked in to %s", match.Name), nil
 }
 
@@ -1444,41 +1443,41 @@ func handlePing(ctx *Context, args []string) (string, error) {
 	if !ctx.HasLocation() {
 		return "📍 Location not provided", nil
 	}
-	
+
 	// Note: SetLocation already called by handler.go for all commands with lat/lon
-	
+
 	// Record location for route tracking (captures user's actual paths)
 	spatial.RecordLocation(ctx.Session, ctx.Lat, ctx.Lon)
-	
+
 	// Update push manager with current location (for background notifications)
 	UpdatePushLocation(ctx.Session, ctx.Lat, ctx.Lon)
-	
+
 	// Use check-in location if set, otherwise GPS
 	contextLat, contextLon := ctx.Lat, ctx.Lon
 	if checkIn := GetCheckIn(ctx.Session); checkIn != nil {
 		contextLat, contextLon = checkIn.Lat, checkIn.Lon
 	}
-	
+
 	// Get speed for change detection (suppress street changes while driving with poor GPS)
 	speed := GetSpeed(ctx.Session)
 	accuracy := ctx.Accuracy
 	if accuracy == 0 {
 		accuracy = 100 // Assume poor accuracy if not provided
 	}
-	
+
 	// Get context with change detection
 	contextData, changes := spatial.GetContextWithChanges(ctx.Session, contextLat, contextLon, accuracy, speed)
-	
+
 	// Cache for AI requests
 	userContextsMu.Lock()
 	userContexts[ctx.Session] = contextData.HTML
 	userContextsMu.Unlock()
-	
+
 	// Push meaningful changes via websocket (handled by server)
 	if len(changes) > 0 {
 		ctx.PushMessages = changes
 	}
-	
+
 	// Return JSON context
 	b, _ := json.Marshal(contextData)
 	return string(b), nil
@@ -1487,4 +1486,3 @@ func handlePing(ctx *Context, args []string) (string, error) {
 // UpdatePushLocation is called by handlePing to update push manager
 // Defined as variable so server package can set it (avoids import cycle)
 var UpdatePushLocation = func(sessionID string, lat, lon float64) {}
-

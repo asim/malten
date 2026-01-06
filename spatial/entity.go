@@ -34,15 +34,15 @@ type EntityData interface {
 
 // Entity represents any spatial object in the world
 type Entity struct {
-	ID        string                 `json:"id"`
-	Type      EntityType             `json:"type"`
-	Name      string                 `json:"name"`
-	Lat       float64                `json:"lat"`
-	Lon       float64                `json:"lon"`
-	Data      interface{}            `json:"data"` // EntityData or legacy map[string]interface{}
-	CreatedAt time.Time              `json:"created_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
-	ExpiresAt *time.Time             `json:"expires_at,omitempty"`
+	ID        string      `json:"id"`
+	Type      EntityType  `json:"type"`
+	Name      string      `json:"name"`
+	Lat       float64     `json:"lat"`
+	Lon       float64     `json:"lon"`
+	Data      interface{} `json:"data"` // EntityData or legacy map[string]interface{}
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+	ExpiresAt *time.Time  `json:"expires_at,omitempty"`
 }
 
 // GenerateID creates a unique ID for an entity
@@ -58,11 +58,12 @@ func GenerateID(entityType EntityType, lat, lon float64, name string) string {
 
 // ArrivalData holds transport arrival information
 type ArrivalData struct {
-	StopID   string        `json:"stop_id"`
-	StopName string        `json:"stop_name"`
-	StopType string        `json:"stop_type"`
-	Arrivals []BusArrival  `json:"arrivals"`
+	StopID   string       `json:"stop_id"`
+	StopName string       `json:"stop_name"`
+	StopType string       `json:"stop_type"`
+	Arrivals []BusArrival `json:"arrivals"`
 }
+
 func (ArrivalData) entityData() {}
 
 // BusArrival represents a single bus/train arrival
@@ -87,6 +88,7 @@ type WeatherData struct {
 	WeatherCode  int     `json:"weather_code"`
 	RainForecast string  `json:"rain_forecast"`
 }
+
 func (WeatherData) entityData() {}
 
 // PrayerData holds prayer time information
@@ -95,6 +97,7 @@ type PrayerData struct {
 	Current string            `json:"current"`
 	Next    string            `json:"next"`
 }
+
 func (PrayerData) entityData() {}
 
 // PlaceData holds place-specific fields
@@ -103,6 +106,7 @@ type PlaceData struct {
 	Tags     map[string]string `json:"tags"`
 	AgentID  string            `json:"agent_id"`
 }
+
 func (PlaceData) entityData() {}
 
 // AgentEntityData holds agent-specific fields
@@ -113,11 +117,12 @@ type AgentEntityData struct {
 	LastIndex *time.Time `json:"last_index,omitempty"`
 	LastLive  *time.Time `json:"last_live,omitempty"`
 	// Exploration state (persisted)
-	HomeLat     float64 `json:"home_lat,omitempty"`
-	HomeLon     float64 `json:"home_lon,omitempty"`
-	TotalSteps  int     `json:"total_steps,omitempty"`
-	StepsToday  int     `json:"steps_today,omitempty"`
+	HomeLat    float64 `json:"home_lat,omitempty"`
+	HomeLon    float64 `json:"home_lon,omitempty"`
+	TotalSteps int     `json:"total_steps,omitempty"`
+	StepsToday int     `json:"steps_today,omitempty"`
 }
+
 func (AgentEntityData) entityData() {}
 
 // StreetData holds street geometry
@@ -126,6 +131,7 @@ type StreetData struct {
 	Length float64     `json:"length"`
 	ToName string      `json:"to_name"`
 }
+
 func (StreetData) entityData() {}
 
 // LocationData holds reverse geocoded location info
@@ -133,6 +139,7 @@ type LocationData struct {
 	Street   string `json:"street"`
 	Postcode string `json:"postcode"`
 }
+
 func (LocationData) entityData() {}
 
 // =============================================================================
@@ -248,7 +255,7 @@ func arrivalDataFromMap(m map[string]interface{}) *ArrivalData {
 	ad.StopID, _ = m["stop_id"].(string)
 	ad.StopName, _ = m["stop_name"].(string)
 	ad.StopType, _ = m["stop_type"].(string)
-	
+
 	// Parse arrivals array
 	if arrData, ok := m["arrivals"].([]interface{}); ok {
 		for _, a := range arrData {
@@ -290,7 +297,7 @@ func prayerDataFromMap(m map[string]interface{}) *PrayerData {
 	pd := &PrayerData{}
 	pd.Current, _ = m["current"].(string)
 	pd.Next, _ = m["next"].(string)
-	
+
 	// Parse timings
 	if timingsRaw, ok := m["timings"]; ok {
 		pd.Timings = make(map[string]string)
@@ -312,7 +319,7 @@ func placeDataFromMap(m map[string]interface{}) *PlaceData {
 	pd := &PlaceData{}
 	pd.Category, _ = m["category"].(string)
 	pd.AgentID, _ = m["agent_id"].(string)
-	
+
 	if tags, ok := m["tags"].(map[string]interface{}); ok {
 		pd.Tags = make(map[string]string)
 		for k, v := range tags {
@@ -348,7 +355,7 @@ func streetDataFromMap(m map[string]interface{}) *StreetData {
 	sd := &StreetData{}
 	sd.ToName, _ = m["to_name"].(string)
 	sd.Length, _ = m["length"].(float64)
-	
+
 	if points, ok := m["points"].([]interface{}); ok {
 		for _, p := range points {
 			if pt, ok := p.([]interface{}); ok && len(pt) >= 2 {

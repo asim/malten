@@ -19,17 +19,17 @@ import (
 // Accepts form params, query params, or JSON body (if Content-Type: application/json)
 func AgentsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	// Parse form/query params
 	r.ParseForm()
-	
+
 	// Get agent ID from path or query
 	path := strings.TrimPrefix(r.URL.Path, "/agents")
 	agentID := strings.TrimPrefix(path, "/")
 	if agentID == "" {
 		agentID = r.Form.Get("id")
 	}
-	
+
 	switch r.Method {
 	case "GET":
 		if agentID == "" {
@@ -58,12 +58,12 @@ func AgentsHandler(w http.ResponseWriter, r *http.Request) {
 func listAgents(w http.ResponseWriter, r *http.Request) {
 	db := spatial.Get()
 	agents := db.ListAgents()
-	
+
 	var result []map[string]interface{}
 	for _, a := range agents {
 		result = append(result, agentToJSON(a))
 	}
-	
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"agents": result,
 		"count":  len(result),
@@ -74,12 +74,12 @@ func listAgents(w http.ResponseWriter, r *http.Request) {
 func getAgent(w http.ResponseWriter, r *http.Request, id string) {
 	db := spatial.Get()
 	agent := db.GetByID(id)
-	
+
 	if agent == nil || agent.Type != spatial.EntityAgent {
 		JsonError(w, "agent not found", 404)
 		return
 	}
-	
+
 	json.NewEncoder(w).Encode(agentToJSON(agent))
 }
 
@@ -89,7 +89,7 @@ func createAgent(w http.ResponseWriter, r *http.Request) {
 	lat, _ := strconv.ParseFloat(r.Form.Get("lat"), 64)
 	lon, _ := strconv.ParseFloat(r.Form.Get("lon"), 64)
 	prompt := r.Form.Get("prompt")
-	
+
 	// Also try JSON body if content-type is set
 	if r.Header.Get("Content-Type") == "application/json" {
 		var req struct {
@@ -109,18 +109,18 @@ func createAgent(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	
+
 	if lat == 0 && lon == 0 {
 		JsonError(w, "lat and lon required", 400)
 		return
 	}
-	
+
 	db := spatial.Get()
 	agent := db.FindOrCreateAgent(lat, lon)
-	
+
 	// Note: prompt not stored in typed AgentEntityData - stored elsewhere if needed
 	_ = prompt
-	
+
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(agentToJSON(agent))
 }
@@ -130,17 +130,17 @@ func createAgent(w http.ResponseWriter, r *http.Request) {
 func instructAgent(w http.ResponseWriter, r *http.Request, id string) {
 	db := spatial.Get()
 	agent := db.GetByID(id)
-	
+
 	if agent == nil || agent.Type != spatial.EntityAgent {
 		JsonError(w, "agent not found", 404)
 		return
 	}
-	
+
 	action := r.Form.Get("action")
 	prompt := r.Form.Get("prompt")
 	lat, _ := strconv.ParseFloat(r.Form.Get("lat"), 64)
 	lon, _ := strconv.ParseFloat(r.Form.Get("lon"), 64)
-	
+
 	// Also try JSON body if content-type is set
 	if r.Header.Get("Content-Type") == "application/json" {
 		var req struct {
@@ -164,12 +164,12 @@ func instructAgent(w http.ResponseWriter, r *http.Request, id string) {
 			}
 		}
 	}
-	
+
 	agentData := agent.GetAgentData()
 	if agentData == nil {
 		agentData = &spatial.AgentEntityData{}
 	}
-	
+
 	switch action {
 	case "refresh":
 		agentData.Status = "refreshing"
@@ -183,10 +183,10 @@ func instructAgent(w http.ResponseWriter, r *http.Request, id string) {
 	case "resume":
 		agentData.Status = "active"
 	}
-	
+
 	// Note: prompt not stored in AgentEntityData
 	_ = prompt
-	
+
 	agent.Data = agentData
 	db.Insert(agent)
 	json.NewEncoder(w).Encode(agentToJSON(agent))
@@ -196,12 +196,12 @@ func instructAgent(w http.ResponseWriter, r *http.Request, id string) {
 func deleteAgent(w http.ResponseWriter, r *http.Request, id string) {
 	db := spatial.Get()
 	agent := db.GetByID(id)
-	
+
 	if agent == nil || agent.Type != spatial.EntityAgent {
 		JsonError(w, "agent not found", 404)
 		return
 	}
-	
+
 	db.Delete(id)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"deleted": id,
@@ -217,7 +217,7 @@ func agentToJSON(a *spatial.Entity) map[string]interface{} {
 		"lon":       a.Lon,
 		"updatedAt": a.UpdatedAt,
 	}
-	
+
 	if agentData := a.GetAgentData(); agentData != nil {
 		result["status"] = agentData.Status
 		result["radius"] = agentData.Radius
@@ -226,6 +226,6 @@ func agentToJSON(a *spatial.Entity) map[string]interface{} {
 			result["lastIndex"] = agentData.LastIndex.Format("2006-01-02T15:04:05Z")
 		}
 	}
-	
+
 	return result
 }

@@ -21,10 +21,10 @@ func init() {
 func MapInfo() string {
 	db := spatial.Get()
 	stats := db.Stats()
-	
+
 	// Count streets
 	streets := db.Query(51.45, -0.35, 50000, spatial.EntityStreet, 1000)
-	
+
 	return fmt.Sprintf(`🗺️ Malten Spatial Map
 
 %d agents mapping the world

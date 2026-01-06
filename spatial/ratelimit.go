@@ -8,9 +8,9 @@ import (
 
 // APIRateLimiter serializes external API calls to prevent rate limiting
 type APIRateLimiter struct {
-	mu           sync.Mutex
-	lastCall     map[string]time.Time
-	minInterval  time.Duration
+	mu          sync.Mutex
+	lastCall    map[string]time.Time
+	minInterval time.Duration
 }
 
 var (
@@ -18,14 +18,14 @@ var (
 		lastCall:    make(map[string]time.Time),
 		minInterval: 2 * time.Second,
 	}
-	
+
 	// Per-API minimum intervals (some APIs need longer)
 	apiMinIntervals = map[string]time.Duration{
-		"osm":      5 * time.Second,  // Overpass API is strict
+		"osm":      5 * time.Second, // Overpass API is strict
 		"osrm":     2 * time.Second,
 		"tfl":      2 * time.Second,
 		"weather":  2 * time.Second,
-		"location": 1 * time.Second,  // Nominatim
+		"location": 1 * time.Second, // Nominatim
 	}
 )
 
@@ -41,16 +41,16 @@ var llmLimiter = struct {
 // LLMRateLimitedCall wraps LLM API calls with rate limiting and stats
 func LLMRateLimitedCall(fn func() error) error {
 	stats := GetStats()
-	
+
 	// Check for backoff
 	backoff := stats.GetBackoffDuration("llm")
 	if backoff > 0 {
 		log.Printf("[ratelimit] llm: backing off %.1fs", backoff.Seconds())
 		time.Sleep(backoff)
 	}
-	
+
 	llmLimiter.mu.Lock()
-	
+
 	elapsed := time.Since(llmLimiter.lastCall)
 	if elapsed < llmLimiter.minInterval {
 		wait := llmLimiter.minInterval - elapsed
@@ -58,12 +58,12 @@ func LLMRateLimitedCall(fn func() error) error {
 		time.Sleep(wait)
 		llmLimiter.mu.Lock()
 	}
-	
+
 	llmLimiter.lastCall = time.Now()
 	llmLimiter.mu.Unlock()
-	
+
 	stats.RecordCall("llm")
-	
+
 	err := fn()
 	if err != nil {
 		if isRateLimitError(err) {
@@ -73,7 +73,7 @@ func LLMRateLimitedCall(fn func() error) error {
 		}
 		return err
 	}
-	
+
 	stats.RecordSuccess("llm")
 	return nil
 }

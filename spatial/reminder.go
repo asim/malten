@@ -61,7 +61,7 @@ var (
 	cachedReminder *Reminder
 	reminderMu     sync.RWMutex
 	reminderDate   string
-	
+
 	// Cache for surahs
 	surahCache   = make(map[int]*Surah)
 	surahCacheMu sync.RWMutex
@@ -70,7 +70,7 @@ var (
 // GetDailyReminder returns today's reminder, fetching if needed
 func GetDailyReminder() *Reminder {
 	today := time.Now().Format("2006-01-02")
-	
+
 	reminderMu.RLock()
 	if cachedReminder != nil && reminderDate == today {
 		r := cachedReminder
@@ -78,38 +78,38 @@ func GetDailyReminder() *Reminder {
 		return r
 	}
 	reminderMu.RUnlock()
-	
+
 	// Fetch fresh
 	reminderMu.Lock()
 	defer reminderMu.Unlock()
-	
+
 	// Double-check after acquiring write lock
 	if cachedReminder != nil && reminderDate == today {
 		return cachedReminder
 	}
-	
+
 	resp, err := http.Get("https://reminder.dev/api/daily")
 	if err != nil {
 		log.Printf("[reminder] fetch error: %v", err)
 		return cachedReminder // Return stale if available
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		log.Printf("[reminder] API returned %d", resp.StatusCode)
 		return cachedReminder
 	}
-	
+
 	var r Reminder
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		log.Printf("[reminder] decode error: %v", err)
 		return cachedReminder
 	}
-	
+
 	cachedReminder = &r
 	reminderDate = today
 	log.Printf("[reminder] fetched daily reminder: %s", r.Hijri)
-	
+
 	return &r
 }
 
@@ -121,15 +121,15 @@ func GetSurah(number int) *Surah {
 		return s
 	}
 	surahCacheMu.RUnlock()
-	
+
 	surahCacheMu.Lock()
 	defer surahCacheMu.Unlock()
-	
+
 	// Double-check
 	if s, ok := surahCache[number]; ok {
 		return s
 	}
-	
+
 	url := fmt.Sprintf("https://reminder.dev/api/quran/%d", number)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -137,21 +137,21 @@ func GetSurah(number int) *Surah {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		log.Printf("[reminder] surah %d API returned %d", number, resp.StatusCode)
 		return nil
 	}
-	
+
 	var s Surah
 	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
 		log.Printf("[reminder] decode surah %d error: %v", number, err)
 		return nil
 	}
-	
+
 	surahCache[number] = &s
 	log.Printf("[reminder] cached surah %d: %s", number, s.Name)
-	
+
 	return &s
 }
 
@@ -180,15 +180,15 @@ func GetName(number int) *Name {
 		return n
 	}
 	nameCacheMu.RUnlock()
-	
+
 	nameCacheMu.Lock()
 	defer nameCacheMu.Unlock()
-	
+
 	// Double-check
 	if n, ok := nameCache[number]; ok {
 		return n
 	}
-	
+
 	url := fmt.Sprintf("https://reminder.dev/api/names/%d", number)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -196,30 +196,30 @@ func GetName(number int) *Name {
 		return nil
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		log.Printf("[reminder] name %d API returned %d", number, resp.StatusCode)
 		return nil
 	}
-	
+
 	var n Name
 	if err := json.NewDecoder(resp.Body).Decode(&n); err != nil {
 		log.Printf("[reminder] decode name %d error: %v", number, err)
 		return nil
 	}
-	
+
 	nameCache[number] = &n
 	log.Printf("[reminder] cached name %d: %s", number, n.English)
-	
+
 	return &n
 }
 
 // TimeBasedReminder represents a curated reminder for a specific time
 type TimeBasedReminder struct {
-	Type     string // "surah", "name", "verse"
-	Number   int    // Surah number or Name number
-	Verses   []int  // For surahs, which verses to show (empty = first 3)
-	Reason   string // Why this reminder at this time
+	Type   string // "surah", "name", "verse"
+	Number int    // Surah number or Name number
+	Verses []int  // For surahs, which verses to show (empty = first 3)
+	Reason string // Why this reminder at this time
 }
 
 // Curated time-based reminders
@@ -283,7 +283,7 @@ func GetTimeReminder(key string) *Reminder {
 	if !ok {
 		return nil
 	}
-	
+
 	switch tr.Type {
 	case "surah":
 		return getSurahReminder(tr.Number, tr.Verses)
@@ -299,12 +299,12 @@ func getSurahReminder(number int, verses []int) *Reminder {
 	if s == nil || len(s.Verses) < 2 {
 		return nil
 	}
-	
+
 	// Default to verses 1-3 if not specified
 	if len(verses) == 0 {
 		verses = []int{1, 2, 3}
 	}
-	
+
 	// Build verse text (skip bismillah at index 0)
 	verseText := ""
 	for _, v := range verses {
@@ -315,13 +315,13 @@ func getSurahReminder(number int, verses []int) *Reminder {
 			verseText += s.Verses[v].Text
 		}
 	}
-	
+
 	// Format reference
 	ref := fmt.Sprintf("%s - %d:%d", s.Name, number, verses[0])
 	if len(verses) > 1 {
 		ref = fmt.Sprintf("%s - %d:%d-%d", s.Name, number, verses[0], verses[len(verses)-1])
 	}
-	
+
 	return &Reminder{
 		Verse: fmt.Sprintf("%s\n\n%s", ref, verseText),
 	}
@@ -332,7 +332,7 @@ func getNameReminder(number int) *Reminder {
 	if n == nil {
 		return nil
 	}
-	
+
 	return &Reminder{
 		Name:       fmt.Sprintf("%s - %s - %s\n\n%s", n.English, n.Arabic, n.Meaning, n.Description),
 		NameNumber: number,

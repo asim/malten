@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	AgentRadius    = 5000.0 // 5km
-	OSMRateLimit   = 5 * time.Second
-	OverpassURL    = "https://overpass-api.de/api/interpreter"
-	NominatimURL   = "https://nominatim.openstreetmap.org"
+	AgentRadius  = 5000.0 // 5km
+	OSMRateLimit = 5 * time.Second
+	OverpassURL  = "https://overpass-api.de/api/interpreter"
+	NominatimURL = "https://nominatim.openstreetmap.org"
 )
 
 // Global mutex to serialize POI indexing (avoid hammering Overpass)
@@ -60,7 +60,7 @@ func (d *DB) CreateAgent(lat, lon, radius float64, name string) *Entity {
 		log.Printf("[agent] Not creating %s - agent %s already covers this area", name, existing.Name)
 		return existing
 	}
-	
+
 	agent := &Entity{
 		ID:   GenerateID(EntityAgent, lat, lon, name),
 		Type: EntityAgent,
@@ -87,11 +87,11 @@ func (d *DB) FindOrCreateAgent(lat, lon float64) *Entity {
 	if existing != nil {
 		return existing
 	}
-	
+
 	// Use generic name immediately - geocode in background
 	areaName := fmt.Sprintf("Area %.2f,%.2f", lat, lon)
 	agent := d.FindOrCreateAgentNamed(lat, lon, areaName)
-	
+
 	// Update name asynchronously after geocoding
 	go func() {
 		if name := ReverseGeocode(lat, lon); name != "" && name != areaName {
@@ -101,7 +101,7 @@ func (d *DB) FindOrCreateAgent(lat, lon float64) *Entity {
 			log.Printf("[agent] Renamed %s to %s", areaName, name)
 		}
 	}()
-	
+
 	return agent
 }
 
@@ -112,7 +112,7 @@ func (d *DB) FindOrCreateAgentNamed(lat, lon float64, name string) *Entity {
 	if existing != nil {
 		return existing
 	}
-	
+
 	// Also check by base name (without region suffix like ", Greater London")
 	// This catches cases where Nominatim returns different names for similar locations
 	baseName := name
@@ -148,7 +148,7 @@ func StartAgentLoop(agent *Entity) {
 	}
 	runningAgents[agent.ID] = true
 	runningAgentsMu.Unlock()
-	
+
 	go agentLoop(agent)
 }
 
@@ -159,19 +159,19 @@ func agentLoop(agent *Entity) {
 		regionName = region.Name
 	}
 	log.Printf("[agent] %s started (region: %s, agentic: %v)", agent.Name, regionName, AgenticMode)
-	
+
 	// Start data loop immediately (don't wait for POI index)
 	go func() {
 		// Add random initial delay (0-30s) to spread out agent updates
 		initialDelay := time.Duration(time.Now().UnixNano()%30000) * time.Millisecond
 		time.Sleep(initialDelay)
-		
+
 		runAgentCycle(agent)
-		
+
 		// Continuous loop
 		for {
 			state := GetAgentState(agent.ID)
-			
+
 			// If agentic mode set a specific next cycle time, honor it
 			if AgenticMode && !state.NextCycle.IsZero() && time.Now().Before(state.NextCycle) {
 				sleepDuration := time.Until(state.NextCycle)
@@ -183,11 +183,11 @@ func agentLoop(agent *Entity) {
 				jitter := time.Duration(time.Now().UnixNano()%5000) * time.Millisecond
 				time.Sleep(30*time.Second + jitter)
 			}
-			
+
 			runAgentCycle(agent)
 		}
 	}()
-	
+
 	// POI index runs in parallel (takes longer)
 	IndexAgent(agent)
 }
@@ -203,7 +203,7 @@ func runAgentCycle(agent *Entity) {
 	} else {
 		updateLiveData(agent)
 	}
-	
+
 	// Exploration mode: agent moves and maps streets (run async to not block)
 	if ExplorationMode {
 		go func() {
@@ -216,11 +216,11 @@ func runAgentCycle(agent *Entity) {
 
 func updateLiveData(agent *Entity) {
 	db := Get()
-	
+
 	// Location name (reverse geocode) - only if not cached
 	// fetchLocation inserts under lock, returns entity or nil
 	fetchLocation(agent.Lat, agent.Lon)
-	
+
 	// Weather - fetchWeather inserts under lock
 	if weather := fetchWeather(agent.Lat, agent.Lon); weather != nil {
 		// Check for notable weather
@@ -231,14 +231,14 @@ func updateLiveData(agent *Entity) {
 			}
 		}
 	}
-	
+
 	// Prayer times - fetchPrayerTimes inserts under lock
 	fetchPrayerTimes(agent.Lat, agent.Lon)
-	
+
 	// Transport arrivals (buses, tubes, trains)
 	// fetchTransportArrivals inserts under lock, returns entities for counting
 	var totalArrivals int
-	
+
 	// Buses
 	busArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanPublicBusCoachTram", "🚌")
 	if busArrivals != nil {
@@ -250,19 +250,19 @@ func updateLiveData(agent *Entity) {
 		}
 	}
 	// nil = skipped because fresh cache exists, don't extend TTL
-	
+
 	// Tube stations
 	tubeArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanMetroStation", "🚇")
 	totalArrivals += len(tubeArrivals)
-	
+
 	// Rail stations (Overground, National Rail)
 	railArrivals := fetchTransportArrivals(agent.Lat, agent.Lon, "NaptanRailStation", "🚆")
 	totalArrivals += len(railArrivals)
-	
+
 	if totalArrivals > 0 {
 		log.Printf("[agent] %s refreshed %d arrivals", agent.Name, totalArrivals)
 	}
-	
+
 	// Update agent timestamp
 	if agentData := agent.GetAgentData(); agentData != nil {
 		now := time.Now()
@@ -381,10 +381,10 @@ out center 50;
 
 	var data struct {
 		Elements []struct {
-			Type   string            `json:"type"`
-			ID     int64             `json:"id"`
-			Lat    float64           `json:"lat"`
-			Lon    float64           `json:"lon"`
+			Type   string  `json:"type"`
+			ID     int64   `json:"id"`
+			Lat    float64 `json:"lat"`
+			Lon    float64 `json:"lon"`
 			Center *struct {
 				Lat float64 `json:"lat"`
 				Lon float64 `json:"lon"`
@@ -461,7 +461,7 @@ func ReverseGeocode(lat, lon float64) string {
 	json.NewDecoder(resp.Body).Decode(&result)
 
 	addr := result.Address
-	
+
 	// Get the local area name
 	var local string
 	if addr.Suburb != "" {
@@ -471,7 +471,7 @@ func ReverseGeocode(lat, lon float64) string {
 	} else if addr.Village != "" {
 		local = addr.Village
 	}
-	
+
 	// Get the larger area (city or county)
 	var larger string
 	if addr.City != "" && addr.City != local {
@@ -479,7 +479,7 @@ func ReverseGeocode(lat, lon float64) string {
 	} else if addr.County != "" && addr.County != local {
 		larger = addr.County
 	}
-	
+
 	// Combine: "Suburb, City" or just "City" if no suburb
 	if local != "" && larger != "" {
 		return local + ", " + larger
@@ -497,17 +497,17 @@ func ReverseGeocode(lat, lon float64) string {
 func processAwarenessIfDue(agent *Entity) {
 	state := GetAgentState(agent.ID)
 	obsLog := GetObservationLog()
-	
+
 	// Check if we should process
 	if !obsLog.ShouldProcess(agent.ID, state.ActiveUsers > 0) {
 		return
 	}
-	
+
 	pending := obsLog.GetPending(agent.ID)
 	if len(pending) == 0 {
 		return
 	}
-	
+
 	// Process awareness
 	items, err := ProcessAwareness(agent.ID, agent.Name, map[string]interface{}{
 		"active_users": state.ActiveUsers,
@@ -516,7 +516,7 @@ func processAwarenessIfDue(agent *Entity) {
 		log.Printf("[awareness] %s processing error: %v", agent.Name, err)
 		return
 	}
-	
+
 	if len(items) > 0 {
 		log.Printf("[awareness] %s surfacing %d items", agent.Name, len(items))
 		// Push to users in this area

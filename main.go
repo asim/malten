@@ -42,15 +42,15 @@ func serveFileWithVersion(w http.ResponseWriter, r *http.Request, staticFS http.
 		return
 	}
 	defer f.Close()
-	
+
 	data, err := io.ReadAll(f)
 	if err != nil {
 		http.Error(w, "Error reading file", 500)
 		return
 	}
-	
+
 	content := strings.ReplaceAll(string(data), "__VERSION__", version)
-	
+
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(content))
@@ -63,16 +63,16 @@ func serveIndexWithVersion(w http.ResponseWriter, r *http.Request, staticFS http
 		return
 	}
 	defer f.Close()
-	
+
 	data, err := io.ReadAll(f)
 	if err != nil {
 		http.Error(w, "Error reading file", 500)
 		return
 	}
-	
+
 	// Replace all ?v=XX with ?v={jsVersion}
 	html := versionRegex.ReplaceAllString(string(data), "?v="+jsVersion)
-	
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache") // Always revalidate index.html
 	w.Write([]byte(html))
@@ -80,7 +80,7 @@ func serveIndexWithVersion(w http.ResponseWriter, r *http.Request, staticFS http
 
 func handleGoGet(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
-	
+
 	// Determine the subpackage path
 	var subPkg, repoSuffix string
 	if path == "/" || path == "" {
@@ -93,7 +93,7 @@ func handleGoGet(w http.ResponseWriter, r *http.Request) {
 			repoSuffix = ""
 		}
 	}
-	
+
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprintf(w, goGetTemplate, subPkg, repoSuffix, subPkg, repoSuffix, repoSuffix, repoSuffix, subPkg)
 }
@@ -173,7 +173,7 @@ func buildPrayerNotification(lat, lon float64, now time.Time) *server.PushNotifi
 	}
 
 	// Set prayer time to today
-	prayerTime = time.Date(now.Year(), now.Month(), now.Day(), 
+	prayerTime = time.Date(now.Year(), now.Month(), now.Day(),
 		prayerTime.Hour(), prayerTime.Minute(), 0, 0, now.Location())
 
 	// Check if prayer is 8-12 minutes away (window for "10 min" reminder)
@@ -191,7 +191,7 @@ func buildPrayerNotification(lat, lon float64, now time.Time) *server.PushNotifi
 
 func main() {
 	flag.Parse()
-	
+
 	var staticFS http.FileSystem
 	if *webDir != "" {
 		// Dev mode: serve from disk
@@ -222,7 +222,7 @@ func main() {
 	server.SetNotificationBuilder(buildPushNotification)
 	server.SetWeatherNotificationBuilder(buildWeatherNotification)
 	server.SetPrayerNotificationBuilder(buildPrayerNotification)
-	
+
 	// Wire up callbacks for command package
 	command.GetBusNotifyCallback = pm.GetBusNotify
 	command.SetBusNotifyCallback = pm.SetBusNotify
@@ -265,28 +265,28 @@ func main() {
 			handleGoGet(w, r)
 			return
 		}
-		
+
 		path := r.URL.Path
-		
+
 		// For index.html, inject current JS version
 		if path == "/" || path == "/index.html" {
 			serveIndexWithVersion(w, r, staticFS, jsVersion)
 			return
 		}
-		
+
 		// For sw.js, inject version into cache name
 		if path == "/sw.js" {
 			serveFileWithVersion(w, r, staticFS, "/sw.js", jsVersion, "application/javascript")
 			return
 		}
-		
+
 		// No caching for HTML/JS/CSS - PWA caching caused too many issues
 		if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".html") || path == "/" {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			w.Header().Set("Pragma", "no-cache")
 			w.Header().Set("Expires", "0")
 		}
-		
+
 		http.FileServer(staticFS).ServeHTTP(w, r)
 	})
 

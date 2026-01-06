@@ -17,7 +17,7 @@ func handleWeb(ctx *Context, args []string) (string, error) {
 	if len(args) == 0 {
 		return "🔍 Web search: " + spatial.WebSearchStatus(), nil
 	}
-	
+
 	switch args[0] {
 	case "on":
 		spatial.EnableWebSearch()

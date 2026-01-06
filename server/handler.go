@@ -64,7 +64,6 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	// The HTTP response goes directly to the client
 	// WebSocket is for server-initiated messages (context changes, AI responses, etc)
 
-
 	// Build context for command dispatch
 	ctx := &command.Context{
 		Session: token,
@@ -108,7 +107,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Check for async mode
 	asyncMode := r.Form.Get("async") == "true"
-	
+
 	if asyncMode {
 		// Async mode: return immediately, push result via WebSocket
 		cmdID := generateCommandID()
@@ -117,7 +116,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 			"id":     cmdID,
 			"status": "queued",
 		})
-		
+
 		// Process command in background
 		go func() {
 			if result, handled := command.Dispatch(ctx); handled {
@@ -148,7 +147,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		}()
 		return
 	}
-	
+
 	// Sync mode (default): wait for result
 	if result, handled := command.Dispatch(ctx); handled {
 		if result != "" {
@@ -334,7 +333,6 @@ func GetStreamsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
 }
-
 
 func PostHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()

@@ -13,12 +13,11 @@ import (
 
 // DB is the spatial database
 type DB struct {
-	mu            sync.RWMutex
-	tree          *quadtree.QuadTree
-	store         quadtree.Store
-	entities      map[string]*quadtree.Point
-	eventLog      *EventLog
-
+	mu       sync.RWMutex
+	tree     *quadtree.QuadTree
+	store    quadtree.Store
+	entities map[string]*quadtree.Point
+	eventLog *EventLog
 }
 
 var (
@@ -95,7 +94,7 @@ func (d *DB) loadFromStore() error {
 
 	log.Printf("[db] Loading %d points from store", len(points))
 	var loaded, skipped, failed int
-	
+
 	for id, point := range points {
 		data := point.Data()
 		if m, ok := data.(map[string]interface{}); ok {
@@ -120,7 +119,7 @@ func (d *DB) loadFromStore() error {
 			loaded++
 		}
 	}
-	
+
 	log.Printf("[db] Loaded %d entities, skipped %d expired, %d failed to insert", loaded, skipped, failed)
 	return nil
 }
@@ -146,7 +145,7 @@ func (d *DB) Insert(entity *Entity) error {
 		oldX, oldY := existing.Coordinates()
 		removed := d.tree.Remove(existing)
 		if entity.Type == EntityArrival {
-			log.Printf("[db] Updating arrival %s: removed=%v (old coords: %.4f,%.4f new coords: %.4f,%.4f)", 
+			log.Printf("[db] Updating arrival %s: removed=%v (old coords: %.4f,%.4f new coords: %.4f,%.4f)",
 				entity.Name, removed, oldX, oldY, entity.Lat, entity.Lon)
 		}
 		delete(d.entities, entity.ID) // Ensure old reference is gone
@@ -157,7 +156,6 @@ func (d *DB) Insert(entity *Entity) error {
 		log.Printf("[db] FAILED to insert %s %s at (%.4f, %.4f)", entity.Type, entity.Name, entity.Lat, entity.Lon)
 		return fmt.Errorf("failed to insert into quadtree")
 	}
-
 
 	d.entities[entity.ID] = point
 
@@ -227,7 +225,7 @@ func (d *DB) QueryWithMaxAge(lat, lon, radiusMeters float64, entityType EntityTy
 	}
 
 	points := d.tree.KNearest(boundary, limit, filter)
-	
+
 	var results []*Entity
 	for _, p := range points {
 		if entity, ok := p.Data().(*Entity); ok {
@@ -313,7 +311,7 @@ func (d *DB) FindByName(lat, lon, radiusMeters float64, name string, limit int) 
 func (d *DB) GetByID(id string) *Entity {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	
+
 	if point, ok := d.entities[id]; ok {
 		if entity, ok := point.Data().(*Entity); ok {
 			if entity.ExpiresAt != nil && time.Now().After(*entity.ExpiresAt) {
@@ -329,12 +327,12 @@ func (d *DB) GetByID(id string) *Entity {
 func (d *DB) Delete(id string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	
+
 	if point, ok := d.entities[id]; ok {
 		d.tree.Remove(point)
 		delete(d.entities, id)
 		d.store.Delete(id)
-		
+
 		// Log event
 		if d.eventLog != nil {
 			d.eventLog.Log("entity.deleted", id, nil)
@@ -424,7 +422,7 @@ func (d *DB) GetNearestLocation(lat, lon, toleranceMeters float64) *Entity {
 	if len(points) == 0 {
 		return nil
 	}
-	
+
 	if entity, ok := points[0].Data().(*Entity); ok {
 		return entity
 	}
@@ -596,7 +594,10 @@ func (d *DB) CleanupStore() (expired int, duplicates int, err error) {
 
 	now := time.Now()
 	var toDelete []string
-	byStopID := make(map[string][]struct{ id string; updated time.Time })
+	byStopID := make(map[string][]struct {
+		id      string
+		updated time.Time
+	})
 
 	for id, point := range points {
 		data := point.Data()
@@ -627,7 +628,10 @@ func (d *DB) CleanupStore() (expired int, duplicates int, err error) {
 				stopID, _ = m["stop_id"].(string)
 			}
 			if stopID != "" {
-				byStopID[stopID] = append(byStopID[stopID], struct{ id string; updated time.Time }{id, entity.UpdatedAt})
+				byStopID[stopID] = append(byStopID[stopID], struct {
+					id      string
+					updated time.Time
+				}{id, entity.UpdatedAt})
 			}
 		}
 	}
@@ -670,7 +674,7 @@ func (d *DB) StartBackgroundCleanup(interval time.Duration) {
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			d.cleanupExpiredArrivals()
 		}
@@ -728,7 +732,7 @@ func (d *DB) rebuildTreeUnlocked() {
 	half := quadtree.NewPoint(90, 180, nil)
 	boundary := quadtree.NewAABB(center, half)
 	newTree := quadtree.New(boundary, 0, nil)
-	
+
 	// Re-insert all entities
 	count := 0
 	for _, point := range d.entities {
@@ -736,7 +740,7 @@ func (d *DB) rebuildTreeUnlocked() {
 			count++
 		}
 	}
-	
+
 	d.tree = newTree
 	log.Printf("[db] Rebuilt tree with %d entities", count)
 }

@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/sashabaranov/go-openai"
 	"malten.ai/command"
 	"malten.ai/spatial"
-	"github.com/sashabaranov/go-openai"
 )
 
 var (
@@ -304,12 +304,12 @@ func Prompt(systemPrompt string, messages []Message, userPrompt string) (string,
 	}
 
 	hasContext := strings.Contains(systemPrompt, "📍")
-	
+
 	// Check for directions - still need tool for routing even with context
 	lower := strings.ToLower(userPrompt)
 	needsDirections := strings.Contains(lower, "how do i get") || strings.Contains(lower, "directions to") ||
 		strings.Contains(lower, "walk to") || strings.Contains(lower, "route to")
-	
+
 	if needsDirections {
 		log.Printf("[AI] Directions query, extracting destination")
 		// Extract destination directly without going through selectTool
@@ -380,7 +380,7 @@ var contextPlaceTypes = map[string]bool{
 // isContextQuestion returns true if the question should be answered from location context
 func isContextQuestion(prompt string) bool {
 	lower := strings.ToLower(prompt)
-	
+
 	// Always-in-context: location, weather, buses, prayer
 	alwaysContext := []string{
 		"where am i", "my location", "what street", "what area",
@@ -394,11 +394,11 @@ func isContextQuestion(prompt string) bool {
 			return true
 		}
 	}
-	
+
 	// For "near me"/"nearby" queries, only match if it's a type we have in context
 	// "cafes near me" → context, "bowling near me" → tool
-	if strings.Contains(lower, "near me") || strings.Contains(lower, "nearby") || 
-	   strings.Contains(lower, "around me") || strings.Contains(lower, "close by") {
+	if strings.Contains(lower, "near me") || strings.Contains(lower, "nearby") ||
+		strings.Contains(lower, "around me") || strings.Contains(lower, "close by") {
 		words := strings.Fields(lower)
 		for _, w := range words {
 			if contextPlaceTypes[w] {
@@ -408,7 +408,7 @@ func isContextQuestion(prompt string) bool {
 		// Has "near me" but no recognized context type → needs tool
 		return false
 	}
-	
+
 	// Direct place type mention without "near me" (e.g., just "cafes?")
 	words := strings.Fields(lower)
 	for _, w := range words {
@@ -417,7 +417,7 @@ func isContextQuestion(prompt string) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -488,12 +488,12 @@ Examples:
 
 	if len(resp.Choices) == 0 {
 		return nil, errors.New("no response")
-	recordLLMCall(err)
+		recordLLMCall(err)
 	}
 
 	content := resp.Choices[0].Message.Content
 	log.Printf("[tool] LLM response: %s", content)
-	
+
 	// Parse JSON from response
 	var decision ToolDecision
 	if err := json.Unmarshal([]byte(content), &decision); err != nil {
@@ -603,7 +603,7 @@ func ChatNoContext(prompt string) (string, error) {
 
 	if len(resp.Choices) == 0 {
 		return "", errors.New("no response from AI")
-	recordLLMCall(err)
+		recordLLMCall(err)
 	}
 
 	return resp.Choices[0].Message.Content, nil

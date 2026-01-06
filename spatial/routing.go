@@ -16,27 +16,27 @@ type RouteStep struct {
 }
 
 type Route struct {
-	Steps       []RouteStep
-	TotalDist   float64 // meters
-	TotalTime   float64 // seconds
-	Summary     string
+	Steps     []RouteStep
+	TotalDist float64 // meters
+	TotalTime float64 // seconds
+	Summary   string
 }
 
 // GetWalkingDirections returns turn-by-turn walking directions
 func GetWalkingDirections(fromLat, fromLon, toLat, toLon float64) (*Route, error) {
 	url := fmt.Sprintf("%s/route/v1/foot/%f,%f;%f,%f?overview=false&steps=true",
 		osrmBaseURL, fromLon, fromLat, toLon, toLat)
-	
+
 	resp, err := OSRMGet(url)
 	if err != nil {
 		return nil, fmt.Errorf("routing failed: %v", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("routing API returned %d", resp.StatusCode)
 	}
-	
+
 	var data struct {
 		Code   string `json:"code"`
 		Routes []struct {
@@ -55,33 +55,33 @@ func GetWalkingDirections(fromLat, fromLon, toLat, toLon float64) (*Route, error
 			} `json:"legs"`
 		} `json:"routes"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("decode failed: %v", err)
 	}
-	
+
 	if data.Code != "Ok" || len(data.Routes) == 0 {
 		return nil, fmt.Errorf("no route found")
 	}
-	
+
 	route := data.Routes[0]
 	result := &Route{
 		TotalDist: route.Distance,
 		TotalTime: route.Duration,
 	}
-	
+
 	// Combine short steps, skip trivial ones
 	for _, leg := range route.Legs {
 		for _, step := range leg.Steps {
 			if step.Distance < 5 { // Skip very short steps
 				continue
 			}
-			
+
 			instruction := formatInstruction(step.Maneuver.Type, step.Maneuver.Modifier, step.Name)
 			if instruction == "" {
 				continue
 			}
-			
+
 			result.Steps = append(result.Steps, RouteStep{
 				Instruction: instruction,
 				Distance:    step.Distance,
@@ -90,10 +90,10 @@ func GetWalkingDirections(fromLat, fromLon, toLat, toLon float64) (*Route, error
 			})
 		}
 	}
-	
+
 	// Build summary
 	result.Summary = formatRouteSummary(result.TotalDist, result.TotalTime)
-	
+
 	return result, nil
 }
 
@@ -107,7 +107,7 @@ func formatInstruction(maneuverType, modifier, name string) string {
 		}
 		return "🚶 Start walking"
 	}
-	
+
 	// Direction emoji
 	var dir string
 	switch modifier {
@@ -134,7 +134,7 @@ func formatInstruction(maneuverType, modifier, name string) string {
 			dir = "➡️ " + strings.Title(maneuverType)
 		}
 	}
-	
+
 	if name != "" && name != "unnamed road" {
 		return fmt.Sprintf("%s onto %s", dir, name)
 	}
@@ -148,7 +148,7 @@ func formatRouteSummary(distMeters, durSeconds float64) string {
 	} else {
 		dist = fmt.Sprintf("%.0f m", distMeters)
 	}
-	
+
 	// Calculate walking time at 5 km/h (~83 m/min) instead of trusting OSRM
 	// OSRM demo server returns driving-speed times even for foot profile
 	mins := int(distMeters / 83)
@@ -173,20 +173,20 @@ func FormatDirectionsWithMap(route *Route, fromLat, fromLon, toLat, toLon float6
 	if route == nil {
 		return "No route found"
 	}
-	
+
 	// Very short distance - you're basically there
 	if route.TotalDist < 50 {
 		return fmt.Sprintf("You're already there! (%.0fm away)", route.TotalDist)
 	}
-	
+
 	if len(route.Steps) == 0 {
 		return "No route found"
 	}
-	
+
 	var lines []string
 	lines = append(lines, route.Summary)
 	lines = append(lines, "")
-	
+
 	// Add all steps
 	for i, step := range route.Steps {
 		distStr := ""
@@ -195,7 +195,7 @@ func FormatDirectionsWithMap(route *Route, fromLat, fromLon, toLat, toLon float6
 		}
 		lines = append(lines, fmt.Sprintf("%d. %s%s", i+1, step.Instruction, distStr))
 	}
-	
+
 	// Add Google Maps directions link
 	if fromLat != 0 && toLat != 0 {
 		mapURL := fmt.Sprintf("https://www.google.com/maps/dir/?api=1&origin=%.6f,%.6f&destination=%.6f,%.6f&travelmode=walking",
@@ -203,7 +203,7 @@ func FormatDirectionsWithMap(route *Route, fromLat, fromLon, toLat, toLon float6
 		lines = append(lines, "")
 		lines = append(lines, "🗺️ "+mapURL)
 	}
-	
+
 	return strings.Join(lines, "\n")
 }
 
@@ -215,37 +215,37 @@ func SearchOSM(query string, nearLat, nearLon float64) ([]*Entity, error) {
 		query,
 		nearLon-0.1, nearLat+0.1, nearLon+0.1, nearLat-0.1,
 	)
-	
+
 	resp, err := LocationGet(url)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	var results []struct {
-		DisplayName string  `json:"display_name"`
-		Lat         string  `json:"lat"`
-		Lon         string  `json:"lon"`
-		Type        string  `json:"type"`
-		Class       string  `json:"class"`
+		DisplayName string `json:"display_name"`
+		Lat         string `json:"lat"`
+		Lon         string `json:"lon"`
+		Type        string `json:"type"`
+		Class       string `json:"class"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
 		return nil, err
 	}
-	
+
 	var entities []*Entity
 	for _, r := range results {
 		var lat, lon float64
 		fmt.Sscanf(r.Lat, "%f", &lat)
 		fmt.Sscanf(r.Lon, "%f", &lon)
-		
+
 		// Extract short name from display_name (first part before comma)
 		name := r.DisplayName
 		if idx := strings.Index(name, ","); idx > 0 {
 			name = name[:idx]
 		}
-		
+
 		entities = append(entities, &Entity{
 			Type: EntityPlace,
 			Name: name,
@@ -258,6 +258,6 @@ func SearchOSM(query string, nearLat, nearLon float64) ([]*Entity, error) {
 			},
 		})
 	}
-	
+
 	return entities, nil
 }

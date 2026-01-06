@@ -22,11 +22,11 @@ func serveMapHTML(w http.ResponseWriter, r *http.Request) {
 
 // MapDataResponse contains spatial data for map rendering
 type MapDataResponse struct {
-	Bounds     *Bounds      `json:"bounds"`
-	Agents     []MapAgent   `json:"agents"`
-	Places     []MapPlace   `json:"places"`
-	Streets    []MapStreet  `json:"streets,omitempty"`
-	Weather    []MapWeather `json:"weather,omitempty"`
+	Bounds  *Bounds      `json:"bounds"`
+	Agents  []MapAgent   `json:"agents"`
+	Places  []MapPlace   `json:"places"`
+	Streets []MapStreet  `json:"streets,omitempty"`
+	Weather []MapWeather `json:"weather,omitempty"`
 }
 
 type Bounds struct {
@@ -173,7 +173,7 @@ func MapHandler(w http.ResponseWriter, r *http.Request) {
 	for _, s := range streetEntities {
 		var convertedPoints [][]float64
 		var length float64
-		
+
 		if sd := s.GetStreetData(); sd != nil {
 			convertedPoints = sd.Points
 			length = sd.Length
@@ -191,11 +191,11 @@ func MapHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		
+
 		if len(convertedPoints) < 2 {
 			continue
 		}
-		
+
 		mapStreets = append(mapStreets, MapStreet{
 			ID:     s.ID,
 			Name:   s.Name,

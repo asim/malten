@@ -9,12 +9,12 @@ import (
 // Context provides user context to commands
 type Context struct {
 	Session      string
-	Stream       string   // Geohash stream
+	Stream       string // Geohash stream
 	Lat          float64
 	Lon          float64
-	Accuracy     float64  // GPS accuracy in meters (0 if not provided)
-	ToLat        float64  // Destination lat (for directions)
-	ToLon        float64  // Destination lon (for directions)
+	Accuracy     float64 // GPS accuracy in meters (0 if not provided)
+	ToLat        float64 // Destination lat (for directions)
+	ToLon        float64 // Destination lon (for directions)
 	Input        string
 	PushMessages []string // Messages to push via websocket after command completes
 }
@@ -92,7 +92,7 @@ func GetMeta() []CommandMeta {
 // Returns (result, handled) - handled=false means fall through to AI
 func Dispatch(ctx *Context) (string, bool) {
 	input := strings.TrimSpace(ctx.Input)
-	
+
 	// Slash commands: /name args
 	if strings.HasPrefix(input, "/") {
 		parts := strings.Fields(input)
@@ -108,7 +108,7 @@ func Dispatch(ctx *Context) (string, bool) {
 		// Unknown slash command
 		return "❌ Unknown command: /" + name, true
 	}
-	
+
 	// Natural language: check each command's Match function
 	for _, cmd := range Registry {
 		if cmd.Match != nil {
@@ -122,7 +122,7 @@ func Dispatch(ctx *Context) (string, bool) {
 			}
 		}
 	}
-	
+
 	return "", false
 }
 

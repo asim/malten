@@ -113,7 +113,7 @@ func init() {
 					return "🚌 Bus notifications: OFF\n\nUse `/bus on` to enable.", nil
 				}
 			}
-			
+
 			// Default: show bus times
 			if ctx.Lat == 0 && ctx.Lon == 0 {
 				return "📍 No location. Enable location to get bus times.", nil
@@ -186,10 +186,10 @@ func init() {
 			if userCtx == "" {
 				return "📍 No location. Enable location.", nil
 			}
-			
+
 			var lines []string
 			ctxLines := strings.Split(userCtx, "\n")
-			
+
 			// Location
 			for _, line := range ctxLines {
 				if strings.HasPrefix(line, "📍") {
@@ -197,7 +197,7 @@ func init() {
 					break
 				}
 			}
-			
+
 			// Weather + Prayer
 			reWeather := regexp.MustCompile(`[☀⛅🌫🌧❄⛈🌡][^·\n]*°C`)
 			rePrayer := regexp.MustCompile(`🕌[^\n]+`)
@@ -211,13 +211,13 @@ func init() {
 			if len(weatherPrayer) > 0 {
 				lines = append(lines, strings.Join(weatherPrayer, " "))
 			}
-			
+
 			// Bus
 			rebus := regexp.MustCompile(`(\d+)\s*→\s*([^\s]+)\s+in\s+(\d+)m`)
 			if match := rebus.FindStringSubmatch(userCtx); len(match) > 0 {
 				lines = append(lines, "🚌 "+match[1]+" to "+match[2]+" in "+match[3]+"m")
 			}
-			
+
 			// First 2 cafes
 			recafe := regexp.MustCompile(`☕\s*\{([^}]+)\}`)
 			if match := recafe.FindStringSubmatch(userCtx); len(match) > 0 {
@@ -234,7 +234,7 @@ func init() {
 					lines = append(lines, "☕ "+strings.Join(names, ", "))
 				}
 			}
-			
+
 			if len(lines) == 0 {
 				return "No context available", nil
 			}

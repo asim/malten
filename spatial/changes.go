@@ -30,7 +30,7 @@ type ContextChanges struct {
 // DetectChanges compares old and new context, returns what changed meaningfully
 func DetectChanges(old, new *ContextData) *ContextChanges {
 	changes := &ContextChanges{}
-	
+
 	if old == nil {
 		// First context - show location
 		if new.Location != nil {
@@ -39,7 +39,7 @@ func DetectChanges(old, new *ContextData) *ContextChanges {
 		}
 		return changes
 	}
-	
+
 	// Location changed (street level)
 	if new.Location != nil && old.Location != nil {
 		oldStreet := extractStreet(old.Location.Name)
@@ -49,7 +49,7 @@ func DetectChanges(old, new *ContextData) *ContextChanges {
 			changes.NewLocation = newStreet
 		}
 	}
-	
+
 	// Prayer changed
 	if new.Prayer != nil && old.Prayer != nil {
 		if new.Prayer.Current != old.Prayer.Current {
@@ -57,7 +57,7 @@ func DetectChanges(old, new *ContextData) *ContextChanges {
 			changes.NewPrayer = new.Prayer.Display
 		}
 	}
-	
+
 	// Weather: only care about significant temp change (>3°) or condition change
 	if new.Weather != nil && old.Weather != nil {
 		tempDiff := new.Weather.Temp - old.Weather.Temp
@@ -66,17 +66,17 @@ func DetectChanges(old, new *ContextData) *ContextChanges {
 			changes.NewWeather = new.Weather.Condition
 		}
 	}
-	
+
 	// Rain warning: only if new
 	if new.Weather != nil && new.Weather.RainWarning != "" {
 		if old.Weather == nil || old.Weather.RainWarning != new.Weather.RainWarning {
 			changes.RainWarning = new.Weather.RainWarning
 		}
 	}
-	
+
 	// Bus arriving soon (would need bus info in context)
 	// TODO: implement when bus data is in ContextData
-	
+
 	return changes
 }
 
@@ -116,29 +116,29 @@ func GetContextWithChanges(session string, lat, lon, accuracy, speed float64) (*
 		old = entry.ctx
 	}
 	new := GetContextData(lat, lon)
-	
+
 	changes := DetectChanges(old, new)
 	SetSessionContext(session, new)
-	
+
 	var messages []string
-	
+
 	// Location changes are NOT pushed to timeline
 	// Location is state, visible in context card - not an event/alert
 	// Only arrival detection (stopping at a POI) triggers timeline messages
 	// That's handled separately in command/nearby.go detectArrival()
-	
+
 	if changes.PrayerChanged && changes.NewPrayer != "" {
 		messages = append(messages, fmt.Sprintf("🕌 %s", changes.NewPrayer))
 	}
-	
+
 	if changes.RainWarning != "" {
 		messages = append(messages, changes.RainWarning)
 	}
-	
+
 	if changes.WeatherChanged && changes.NewWeather != "" {
 		messages = append(messages, fmt.Sprintf("🌡️ %s", changes.NewWeather))
 	}
-	
+
 	return new, messages
 }
 

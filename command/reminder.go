@@ -16,7 +16,7 @@ func init() {
 		LoadingText: "Getting reminder...",
 		Handler: func(ctx *Context, args []string) (string, error) {
 			var r *spatial.Reminder
-			
+
 			// Check for specific reminder type
 			if len(args) > 0 {
 				key := strings.ToLower(args[0])
@@ -29,11 +29,11 @@ func init() {
 			} else {
 				r = spatial.GetDailyReminder()
 			}
-			
+
 			if r == nil {
 				return `{"error": "Reminder unavailable"}`, nil
 			}
-			
+
 			// Return JSON for client
 			return formatReminderJSON(r), nil
 		},

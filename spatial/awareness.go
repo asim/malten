@@ -14,23 +14,23 @@ import (
 
 // Observation represents something an agent noticed
 type Observation struct {
-	Time     time.Time              `json:"time"`
-	Type     string                 `json:"type"`
-	AgentID  string                 `json:"agent_id"`
-	AgentName string                `json:"agent_name"`
-	Data     map[string]interface{} `json:"data"`
-	Surfaced bool                   `json:"surfaced"`
+	Time      time.Time              `json:"time"`
+	Type      string                 `json:"type"`
+	AgentID   string                 `json:"agent_id"`
+	AgentName string                 `json:"agent_name"`
+	Data      map[string]interface{} `json:"data"`
+	Surfaced  bool                   `json:"surfaced"`
 }
 
 // Observation types
 const (
-	ObsWeatherChange    = "weather_change"
-	ObsWeatherWarning   = "weather_warning"
-	ObsNewPlace         = "new_place"
-	ObsDisruption       = "disruption"
-	ObsArrivalAnomaly   = "arrival_anomaly"
+	ObsWeatherChange     = "weather_change"
+	ObsWeatherWarning    = "weather_warning"
+	ObsNewPlace          = "new_place"
+	ObsDisruption        = "disruption"
+	ObsArrivalAnomaly    = "arrival_anomaly"
 	ObsPrayerApproaching = "prayer_approaching"
-	ObsNotableNearby    = "notable_nearby"
+	ObsNotableNearby     = "notable_nearby"
 )
 
 // ObservationLog accumulates observations per agent
@@ -140,7 +140,7 @@ type AwarenessItem struct {
 // ProcessAwareness runs the LLM filter on pending observations
 func ProcessAwareness(agentID, agentName string, userContext map[string]interface{}) ([]AwarenessItem, error) {
 	obsLog := GetObservationLog()
-	
+
 	pending := obsLog.GetPending(agentID)
 	if len(pending) == 0 {
 		return nil, nil
@@ -149,7 +149,7 @@ func ProcessAwareness(agentID, agentName string, userContext map[string]interfac
 	// Build observations summary
 	var obsSummary []string
 	for _, obs := range pending {
-		obsSummary = append(obsSummary, fmt.Sprintf("- %s: %s %v", 
+		obsSummary = append(obsSummary, fmt.Sprintf("- %s: %s %v",
 			obs.Time.Format("15:04"), obs.Type, obs.Data))
 	}
 
@@ -226,7 +226,7 @@ Respond ONLY with JSON array, nothing else.`,
 
 	// Parse response
 	var items []AwarenessItem
-	
+
 	// Find JSON array in response
 	start := strings.Index(content, "[")
 	end := strings.LastIndex(content, "]")

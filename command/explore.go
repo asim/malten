@@ -41,29 +41,29 @@ func handleExplore(ctx *Context, args []string) (string, error) {
 			status = "on"
 		}
 		stats := spatial.GetExplorerStats()
-		
+
 		// List exploring agents
 		var lines []string
 		lines = append(lines, fmt.Sprintf("🧭 Exploration mode: %s", status))
 		lines = append(lines, "")
-		
+
 		db := spatial.Get()
 		agents := db.ListAgents()
 		for _, agent := range agents {
 			steps, _, _, dist := spatial.GetAgentExplorationStats(agent)
 			if steps > 0 {
-				lines = append(lines, fmt.Sprintf("• %s: %d steps, %.0fm from home", 
+				lines = append(lines, fmt.Sprintf("• %s: %d steps, %.0fm from home",
 					agent.Name, steps, dist))
 			}
 		}
-		
+
 		if len(lines) == 2 {
 			lines = append(lines, "No agents have explored yet.")
 		}
-		
+
 		lines = append(lines, "")
 		lines = append(lines, fmt.Sprintf("Total steps: %d", stats["total_steps"]))
-		
+
 		return strings.Join(lines, "\n"), nil
 	default:
 		return "Usage: /explore [on|off|status]", nil

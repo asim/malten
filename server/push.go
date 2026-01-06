@@ -30,9 +30,9 @@ type PushUser struct {
 	Lon          float64           `json:"lon"`
 	LastPing     time.Time         `json:"last_ping"`
 	LastPush     time.Time         `json:"last_push"`
-	Timezone     *time.Location    `json:"-"` // Not persisted, recalculated from lon
+	Timezone     *time.Location    `json:"-"`                      // Not persisted, recalculated from lon
 	PushHistory  []PushHistoryItem `json:"push_history,omitempty"` // Recent push notifications
-	BusNotify    bool              `json:"bus_notify"`              // Whether to send bus push notifications (default: false)
+	BusNotify    bool              `json:"bus_notify"`             // Whether to send bus push notifications (default: false)
 	DailyPushed  map[string]string `json:"daily_pushed,omitempty"` // notifyType -> date string (YYYY-MM-DD)
 }
 
@@ -134,7 +134,7 @@ func (pm *PushManager) Subscribe(sessionID string, sub *PushSubscription) {
 	}
 	user.Subscription = sub
 	pm.mu.Unlock()
-	
+
 	pm.save()
 	log.Printf("[push] Subscription added for session %s", sessionID[:8])
 }
@@ -144,7 +144,7 @@ func (pm *PushManager) Unsubscribe(sessionID string) {
 	pm.mu.Lock()
 	delete(pm.users, sessionID)
 	pm.mu.Unlock()
-	
+
 	pm.save()
 	log.Printf("[push] Subscription removed for session %s", sessionID[:8])
 }
@@ -207,7 +207,7 @@ type PushNotification struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
 	Icon  string `json:"icon,omitempty"`
-	Tag   string `json:"tag,omitempty"`   // Replace previous with same tag
+	Tag   string `json:"tag,omitempty"` // Replace previous with same tag
 	Data  any    `json:"data,omitempty"`
 }
 
@@ -277,7 +277,7 @@ func (pm *PushManager) backgroundLoop() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		pm.checkAndPush()           // Bus/context updates for backgrounded users
+		pm.checkAndPush()                // Bus/context updates for backgrounded users
 		pm.checkScheduledNotifications() // Daily scheduled notifications
 	}
 }
@@ -431,7 +431,7 @@ func (pm *PushManager) ClearPushHistory(sessionID string) {
 // SetBusNotify sets bus notification preference for a session
 func (pm *PushManager) SetBusNotify(sessionID string, enabled bool) {
 	pm.mu.Lock()
-	
+
 	user, exists := pm.users[sessionID]
 	if !exists {
 		// Create a user entry even without push subscription
@@ -441,10 +441,10 @@ func (pm *PushManager) SetBusNotify(sessionID string, enabled bool) {
 		}
 		pm.users[sessionID] = user
 	}
-	
+
 	user.BusNotify = enabled
 	pm.mu.Unlock() // Release lock before save (save acquires its own lock)
-	
+
 	pm.save()
 	log.Printf("[push] Bus notifications %s for session %s", map[bool]string{true: "enabled", false: "disabled"}[enabled], sessionID[:8])
 }
@@ -511,11 +511,11 @@ func (pm *PushManager) canPushType(user *PushUser, notifyType string) bool {
 		now = now.In(user.Timezone)
 	}
 	today := now.Format("2006-01-02")
-	
+
 	if user.DailyPushed == nil {
 		return true
 	}
-	
+
 	lastDate, exists := user.DailyPushed[notifyType]
 	return !exists || lastDate != today
 }
@@ -524,18 +524,18 @@ func (pm *PushManager) canPushType(user *PushUser, notifyType string) bool {
 func (pm *PushManager) markPushed(user *PushUser, notifyType string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	
+
 	now := time.Now()
 	if user.Timezone != nil {
 		now = now.In(user.Timezone)
 	}
 	today := now.Format("2006-01-02")
-	
+
 	if user.DailyPushed == nil {
 		user.DailyPushed = make(map[string]string)
 	}
 	user.DailyPushed[notifyType] = today
-	
+
 	// Persist
 	pm.save()
 }
@@ -545,7 +545,7 @@ func (pm *PushManager) pushMorningWeather(user *PushUser) {
 	if buildNotificationCallback == nil {
 		return
 	}
-	
+
 	ctx := buildWeatherNotification(user.Lat, user.Lon)
 	if ctx != nil {
 		pm.SendPush(user.SessionID, ctx)
@@ -568,7 +568,7 @@ func (pm *PushManager) checkPrayerReminder(user *PushUser, now time.Time) {
 	if buildPrayerNotification == nil {
 		return
 	}
-	
+
 	notification := buildPrayerNotification(user.Lat, user.Lon, now)
 	if notification != nil {
 		pm.SendPush(user.SessionID, notification)
@@ -584,11 +584,10 @@ func SetWeatherNotificationBuilder(cb func(lat, lon float64) *PushNotification) 
 	buildWeatherNotification = cb
 }
 
-// SetPrayerNotificationBuilder sets the callback for prayer notifications  
+// SetPrayerNotificationBuilder sets the callback for prayer notifications
 func SetPrayerNotificationBuilder(cb func(lat, lon float64, now time.Time) *PushNotification) {
 	buildPrayerNotification = cb
 }
-
 
 // PushAwarenessToArea pushes awareness items to all users in an area
 func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emoji, Message string }) {
@@ -604,7 +603,7 @@ func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emo
 		if user.Lat == 0 && user.Lon == 0 {
 			continue
 		}
-		
+
 		dist := haversine(lat, lon, user.Lat, user.Lon)
 		if dist > 2.0 { // > 2km
 			continue

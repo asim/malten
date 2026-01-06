@@ -43,13 +43,13 @@ func handleRoute(ctx *Context, args []string) (string, error) {
 		if arg == "" {
 			continue
 		}
-		
+
 		// Try to parse as coordinates
 		parts := strings.Split(arg, ",")
 		if len(parts) != 2 {
 			return fmt.Sprintf("❌ Invalid waypoint '%s'. Use lat,lon format", arg), nil
 		}
-		
+
 		var lat, lon float64
 		_, err := fmt.Sscanf(strings.TrimSpace(parts[0]), "%f", &lat)
 		if err != nil {
@@ -59,7 +59,7 @@ func handleRoute(ctx *Context, args []string) (string, error) {
 		if err != nil {
 			return fmt.Sprintf("❌ Invalid longitude in '%s'", arg), nil
 		}
-		
+
 		waypoints = append(waypoints, spatial.Waypoint{
 			Lat:  lat,
 			Lon:  lon,

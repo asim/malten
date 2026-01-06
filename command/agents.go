@@ -23,38 +23,38 @@ func init() {
 func Agents() string {
 	db := spatial.Get()
 	agents := db.ListAgents()
-	
+
 	if len(agents) == 0 {
 		return "🤖 No agents running"
 	}
-	
+
 	var lines []string
 	lines = append(lines, fmt.Sprintf("🤖 %d agents", len(agents)))
 	lines = append(lines, "")
-	
+
 	for _, agent := range agents {
 		status := "idle"
 		if agentData := agent.GetAgentData(); agentData != nil && agentData.Status != "" {
 			status = agentData.Status
 		}
-		
+
 		// Get last update time
 		lastUpdate := agent.UpdatedAt
 		ago := time.Since(lastUpdate)
 		agoStr := formatDuration(ago)
-		
+
 		// Count entities this agent has indexed
 		agentID := agent.ID
 		places := countEntitiesByAgent(db, agentID, spatial.EntityPlace)
 		arrivals := countEntitiesByAgent(db, agentID, spatial.EntityArrival)
-		
+
 		line := fmt.Sprintf("%s - %s %s", agent.Name, status, agoStr)
 		if places > 0 || arrivals > 0 {
 			line += fmt.Sprintf("\n  📍 %d places, 🚏 %d stops", places, arrivals)
 		}
 		lines = append(lines, line)
 	}
-	
+
 	return strings.Join(lines, "\n")
 }
 

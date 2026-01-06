@@ -12,8 +12,8 @@ import (
 
 // ExternalClient wraps http.Client with rate limiting, stats, and logging
 type ExternalClient struct {
-	client      *http.Client
-	defaultAPI  string // Default API name for stats if not specified in request
+	client     *http.Client
+	defaultAPI string // Default API name for stats if not specified in request
 }
 
 // Global external client - use this for all external API calls
@@ -66,79 +66,79 @@ func (c *ExternalClient) Do(req *APIRequest) (*http.Response, error) {
 	if apiName == "" {
 		apiName = c.defaultAPI
 	}
-	
+
 	stats := GetStats()
-	
+
 	// Check for backoff due to previous errors
 	backoff := stats.GetBackoffDuration(apiName)
 	if backoff > 0 {
 		log.Printf("[http] %s: backing off %.1fs", apiName, backoff.Seconds())
 		time.Sleep(backoff)
 	}
-	
+
 	// Get per-API minimum interval (default 2s)
 	minInterval := apiLimiter.minInterval
 	if perAPI, ok := apiMinIntervals[apiName]; ok {
 		minInterval = perAPI
 	}
-	
+
 	// Rate limit - serialize calls to the same API
 	// Use a loop to handle contention properly
 	for {
 		apiLimiter.mu.Lock()
 		last, ok := apiLimiter.lastCall[apiName]
 		now := time.Now()
-		
+
 		if !ok || now.Sub(last) >= minInterval {
 			// We can proceed - mark our call time and release lock
 			apiLimiter.lastCall[apiName] = now
 			apiLimiter.mu.Unlock()
 			break
 		}
-		
+
 		// Need to wait - calculate wait time while holding lock
 		wait := minInterval - now.Sub(last)
 		apiLimiter.mu.Unlock()
-		
+
 		// Sleep then retry the loop (another goroutine may have gone)
 		time.Sleep(wait)
 	}
-	
+
 	// Record call attempt
 	stats.RecordCall(apiName)
 	start := time.Now()
-	
+
 	// Execute
 	resp, err := c.client.Do(req.Request)
 	duration := time.Since(start)
-	
+
 	// Log
 	status := "err"
 	if resp != nil {
 		status = fmt.Sprintf("%d", resp.StatusCode)
 	}
 	log.Printf("[http] %s %s %s (%dms)", apiName, req.Method, truncateURL(req.URL.String()), duration.Milliseconds())
-	
+
 	// Handle errors
 	if err != nil {
 		stats.RecordError(apiName, err)
 		return nil, err
 	}
-	
+
 	// Handle HTTP errors
 	if resp.StatusCode == 429 {
 		stats.RecordRateLimit(apiName)
 		err := fmt.Errorf("%s rate limited (429)", apiName)
 		return resp, err
 	}
-	
+
 	if resp.StatusCode >= 400 {
 		stats.RecordError(apiName, fmt.Errorf("HTTP %d", resp.StatusCode))
 		// Still return resp so caller can handle/read body
 	} else {
 		stats.RecordSuccess(apiName)
 	}
-	
+
 	_ = status // used in log above
 	return resp, nil
 }
@@ -150,11 +150,11 @@ func (c *ExternalClient) GetJSON(apiName, url string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	
+
 	return io.ReadAll(resp.Body)
 }
 
@@ -189,7 +189,7 @@ func OSMGet(url string) (*http.Response, error) {
 
 // OSMPost makes an OSM Overpass API POST request
 func OSMPost(url, query string) (*http.Response, error) {
-	return External.Post("osm", url, "application/x-www-form-urlencoded", 
+	return External.Post("osm", url, "application/x-www-form-urlencoded",
 		strings.NewReader("data="+neturl.QueryEscape(query)))
 }
 

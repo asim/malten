@@ -8,22 +8,22 @@ import (
 
 // APIStats tracks statistics for an API endpoint
 type APIStats struct {
-	Name           string
-	Calls          int64
-	Successes      int64
-	Errors         int64
-	RateLimitHits  int64
-	LastCall       time.Time
-	LastSuccess    time.Time
-	LastError      time.Time
-	LastErrorMsg   string
-	ConsecErrors   int // Consecutive errors (for backoff)
+	Name          string
+	Calls         int64
+	Successes     int64
+	Errors        int64
+	RateLimitHits int64
+	LastCall      time.Time
+	LastSuccess   time.Time
+	LastError     time.Time
+	LastErrorMsg  string
+	ConsecErrors  int // Consecutive errors (for backoff)
 }
 
 // SystemStats tracks overall system statistics
 type SystemStats struct {
-	mu       sync.RWMutex
-	APIs     map[string]*APIStats
+	mu        sync.RWMutex
+	APIs      map[string]*APIStats
 	StartTime time.Time
 }
 
@@ -41,11 +41,11 @@ func GetStats() *SystemStats {
 func (s *SystemStats) GetAPI(name string) *APIStats {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if api, ok := s.APIs[name]; ok {
 		return api
 	}
-	
+
 	api := &APIStats{Name: name}
 	s.APIs[name] = api
 	return api
@@ -96,11 +96,11 @@ func (s *SystemStats) GetBackoffDuration(name string) time.Duration {
 	s.mu.RLock()
 	consecErrors := api.ConsecErrors
 	s.mu.RUnlock()
-	
+
 	if consecErrors == 0 {
 		return 0
 	}
-	
+
 	// Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, max 60s
 	backoff := time.Duration(1<<uint(consecErrors-1)) * time.Second
 	if backoff > 60*time.Second {
@@ -113,20 +113,20 @@ func (s *SystemStats) GetBackoffDuration(name string) time.Duration {
 func (s *SystemStats) Summary() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	uptime := time.Since(s.StartTime)
-	
+
 	result := fmt.Sprintf("📊 System Stats (uptime: %s)\n\n", formatDuration(uptime))
-	
+
 	for name, api := range s.APIs {
 		successRate := float64(0)
 		if api.Calls > 0 {
 			successRate = float64(api.Successes) / float64(api.Calls) * 100
 		}
-		
+
 		result += fmt.Sprintf("**%s**\n", name)
 		result += fmt.Sprintf("  Calls: %d (%.1f%% success)\n", api.Calls, successRate)
-		
+
 		if api.RateLimitHits > 0 {
 			result += fmt.Sprintf("  Rate limits: %d\n", api.RateLimitHits)
 		}
@@ -145,7 +145,7 @@ func (s *SystemStats) Summary() string {
 		}
 		result += "\n"
 	}
-	
+
 	return result
 }
 

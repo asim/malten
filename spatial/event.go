@@ -2,13 +2,12 @@
 //
 // ARCHITECTURE (read ARCHITECTURE.md and claude.md "The Spacetime Model"):
 //
-//   events.jsonl  = cosmic ledger (facts about the world only)
-//   spatial.json  = materialized quadtree (rebuildable from events)
-//   localStorage  = user's private timeline (client-side)
+//	events.jsonl  = cosmic ledger (facts about the world only)
+//	spatial.json  = materialized quadtree (rebuildable from events)
+//	localStorage  = user's private timeline (client-side)
 //
 // RULE: Never persist private data (channel != "") to events.jsonl.
 // Private messages belong in the user's localStorage, not the cosmic ledger.
-//
 package spatial
 
 import (
@@ -129,7 +128,7 @@ func ReplayMessages(filename string) ([]MessageEvent, error) {
 	var messages []MessageEvent
 	cutoff := time.Now().Add(-24 * time.Hour)
 	scanner := bufio.NewScanner(f)
-	
+
 	// Increase scanner buffer for large lines
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 1024*1024)

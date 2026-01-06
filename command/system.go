@@ -20,11 +20,11 @@ func handleSystem(ctx *Context, args []string) (string, error) {
 	// Memory stats
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	// Entity counts
 	db := spatial.Get()
 	agents := db.ListAgents()
-	
+
 	var places, arrivals int
 	// Count by type (approximation from agents' areas)
 	for _, agent := range agents {
@@ -33,7 +33,7 @@ func handleSystem(ctx *Context, args []string) (string, error) {
 		a := db.Query(agent.Lat, agent.Lon, 500, spatial.EntityArrival, 50)
 		arrivals += len(a)
 	}
-	
+
 	result := fmt.Sprintf(`🖥️ **System Status**
 
 **Memory**
@@ -58,9 +58,9 @@ func handleSystem(ctx *Context, args []string) (string, error) {
 		places,
 		arrivals,
 	)
-	
+
 	// API stats
 	result += spatial.GetStats().Summary()
-	
+
 	return result, nil
 }

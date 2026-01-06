@@ -17,9 +17,9 @@ type SupplementaryCinema struct {
 }
 
 type SupplementaryData struct {
-	Source   string                `json:"source"`
-	Updated  string                `json:"updated"`
-	Cinemas  []SupplementaryCinema `json:"cinemas"`
+	Source  string                `json:"source"`
+	Updated string                `json:"updated"`
+	Cinemas []SupplementaryCinema `json:"cinemas"`
 }
 
 var supplementaryCinemas []SupplementaryCinema
@@ -36,19 +36,19 @@ func loadSupplementaryCinemas() {
 	}
 	dataDir := filepath.Join(filepath.Dir(filename), "..", "data")
 	cinemaFile := filepath.Join(dataDir, "cinemas.json")
-	
+
 	data, err := os.ReadFile(cinemaFile)
 	if err != nil {
 		log.Printf("[supplementary] Could not load cinemas.json: %v", err)
 		return
 	}
-	
+
 	var sd SupplementaryData
 	if err := json.Unmarshal(data, &sd); err != nil {
 		log.Printf("[supplementary] Could not parse cinemas.json: %v", err)
 		return
 	}
-	
+
 	supplementaryCinemas = sd.Cinemas
 	log.Printf("[supplementary] Loaded %d cinemas from %s (updated %s)", len(sd.Cinemas), sd.Source, sd.Updated)
 }
@@ -57,7 +57,7 @@ func loadSupplementaryCinemas() {
 func GetSupplementaryCinemas(lat, lon, radiusMeters float64) []*Entity {
 	var results []*Entity
 	log.Printf("[supplementary] Searching cinemas within %.0fm of %.4f,%.4f", radiusMeters, lat, lon)
-	
+
 	radiusKm := radiusMeters / 1000.0
 	for _, c := range supplementaryCinemas {
 		distKm := haversine(lat, lon, c.Lat, c.Lon)
@@ -83,7 +83,7 @@ func GetSupplementaryCinemas(lat, lon, radiusMeters float64) []*Entity {
 			results = append(results, entity)
 		}
 	}
-	
+
 	return results
 }
 

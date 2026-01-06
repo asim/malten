@@ -25,10 +25,10 @@ const AreaLockPrecision = 2
 // Areas are rounded to a grid to group nearby operations.
 func GetAreaLock(lat, lon float64) *sync.Mutex {
 	key := fmt.Sprintf("%.2f,%.2f", lat, lon)
-	
+
 	areaLocksMu.Lock()
 	defer areaLocksMu.Unlock()
-	
+
 	if lock, ok := areaLocks[key]; ok {
 		return lock
 	}
