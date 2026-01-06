@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v6 2026-01-06 pinch-zoom-fix -->
+<!-- v14 2026-01-06 dynamic-legend -->
 <html>
 <head>
     <meta charset="UTF-8">
@@ -179,13 +179,7 @@
     <div id="stats">Loading...</div>
     <button id="legend-toggle" onclick="toggleLegend()">ℹ️</button>
     <div id="legend">
-        <div class="legend-item"><span class="legend-emoji">🤖</span> Agent</div>
-        <div class="legend-item"><span class="legend-emoji">☕</span> Cafe</div>
-        <div class="legend-item"><span class="legend-emoji">🍴</span> Restaurant</div>
-        <div class="legend-item"><span class="legend-emoji">🏪</span> Shop</div>
-        <div class="legend-item"><span class="legend-emoji">🚏</span> Transport</div>
-        <div class="legend-item"><span class="legend-emoji">🏥</span> Health</div>
-        <div class="legend-item"><span class="legend-emoji">🎦</span> Entertainment</div>
+        <!-- Dynamic legend - populated based on visible places -->
     </div>
     <div id="tooltip"></div>
     <div id="place-popup">
@@ -200,8 +194,8 @@
         <button onclick="zoomOut()">−</button>
         <button onclick="centerOnUser()">◎</button>
         <button onclick="resetView()">⟲</button>
-        <button onclick="loadData()" title="Refresh">🔄</button>
-        <button id="liveBtn" onclick="toggleLive()" title="Live mode (5s refresh)">⏸️</button>
+        <button onclick="loadData(true)" title="Refresh">↻</button>
+        <button id="liveBtn" onclick="toggleLive()" title="Live mode">‖</button>
     </div>
     <div id="scale">
         <span id="scale-text">1 km</span>
@@ -231,7 +225,7 @@ let userSpeed = 0; // Speed in m/s
 let viewState = {
     centerLat: 51.45,
     centerLon: -0.35,
-    metersPerPixel: 50, // Start zoomed out, places appear at 12m/px or less
+    metersPerPixel: 5, // Start zoomed in for walkable view (~500m on screen)
     offsetX: 0,
     offsetY: 0,
     isDragging: false,
@@ -356,15 +350,7 @@ function draw() {
         });
     }
     
-    // Draw small marker circles for agents (not huge coverage circles)
-    mapData.agents.forEach(agent => {
-        const pos = latLonToXY(agent.lat, agent.lon);
-        // Small 20px circle regardless of zoom
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(66, 133, 244, 0.15)';
-        ctx.fill();
-    });
+    // Agents work invisibly - not rendered on map
     
     // Track drawn places for click detection
     renderedPlaces = [];
@@ -372,28 +358,32 @@ function draw() {
     // Reset globalAlpha before drawing places
     ctx.globalAlpha = 1.0;
     
-    // Show places at all zoom levels, adjust size/opacity based on zoom
-    // At high zoom (low m/px): large, full opacity
-    // At low zoom (high m/px): smaller, fade out
-    const showPlaces = viewState.metersPerPixel <= 50; // Show up to 50 m/px
+    // Show places - hide when very zoomed out, show more when zoomed in
+    // At 5 m/px (walkable): full detail
+    // At 15+ m/px: significantly reduce, only show major ones
+    // At 30+ m/px: hide all places
+    const showPlaces = viewState.metersPerPixel <= 25;
     if (showPlaces) {
-        // Calculate opacity: full at <=12 m/px, fade to 0.3 at 50 m/px
+        // Calculate opacity: full at <=6 m/px, fade to 0.5 at 25 m/px
         let opacity = 1.0;
-        if (viewState.metersPerPixel > 12) {
-            opacity = 1.0 - 0.7 * (viewState.metersPerPixel - 12) / (50 - 12);
-            opacity = Math.max(0.3, opacity);
+        if (viewState.metersPerPixel > 6) {
+            opacity = 1.0 - 0.5 * (viewState.metersPerPixel - 6) / (25 - 6);
+            opacity = Math.max(0.5, opacity);
         }
         ctx.globalAlpha = opacity;
         
-        // Font size: larger when zoomed in
-        const fontSize = Math.max(14, Math.min(36, 600 / viewState.metersPerPixel));
+        // Font size: smaller icons at all zoom levels
+        // At 5 m/px: 18px, at 25 m/px: 10px
+        const fontSize = Math.max(10, Math.min(18, 90 / viewState.metersPerPixel));
         ctx.font = fontSize + 'px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#000'; // Ensure black text for emojis
+        ctx.fillStyle = '#000';
         
-        // Spacing: tighter when zoomed in
-        const minSpacing = fontSize * 0.9;
+        // Spacing: MUCH more aggressive at zoom out - show fewer places
+        // At 5 m/px: tight spacing (1.5x font), at 25 m/px: very sparse (6x font)
+        const spacingMultiplier = 1.5 + 4.5 * (viewState.metersPerPixel - 5) / 20;
+        const minSpacing = fontSize * Math.max(1.5, spacingMultiplier);
         
         mapData.places.forEach(place => {
             const pos = latLonToXY(place.lat, place.lon);
@@ -421,24 +411,8 @@ function draw() {
         ctx.globalAlpha = 1.0;
     }
     
-    // Draw agents (larger, labeled)
-    ctx.font = '20px sans-serif';
-    ctx.fillStyle = '#000'; // Reset fill style for agents
-    mapData.agents.forEach(agent => {
-        const pos = latLonToXY(agent.lat, agent.lon);
-        if (pos.x < -30 || pos.x > canvas.width + 30 || pos.y < -30 || pos.y > canvas.height + 30) return;
-        
-        // Agent emoji (always visible)
-        ctx.fillText('🤖', pos.x, pos.y);
-        
-        // Agent label (only at medium zoom - not too far, not too close)
-        if (viewState.metersPerPixel > 3 && viewState.metersPerPixel < 50) {
-            ctx.font = '11px sans-serif';
-            ctx.fillStyle = '#333';
-            ctx.fillText(agent.name, pos.x, pos.y + 18);
-            ctx.font = '16px sans-serif';
-        }
-    });
+    // Agents work invisibly - like angels, they operate in the background
+    // Not rendered on map, but still doing their work
     
     // Draw user location marker
     if (userLat && userLon) {
@@ -597,8 +571,8 @@ function updateStats() {
     const streetCount = mapData.streets ? mapData.streets.length : 0;
     
     stats.innerHTML = `
-        <strong>Malten Spatial Index</strong><br>
-        Agents: ${mapData.agents.length}<br>
+        <strong>Map</strong><br>
+
         Places: ${mapData.places.length.toLocaleString()}<br>
         Streets: ${streetCount}<br>
         Visible: ${visibleCount.toLocaleString()}<br>
@@ -606,21 +580,57 @@ function updateStats() {
     `;
 }
 
-function loadData() {
-    // Load data centered on current view
-    const url = '/map?lat=' + viewState.centerLat + '&lon=' + viewState.centerLon + '&radius=30000';
+let loadingData = false;
+let lastLoadCenter = null;
+let lastLoadRadius = 0;
+
+function loadData(forceReload) {
+    // Calculate visible radius based on screen size and zoom
+    const screenDiagonal = Math.sqrt(canvas.width * canvas.width + canvas.height * canvas.height);
+    const visibleRadius = (screenDiagonal / 2) * viewState.metersPerPixel;
+    // Load 2x the visible area to allow some panning without reload
+    const loadRadius = Math.max(500, Math.min(30000, visibleRadius * 2));
+    
+    // Check if we need to reload (moved significantly or zoomed out)
+    if (!forceReload && lastLoadCenter && mapData) {
+        const dist = haversineDistance(viewState.centerLat, viewState.centerLon, lastLoadCenter.lat, lastLoadCenter.lon);
+        // Only reload if moved more than half the loaded radius, or zoomed out beyond loaded area
+        if (dist < lastLoadRadius * 0.3 && loadRadius <= lastLoadRadius * 1.5) {
+            return; // Use cached data
+        }
+    }
+    
+    if (loadingData) return;
+    loadingData = true;
+    
+    const url = '/map?lat=' + viewState.centerLat + '&lon=' + viewState.centerLon + '&radius=' + Math.round(loadRadius);
     fetch(url, {
         headers: { 'Accept': 'application/json' }
     })
         .then(r => r.json())
         .then(data => {
             mapData = data;
+            lastLoadCenter = { lat: viewState.centerLat, lon: viewState.centerLon };
+            lastLoadRadius = loadRadius;
+            loadingData = false;
             updateStats();
             draw();
         })
         .catch(err => {
+            loadingData = false;
             stats.innerHTML = 'Error loading map data';
         });
+}
+
+// Haversine distance in meters
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 // Zoom controls
@@ -630,33 +640,30 @@ function showPlacePopup(item, x, y) {
     
     document.getElementById('popup-emoji').textContent = emoji;
     document.getElementById('popup-name').textContent = item.name;
-    document.getElementById('popup-category').textContent = item.isAgent 
-        ? `Agent · ${item.poiCount || 0} places indexed`
-        : (item.category || 'Place');
+    // Format category: replace underscores with spaces, capitalize first letter
+    let category = item.category || 'Place';
+    category = category.replace(/_/g, ' ');
+    category = category.charAt(0).toUpperCase() + category.slice(1);
+    document.getElementById('popup-category').textContent = category;
     document.getElementById('popup-coords').textContent = 
         `${item.lat.toFixed(6)}, ${item.lon.toFixed(6)}`;
     
     // Build action buttons
     const actions = document.getElementById('popup-actions');
-    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lon}`;
-    const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lon}&travelmode=walking`;
+    // Include place name + coordinates for better Google Maps matching
+    const encodedName = encodeURIComponent(item.name);
+    const mapsUrl = `https://www.google.com/maps/search/${encodedName}/@${item.lat},${item.lon},17z`;
+    const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodedName}&destination_place_id=&travelmode=walking`;
     
     actions.innerHTML = `
         <a href="${mapsUrl}" target="_blank"><span>🗺️</span><span>Map</span></a>
         <a href="${directionsUrl}" target="_blank"><span>🚶</span><span>Directions</span></a>
     `;
     
-    // Position popup
-    let popupX = x + 20;
-    let popupY = y - 20;
-    
-    // Keep on screen
-    if (popupX + 250 > window.innerWidth) popupX = x - 250;
-    if (popupY + 200 > window.innerHeight) popupY = y - 180;
-    if (popupY < 10) popupY = 10;
-    
-    popup.style.left = popupX + 'px';
-    popup.style.top = popupY + 'px';
+    // Center popup on screen
+    popup.style.left = '50%';
+    popup.style.top = '50%';
+    popup.style.transform = 'translate(-50%, -50%)';
     popup.style.display = 'block';
     
     selectedPlace = item;
@@ -667,8 +674,74 @@ function hidePlacePopup() {
     selectedPlace = null;
 }
 
+// Readable names for categories
+const categoryNames = {
+    'cafe': 'Cafe',
+    'restaurant': 'Restaurant',
+    'fast_food': 'Fast food',
+    'pub': 'Pub',
+    'bar': 'Bar',
+    'pharmacy': 'Pharmacy',
+    'hospital': 'Hospital',
+    'clinic': 'Clinic',
+    'dentist': 'Dentist',
+    'doctors': 'Doctors',
+    'supermarket': 'Supermarket',
+    'convenience': 'Shop',
+    'bakery': 'Bakery',
+    'butcher': 'Butcher',
+    'station': 'Station',
+    'bus_stop': 'Bus stop',
+    'bus_station': 'Bus station',
+    'cinema': 'Cinema',
+    'theatre': 'Theatre',
+    'park': 'Park',
+    'library': 'Library',
+    'bank': 'Bank',
+    'atm': 'ATM',
+    'post_office': 'Post office',
+    'fuel': 'Fuel',
+    'parking': 'Parking',
+    'hotel': 'Hotel',
+    'place_of_worship': 'Place of worship',
+    'default': 'Other'
+};
+
 function toggleLegend() {
-    document.getElementById('legend').classList.toggle('show');
+    const legend = document.getElementById('legend');
+    legend.classList.toggle('show');
+    
+    // Update legend with visible categories when showing
+    if (legend.classList.contains('show')) {
+        updateLegend();
+    }
+}
+
+function updateLegend() {
+    // Count categories in rendered places
+    const categoryCounts = {};
+    for (const place of renderedPlaces) {
+        const cat = place.category || 'default';
+        categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+    }
+    
+    // Sort by count descending
+    const sorted = Object.entries(categoryCounts)
+        .sort((a, b) => b[1] - a[1]);
+    
+    // Build legend HTML
+    let html = '';
+    for (const [cat, count] of sorted) {
+        const emoji = getEmoji(cat);
+        const name = categoryNames[cat] || cat.replace(/_/g, ' ');
+        html += `<div class="legend-item"><span class="legend-emoji">${emoji}</span> ${name} (${count})</div>`;
+    }
+    
+    if (html === '') {
+        html = '<div class="legend-item">No places visible</div>';
+    }
+    
+    document.getElementById('legend').innerHTML = html;
 }
 
 function zoomIn() {
@@ -681,6 +754,7 @@ function zoomOut() {
     viewState.metersPerPixel = Math.min(500, viewState.metersPerPixel * 1.5);
     draw();
     updateStats();
+    loadData(); // May need more data when zooming out
 }
 
 function resetView() {
@@ -750,6 +824,8 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mouseup', (e) => {
     viewState.isDragging = false;
     canvas.style.cursor = 'grab';
+    // Check if we need to load more data after panning
+    loadData();
 });
 
 // Click to select place
@@ -771,19 +847,6 @@ canvas.addEventListener('click', (e) => {
         if (Math.sqrt(dx*dx + dy*dy) < place.radius + 10) {
             clicked = place;
             break;
-        }
-    }
-    
-    // Also check agents
-    if (!clicked && mapData) {
-        for (const agent of mapData.agents) {
-            const pos = latLonToXY(agent.lat, agent.lon);
-            const dx = x - pos.x;
-            const dy = y - pos.y;
-            if (Math.sqrt(dx*dx + dy*dy) < 15) {
-                clicked = {...agent, isAgent: true};
-                break;
-            }
         }
     }
     
@@ -842,22 +905,10 @@ function showTooltip(x, y) {
         }
     });
     
-    // Check agents
-    mapData.agents.forEach(agent => {
-        const pos = latLonToXY(agent.lat, agent.lon);
-        const dist = Math.sqrt(Math.pow(pos.x - x, 2) + Math.pow(pos.y - y, 2));
-        if (dist < minDist) {
-            minDist = dist;
-            nearest = { ...agent, isAgent: true };
-        }
-    });
+    // Agents work invisibly - no tooltip
     
     if (nearest) {
-        if (nearest.isAgent) {
-            tooltip.innerHTML = `<strong>🤖 ${nearest.name}</strong><br>Status: ${nearest.status}<br>POIs: ${nearest.poiCount}`;
-        } else {
-            tooltip.innerHTML = `<strong>${getEmoji(nearest.category)} ${nearest.name}</strong><br>${nearest.category}`;
-        }
+        tooltip.innerHTML = `<strong>${getEmoji(nearest.category)} ${nearest.name}</strong><br>${nearest.category}`;
         tooltip.style.display = 'block';
         tooltip.style.left = (x + 15) + 'px';
         tooltip.style.top = (y + 15) + 'px';
@@ -966,6 +1017,9 @@ canvas.addEventListener('touchend', e => {
         const y = touchStartY - rect.top;
         handleTap(x, y);
     }
+    
+    // Check if we need to load more data after panning/zooming
+    loadData();
 });
 
 // Handle tap on place or agent
@@ -978,19 +1032,6 @@ function handleTap(x, y) {
         if (Math.sqrt(dx*dx + dy*dy) < place.radius + 15) {
             tapped = place;
             break;
-        }
-    }
-    
-    // Also check agents
-    if (!tapped && mapData) {
-        for (const agent of mapData.agents) {
-            const pos = latLonToXY(agent.lat, agent.lon);
-            const dx = x - pos.x;
-            const dy = y - pos.y;
-            if (Math.sqrt(dx*dx + dy*dy) < 20) {
-                tapped = {...agent, isAgent: true};
-                break;
-            }
         }
     }
     
@@ -1054,20 +1095,37 @@ if (navigator.geolocation) {
 }
 
 // Device orientation for compass heading
-// Only use compass when stationary - GPS heading is more reliable when moving
+let lastCompassDraw = 0;
 if (window.DeviceOrientationEvent) {
     window.addEventListener('deviceorientation', e => {
+        let newHeading = null;
         // webkitCompassHeading is iOS (absolute, 0 = North)
         if (e.webkitCompassHeading !== undefined) {
-            compassHeading = e.webkitCompassHeading;
+            newHeading = e.webkitCompassHeading;
         } else if (e.absolute && e.alpha !== null) {
-            // Android with absolute orientation: alpha is degrees from North
-            // alpha increases counter-clockwise, so we invert
-            compassHeading = (360 - e.alpha) % 360;
+            // Android with absolute orientation
+            newHeading = (360 - e.alpha) % 360;
         }
-        // Note: we don't draw() here - let GPS position updates trigger redraw
-        // This prevents compass jitter from causing constant redraws
-        // Compass heading will be used on next GPS update if stationary
+        
+        if (newHeading !== null) {
+            const oldHeading = compassHeading;
+            compassHeading = newHeading;
+            
+            // Update userHeading when stationary
+            if (userSpeed < 1) {
+                userHeading = compassHeading;
+            }
+            
+            // Redraw if heading changed significantly (>5 degrees) and not too frequent
+            const now = Date.now();
+            if (oldHeading !== null && now - lastCompassDraw > 100) {
+                const diff = Math.abs(newHeading - oldHeading);
+                if (diff > 5 && diff < 355) {
+                    lastCompassDraw = now;
+                    draw();
+                }
+            }
+        }
     });
 }
 
@@ -1080,13 +1138,13 @@ function toggleLive() {
     const btn = document.getElementById('liveBtn');
     
     if (liveMode) {
-        btn.textContent = '▶️';
+        btn.textContent = '▶';
         btn.style.background = '#e8f5e9';
         // Refresh every 5 seconds in live mode
         liveInterval = setInterval(loadData, 5000);
         loadData(); // Immediate refresh
     } else {
-        btn.textContent = '⏸️';
+        btn.textContent = '‖';
         btn.style.background = '';
         if (liveInterval) {
             clearInterval(liveInterval);

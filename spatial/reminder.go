@@ -11,14 +11,34 @@ import (
 
 // Reminder holds the daily reminder from reminder.dev
 type Reminder struct {
-	Date    string            `json:"date"`
-	Hijri   string            `json:"hijri"`
-	Verse   string            `json:"verse"`
-	Name    string            `json:"name"`
-	Hadith  string            `json:"hadith"`
-	Message string            `json:"message"`
-	Links   map[string]string `json:"links"`
-	Updated string            `json:"updated"`
+	Date       string            `json:"date"`
+	Hijri      string            `json:"hijri"`
+	Verse      string            `json:"verse"`
+	Name       string            `json:"name"`
+	NameNumber int               `json:"name_number,omitempty"` // For linking to reminder.dev/name/{number}
+	Hadith     string            `json:"hadith"`
+	Message    string            `json:"message"`
+	Links      map[string]string `json:"links"`
+	Updated    string            `json:"updated"`
+}
+
+// GetNameNumber extracts the name number from the Links map or returns the NameNumber field
+func (r *Reminder) GetNameNumber() int {
+	if r.NameNumber > 0 {
+		return r.NameNumber
+	}
+	// Try to extract from links.name (e.g., "/names/31" -> 31)
+	if nameLink, ok := r.Links["name"]; ok {
+		var num int
+		if _, err := fmt.Sscanf(nameLink, "/names/%d", &num); err == nil {
+			return num
+		}
+		// Also try /name/ format
+		if _, err := fmt.Sscanf(nameLink, "/name/%d", &num); err == nil {
+			return num
+		}
+	}
+	return 0
 }
 
 // Surah holds a chapter from the Quran
@@ -314,7 +334,8 @@ func getNameReminder(number int) *Reminder {
 	}
 	
 	return &Reminder{
-		Name: fmt.Sprintf("%s - %s - %s\n\n%s", n.English, n.Arabic, n.Meaning, n.Description),
+		Name:       fmt.Sprintf("%s - %s - %s\n\n%s", n.English, n.Arabic, n.Meaning, n.Description),
+		NameNumber: number,
 	}
 }
 

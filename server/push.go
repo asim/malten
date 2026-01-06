@@ -33,6 +33,7 @@ type PushUser struct {
 	Timezone     *time.Location    `json:"-"` // Not persisted, recalculated from lon
 	PushHistory  []PushHistoryItem `json:"push_history,omitempty"` // Recent push notifications
 	BusNotify    bool              `json:"bus_notify"`              // Whether to send bus push notifications (default: false)
+	DailyPushed  map[string]string `json:"daily_pushed,omitempty"` // notifyType -> date string (YYYY-MM-DD)
 }
 
 // PushHistoryItem represents a sent push notification
@@ -495,12 +496,8 @@ func (pm *PushManager) checkScheduledNotifications() {
 			}
 		}
 
-		// Ad-Duha: 10:00-10:05am
-		if hour == 10 && minute < 5 {
-			if pm.canPushType(user, NotifyDuha) {
-				pm.pushDuha(user)
-			}
-		}
+		// Ad-Duha: Handled by client-side prayer reminder system
+		// Don't send via push to avoid duplicates
 
 		// Prayer reminders: check if any prayer is 10 min away
 		pm.checkPrayerReminder(user, now)
@@ -509,13 +506,38 @@ func (pm *PushManager) checkScheduledNotifications() {
 
 // canPushType checks if we can push this type (max once per day per type)
 func (pm *PushManager) canPushType(user *PushUser, notifyType string) bool {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	now := time.Now()
+	if user.Timezone != nil {
+		now = now.In(user.Timezone)
+	}
+	today := now.Format("2006-01-02")
 	
-	// Use LastPush date + type to track daily notifications
-	// For simplicity, we'll use a map stored in memory (resets on restart)
-	// TODO: persist this if needed
-	return true // For now, rely on the 5-minute window
+	if user.DailyPushed == nil {
+		return true
+	}
+	
+	lastDate, exists := user.DailyPushed[notifyType]
+	return !exists || lastDate != today
+}
+
+// markPushed marks a notification type as sent today
+func (pm *PushManager) markPushed(user *PushUser, notifyType string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	
+	now := time.Now()
+	if user.Timezone != nil {
+		now = now.In(user.Timezone)
+	}
+	today := now.Format("2006-01-02")
+	
+	if user.DailyPushed == nil {
+		user.DailyPushed = make(map[string]string)
+	}
+	user.DailyPushed[notifyType] = today
+	
+	// Persist
+	pm.save()
 }
 
 // pushMorningWeather sends morning weather notification
@@ -527,6 +549,7 @@ func (pm *PushManager) pushMorningWeather(user *PushUser) {
 	ctx := buildWeatherNotification(user.Lat, user.Lon)
 	if ctx != nil {
 		pm.SendPush(user.SessionID, ctx)
+		pm.markPushed(user, NotifyMorningWeather)
 	}
 }
 
@@ -537,6 +560,7 @@ func (pm *PushManager) pushDuha(user *PushUser) {
 		Body:  "By the morning sunlight, and the night when it falls still... (93:1-2)",
 		Tag:   "duha",
 	})
+	pm.markPushed(user, NotifyDuha)
 }
 
 // checkPrayerReminder checks if any prayer is ~10 min away

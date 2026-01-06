@@ -212,8 +212,9 @@ func main() {
 	// Start background cleanup every 5 minutes (only cleans expired arrivals)
 	spatial.Get().StartBackgroundCleanup(5 * time.Minute)
 
-	// Start the courier agent loop (for connecting areas)
-	spatial.StartCourierLoop()
+	// Start courier loops (local and regional)
+	spatial.StartCourierLoop()         // Original courier for backward compat
+	spatial.StartRegionalCourierLoop() // Regional couriers for global coverage
 
 	// Initialize push notifications
 	pm := server.GetPushManager()

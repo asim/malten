@@ -63,6 +63,7 @@ input:focus { outline: none; }
 #bottom-fixed form {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 #bottom-fixed input {
@@ -71,6 +72,20 @@ input:focus { outline: none; }
   background: transparent;
   border: none;
   padding: 8px 0;
+}
+
+#camera-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  padding: 4px 8px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+#camera-btn:hover, #camera-btn:active {
+  opacity: 1;
 }
 
 /* === CARDS (unified) === */
@@ -357,4 +372,166 @@ input:focus { outline: none; }
 .card.reminder {
   background: #fff8e1;
   border-left: 3px solid #ffc107;
+}
+
+/* === PHOTO CARDS === */
+.card-photo {
+  background: #f0f4f8;
+  border-left: 3px solid #4a90d9;
+}
+
+.photo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.photo-thumbnail {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  cursor: pointer;
+  object-fit: cover;
+}
+
+.photo-caption {
+  font-size: 14px;
+  color: #333;
+  margin-top: 4px;
+}
+
+.photo-location {
+  font-size: 12px;
+  color: #666;
+}
+
+.photo-overlay-caption {
+  font-size: 16px;
+  color: #fff;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+/* Fullscreen photo overlay */
+.photo-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.9);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.photo-full {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.photo-overlay-info {
+  color: white;
+  text-align: center;
+  margin-top: 16px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.photo-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 28px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.photo-close:hover {
+  opacity: 1;
+}
+
+/* Photo compose overlay */
+.photo-compose-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.95);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.photo-compose {
+  background: #fff;
+  border-radius: 12px;
+  max-width: 400px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.photo-compose-preview {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+}
+
+.photo-compose-caption {
+  width: 100%;
+  border: none;
+  padding: 12px 16px;
+  font-size: 16px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.photo-compose-caption::placeholder {
+  color: #999;
+}
+
+.photo-compose-location {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #666;
+  border-top: 1px solid #eee;
+}
+
+.photo-compose-buttons {
+  display: flex;
+  border-top: 1px solid #eee;
+}
+
+.photo-compose-buttons button {
+  flex: 1;
+  padding: 14px;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  background: #fff;
+}
+
+.photo-compose-cancel {
+  color: #666;
+  border-right: 1px solid #eee;
+}
+
+.photo-compose-post {
+  color: #007AFF;
+  font-weight: 600;
+}
+
+.photo-compose-buttons button:active {
+  background: #f5f5f5;
 }

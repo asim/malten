@@ -1,8 +1,10 @@
 package spatial
 
 import (
+	"encoding/json"
 	"log"
 	"math"
+	"os"
 	"sort"
 	"time"
 )
@@ -22,10 +24,19 @@ type CourierState struct {
 }
 
 var courierState *CourierState
+const courierStateFile = "courier_state.json"
 
 // InitCourier initializes the courier agent
 func InitCourier() *CourierState {
 	if courierState != nil {
+		return courierState
+	}
+	
+	// Try to load from file first
+	if loaded := loadCourierState(); loaded != nil {
+		courierState = loaded
+		log.Printf("[courier] restored state: enabled=%v, trips=%d, walked=%.1fkm",
+			courierState.Enabled, courierState.TripsComplete, courierState.MetersWalked/1000)
 		return courierState
 	}
 	
@@ -72,6 +83,7 @@ func EnableCourier() {
 	}
 	if courierState != nil {
 		courierState.Enabled = true
+		saveCourierState()
 		log.Printf("[courier] enabled")
 	}
 }
@@ -80,6 +92,7 @@ func EnableCourier() {
 func DisableCourier() {
 	if courierState != nil {
 		courierState.Enabled = false
+		saveCourierState()
 		log.Printf("[courier] disabled")
 	}
 }
@@ -263,6 +276,10 @@ func walkCourierRoute(db *DB) bool {
 		// Clear route so we pick a new destination
 		courierState.Route = nil
 		courierState.RouteIndex = 0
+		saveCourierState()
+	} else if courierState.RouteIndex%20 == 0 {
+		// Save periodically during long routes
+		saveCourierState()
 	}
 	
 	return true
@@ -316,6 +333,35 @@ func GetCourierStats() map[string]interface{} {
 	}
 	
 	return stats
+}
+
+// loadCourierState loads courier state from file
+func loadCourierState() *CourierState {
+	data, err := os.ReadFile(courierStateFile)
+	if err != nil {
+		return nil
+	}
+	var state CourierState
+	if err := json.Unmarshal(data, &state); err != nil {
+		log.Printf("[courier] failed to parse state file: %v", err)
+		return nil
+	}
+	return &state
+}
+
+// saveCourierState saves courier state to file
+func saveCourierState() {
+	if courierState == nil {
+		return
+	}
+	data, err := json.MarshalIndent(courierState, "", "  ")
+	if err != nil {
+		log.Printf("[courier] failed to marshal state: %v", err)
+		return
+	}
+	if err := os.WriteFile(courierStateFile, data, 0644); err != nil {
+		log.Printf("[courier] failed to save state: %v", err)
+	}
 }
 
 // StartCourierLoop starts the background courier loop

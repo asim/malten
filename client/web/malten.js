@@ -163,6 +163,7 @@ var state = {
                     this.timeline = [];
                     this.savedPlaces = s.savedPlaces || {};  // Preserve saved places
                     this.steps = s.steps || { count: 0, date: null };  // Preserve steps
+                    this.photos = s.photos || [];  // Preserve photos
                     this.save();
                     return;
                 }
@@ -179,6 +180,7 @@ var state = {
                 this.steps = s.steps || { count: 0, date: null };
                 this.reminderDate = s.reminderDate || null;
                 this.prayerReminders = s.prayerReminders || {};
+                this.photos = s.photos || [];
                 // Prune old messages on load (24 hour retention)
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.timeline = this.timeline.filter(function(c) { return c.time > cutoff; });
@@ -187,22 +189,33 @@ var state = {
         } catch(e) {}
     },
     save: function() {
-        localStorage.setItem('malten_state', JSON.stringify({
-            version: this.version,
-            lat: this.lat,
-            lon: this.lon,
-            context: this.context,
-            contextTime: this.contextTime,
-            contextExpanded: this.contextExpanded,
-            locationHistory: this.locationHistory.slice(-20),
-            lastBusStop: this.lastBusStop,
-            timeline: this.timeline,
-            checkedIn: this.checkedIn,
-            savedPlaces: this.savedPlaces,
-            steps: this.steps,
-            reminderDate: this.reminderDate,
-            prayerReminders: this.prayerReminders
-        }));
+        try {
+            localStorage.setItem('malten_state', JSON.stringify({
+                version: this.version,
+                lat: this.lat,
+                lon: this.lon,
+                context: this.context,
+                contextTime: this.contextTime,
+                contextExpanded: this.contextExpanded,
+                locationHistory: this.locationHistory.slice(-20),
+                lastBusStop: this.lastBusStop,
+                timeline: this.timeline,
+                checkedIn: this.checkedIn,
+                savedPlaces: this.savedPlaces,
+                steps: this.steps,
+                reminderDate: this.reminderDate,
+                prayerReminders: this.prayerReminders,
+                photos: this.photos
+            }));
+        } catch(e) {
+            console.error('Failed to save state:', e);
+            // If quota exceeded, try removing old photos
+            if (e.name === 'QuotaExceededError' && this.photos && this.photos.length > 0) {
+                console.warn('Quota exceeded, removing oldest photo');
+                this.photos.shift();
+                this.save(); // Retry
+            }
+        }
     },
 
     setLocation: function(lat, lon) {
@@ -306,6 +319,7 @@ var state = {
     steps: { count: 0, date: null },  // Daily step counter
     reminderDate: null,  // Last date daily reminder was shown (YYYY-MM-DD)
     prayerReminders: {},  // Track which prayer reminders shown today: {fajr: '2026-01-04', ...}
+    photos: [],  // Captured photos with location: [{id, dataUrl, lat, lon, time, location}]
     motionDetected: false,  // Movement detected via accelerometer while GPS stuck
     
     // Check if user has manually checked in to a location
@@ -482,6 +496,9 @@ function renderTimelineItem(item) {
     } else if (type === 'reminder') {
         // Reminder - preserve HTML (links are already in text)
         html = item.text.replace(/\n/g, '<br>');
+    } else if (type === 'photo') {
+        // Photo - already contains HTML with img tag
+        html = item.text;
     } else {
         html = makeCheckInClickable(item.text).replace(/\n/g, '<br>');
     }
@@ -513,6 +530,7 @@ function renderTimelineItem(item) {
 // Determine item type from text
 function getTimelineType(text) {
     if (!text) return 'default';
+    if (text.indexOf('photo-card') >= 0) return 'photo';
     if (text.indexOf('🔔') >= 0) return 'notification'; // Push notifications
     if (text.indexOf('🚶') >= 0 || text.indexOf('🚗') >= 0 || text.indexOf('📍 Entered') >= 0) return 'movement';
     if (text.indexOf('🚏') >= 0 || text.indexOf('🚌') >= 0) return 'transport';
@@ -823,6 +841,18 @@ function submitCommand() {
             });
             msg += '\nUse /checkin [name] or /delete [name]';
             addToTimeline(msg);
+        }
+        return false;
+    }
+    
+    // Handle photos command - list/manage captured photos
+    if (prompt.match(/^\/?photos$/i)) {
+        form.elements["prompt"].value = '';
+        var photos = state.photos || [];
+        if (photos.length === 0) {
+            addToTimeline('📷 No photos captured.\nTap the camera button to take a photo.');
+        } else {
+            addToTimeline('📷 ' + photos.length + ' photos captured.\nPhotos appear in your timeline with location.');
         }
         return false;
     }
@@ -1545,7 +1575,14 @@ function displayReminderCard(r) {
         var nameParts = r.name.split('\n\n');
         var title = nameParts[0];
         var desc = nameParts[1] ? nameParts[1].substring(0, 150) + '...' : '';
-        text = '📿 ' + title;
+        
+        // Make title a link if we have the name number
+        if (r.name_number) {
+            link = 'https://reminder.dev/name/' + r.name_number;
+            text = '📿 <a href="' + link + '" target="_blank" class="reminder-link">' + title + '</a>';
+        } else {
+            text = '📿 ' + title;
+        }
         if (desc) {
             text += '\n' + desc;
         }
@@ -1945,13 +1982,14 @@ $(document).on('click touchend', '.directions-link', function(e) {
 // Show places as a card in the timeline
 
 function scrollToBottom() {
+    // Use longer delay to ensure layout is complete (context card may be animating)
     setTimeout(function() {
-        // Try scrollIntoView on last message
-        var messages = document.getElementById('messages');
-        if (messages && messages.lastElementChild) {
-            messages.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        var messagesArea = document.getElementById('messages-area');
+        if (messagesArea) {
+            // Scroll the container to its maximum scroll position
+            messagesArea.scrollTop = messagesArea.scrollHeight;
         }
-    }, 100);
+    }, 300);
 }
 
 function showLoading() {
@@ -2097,36 +2135,64 @@ function checkIfMoved() {
 
 // Refresh location without showing "Acquiring" message
 function silentLocationRefresh() {
-    if (!navigator.geolocation || !state.hasLocation()) {
-        getLocationAndContext();
+    if (!navigator.geolocation) {
         return;
     }
     
+    // Immediately refresh with current known location (for fresh bus times etc)
+    // Then update again if GPS gives us a new position
+    if (state.hasLocation()) {
+        var loc = state.getEffectiveLocation();
+        var params = {
+            prompt: '/ping',
+            stream: getStream(),
+            lat: loc.lat,
+            lon: loc.lon
+        };
+        if (loc.isCheckedIn) {
+            params.checkin = loc.name;
+        }
+        $.post(commandUrl, params).done(function(data) {
+            if (data) {
+                var ctx = typeof data === 'string' ? JSON.parse(data) : data;
+                state.setContext(ctx);
+                displayContext(ctx);
+            }
+        });
+    }
+    
+    // Also request fresh GPS position - if it differs significantly, will trigger another update
     navigator.geolocation.getCurrentPosition(
         function(pos) {
+            var oldLat = state.lat, oldLon = state.lon;
             state.setLocation(pos.coords.latitude, pos.coords.longitude);
-            // Ping server for fresh context - use check-in location if set
-            var loc = state.getEffectiveLocation();
-            var params = {
-                prompt: '/ping',
-                stream: getStream(),
-                lat: loc.lat,
-                lon: loc.lon
-            };
-            if (loc.isCheckedIn) {
-                params.checkin = loc.name;
-            }
-            $.post(commandUrl, params).done(function(data) {
-                if (data) {
-                    var ctx = typeof data === 'string' ? JSON.parse(data) : data;
-                    state.setContext(ctx);
-                    displayContext(ctx);
+            
+            // Only ping again if position changed significantly (>50m)
+            var dist = haversineDistance(oldLat, oldLon, pos.coords.latitude, pos.coords.longitude);
+            if (dist > 50) {
+                debugLog('GPS position changed by ' + Math.round(dist) + 'm, refreshing again');
+                var loc = state.getEffectiveLocation();
+                var params = {
+                    prompt: '/ping',
+                    stream: getStream(),
+                    lat: loc.lat,
+                    lon: loc.lon
+                };
+                if (loc.isCheckedIn) {
+                    params.checkin = loc.name;
                 }
-            });
+                $.post(commandUrl, params).done(function(data) {
+                    if (data) {
+                        var ctx = typeof data === 'string' ? JSON.parse(data) : data;
+                        state.setContext(ctx);
+                        displayContext(ctx);
+                    }
+                });
+            }
             startLocationWatch();
         },
         function(err) {
-            debugLog('Silent refresh failed', err.message);
+            debugLog('GPS refresh failed: ' + err.message);
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
@@ -2324,6 +2390,7 @@ var commands = [
     { cmd: '/checkout', desc: 'Clear check-in' },
     { cmd: '/save', desc: 'Save current location', usage: '/save Home' },
     { cmd: '/places', desc: 'List saved places' },
+    { cmd: '/photos', desc: 'View captured photos' },
     { cmd: '/delete', desc: 'Delete saved place', usage: '/delete Home' },
     { cmd: '/weather', desc: 'Current weather' },
     { cmd: '/bus', desc: 'Bus times' },
@@ -2734,6 +2801,11 @@ function fetchPushHistory() {
         if (data.history && data.history.length > 0) {
             // Add push notifications to timeline
             data.history.forEach(function(item) {
+                // Skip Ad-Duha notifications - handled by client-side checkPrayerReminder()
+                if (item.title && item.title.indexOf('Ad-Duha') >= 0) {
+                    debugLog('Skipping Ad-Duha push notification (handled client-side)');
+                    return;
+                }
                 var text = item.title;
                 if (item.body) text += '\n' + item.body;
                 // Use the notification timestamp
@@ -2786,6 +2858,20 @@ $(document).ready(function() {
     
     loadListeners();
     
+    // Handle photo thumbnail clicks (delegated)
+    document.getElementById('messages').addEventListener('click', function(e) {
+        var thumbnail = e.target.closest('.photo-thumbnail');
+        if (thumbnail) {
+            var card = thumbnail.closest('.photo-card');
+            if (card && card.dataset.photoId) {
+                viewPhoto(card.dataset.photoId);
+            } else {
+                // Fallback for old photos without data-photo-id: show image directly
+                viewPhotoFromSrc(thumbnail.src, card);
+            }
+        }
+    });
+    
     // Load command metadata from server
     loadCommandMeta();
     
@@ -2802,11 +2888,16 @@ $(document).ready(function() {
     // Scroll to bottom after loading persisted content
     scrollToBottom();
     
-    // Only get fresh location if we don't have one or it's very stale (>10 min)
-    var needsFreshLocation = !state.hasLocation() || 
-        (state.contextTime && Date.now() - state.contextTime > 10 * 60 * 1000);
+    // Get fresh location if we don't have one or context is stale (>1 min)
+    var ageMs = state.contextTime ? Date.now() - state.contextTime : Infinity;
+    var needsFreshLocation = !state.hasLocation() || ageMs > 60 * 1000;
     if (needsFreshLocation) {
+        debugLog('Initial load, context ' + Math.round(ageMs/1000) + 's old, getting fresh location');
         getLocationAndContext();
+    } else {
+        debugLog('Initial load, context ' + Math.round(ageMs/1000) + 's old, using cached');
+        // Still start location watch for updates
+        startLocationWatch();
     }
     
     // Update timestamps every minute
@@ -2816,7 +2907,30 @@ $(document).ready(function() {
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
             updateTimestamps();
-            checkIfMoved();
+            
+            // Scroll to bottom after layout settles (context card may be expanded)
+            setTimeout(scrollToBottom, 200);
+            
+            // Always refresh context if >30s old when app reopens
+            var ageMs = state.contextTime ? Date.now() - state.contextTime : Infinity;
+            if (ageMs > 30 * 1000) {
+                debugLog('App reopened, context ' + Math.round(ageMs/1000) + 's old, refreshing');
+                // Show brief indicator that we're refreshing
+                var summary = document.querySelector('.context-summary .context-content');
+                if (summary) {
+                    var oldText = summary.textContent;
+                    summary.textContent = '🔄 Refreshing...';
+                    setTimeout(function() {
+                        if (summary.textContent === '🔄 Refreshing...') {
+                            summary.textContent = oldText; // Restore if refresh didn't complete
+                        }
+                    }, 5000);
+                }
+                silentLocationRefresh();
+            } else {
+                checkIfMoved();
+            }
+            
             // Fetch any push notifications sent while app was backgrounded
             if (pushState.subscribed) {
                 fetchPushHistory();
@@ -2972,3 +3086,173 @@ $(document).on('click', '.checkin-dismiss', function(e) {
     }
     $li.remove();
 });
+
+// === CAMERA / PHOTO CAPTURE ===
+
+function openCamera() {
+    // Trigger the hidden file input which opens camera on mobile
+    document.getElementById('camera-input').click();
+}
+
+function handleCameraCapture(input) {
+    if (!input.files || !input.files[0]) {
+        debugLog('Camera: No file selected');
+        return;
+    }
+    
+    var file = input.files[0];
+    debugLog('Camera: Processing file: ' + file.name + ' (' + Math.round(file.size/1024) + 'KB)');
+    
+    var reader = new FileReader();
+    
+    reader.onerror = function(e) {
+        console.error('Camera: FileReader error', e);
+        addToTimeline('❌ Failed to read photo: ' + (reader.error ? reader.error.message : 'Unknown error'));
+    };
+    
+    reader.onload = function(e) {
+        var dataUrl = e.target.result;
+        debugLog('Camera: DataURL length: ' + dataUrl.length);
+        
+        // Show compose card with photo preview and caption input
+        showPhotoCompose(dataUrl);
+    };
+    
+    reader.readAsDataURL(file);
+    
+    // Clear input so same file can be selected again
+    input.value = '';
+}
+
+function showPhotoCompose(dataUrl) {
+    // Get current location
+    var loc = state.getEffectiveLocation();
+    var lat = loc ? loc.lat : state.lat;
+    var lon = loc ? loc.lon : state.lon;
+    var locationText = state.context && state.context.location ? state.context.location.name : 
+        (lat && lon ? lat.toFixed(4) + ', ' + lon.toFixed(4) : 'Unknown location');
+    
+    // Create compose overlay
+    var overlay = document.createElement('div');
+    overlay.className = 'photo-compose-overlay';
+    overlay.innerHTML = 
+        '<div class="photo-compose">' +
+            '<img src="' + dataUrl + '" class="photo-compose-preview">' +
+            '<input type="text" class="photo-compose-caption" placeholder="Add a caption..." maxlength="280">' +
+            '<div class="photo-compose-location">📍 ' + escapeHTML(locationText) + '</div>' +
+            '<div class="photo-compose-buttons">' +
+                '<button class="photo-compose-cancel">Cancel</button>' +
+                '<button class="photo-compose-post">Post</button>' +
+            '</div>' +
+        '</div>';
+    
+    var captionInput = overlay.querySelector('.photo-compose-caption');
+    var cancelBtn = overlay.querySelector('.photo-compose-cancel');
+    var postBtn = overlay.querySelector('.photo-compose-post');
+    
+    cancelBtn.onclick = function() {
+        overlay.remove();
+    };
+    
+    postBtn.onclick = function() {
+        var caption = captionInput.value.trim();
+        saveAndPostPhoto(dataUrl, caption, lat, lon, locationText);
+        overlay.remove();
+    };
+    
+    // Post on Enter key
+    captionInput.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+            postBtn.click();
+        }
+    };
+    
+    document.body.appendChild(overlay);
+    captionInput.focus();
+}
+
+function saveAndPostPhoto(dataUrl, caption, lat, lon, locationText) {
+    // Create photo entry
+    var photo = {
+        id: 'photo_' + Date.now(),
+        dataUrl: dataUrl,
+        lat: lat,
+        lon: lon,
+        time: Date.now(),
+        location: locationText,
+        caption: caption || null
+    };
+    
+    // Save to photos array in state
+    if (!state.photos) state.photos = [];
+    state.photos.push(photo);
+    
+    // Keep only last 50 photos in localStorage (to manage size)
+    if (state.photos.length > 50) {
+        state.photos = state.photos.slice(-50);
+    }
+    state.save();
+    
+    // Add to timeline with thumbnail
+    var captionHtml = caption ? '<div class="photo-caption">' + escapeHTML(caption) + '</div>' : '';
+    var html = '<div class="photo-card" data-photo-id="' + photo.id + '">' +
+        '<img src="' + dataUrl + '" class="photo-thumbnail">' +
+        captionHtml +
+        '<div class="photo-location">📍 ' + escapeHTML(locationText) + '</div>' +
+        '</div>';
+    
+    debugLog('Photo: Adding to timeline, HTML length: ' + html.length);
+    addToTimeline(html, 'photo');
+    
+    debugLog('Photo captured at ' + locationText + ', timeline now has ' + state.timeline.length + ' items');
+}
+
+function viewPhoto(photoId) {
+    if (!state.photos) return;
+    
+    var photo = state.photos.find(function(p) { return p.id === photoId; });
+    if (!photo) return;
+    
+    // Create fullscreen overlay
+    var overlay = document.createElement('div');
+    overlay.className = 'photo-overlay';
+    var captionHtml = photo.caption ? '<div class="photo-overlay-caption">' + escapeHTML(photo.caption) + '</div>' : '';
+    overlay.innerHTML = '<img src="' + photo.dataUrl + '" class="photo-full">' +
+        '<div class="photo-overlay-info">' +
+        captionHtml +
+        '<div>📍 ' + (photo.location || 'Unknown') + '</div>' +
+        '<div>🕒 ' + new Date(photo.time).toLocaleString() + '</div>' +
+        '</div>' +
+        '<button class="photo-close" onclick="this.parentElement.remove()">✕</button>';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) overlay.remove();
+    };
+    document.body.appendChild(overlay);
+}
+
+// Fallback for old photos without data-photo-id
+function viewPhotoFromSrc(src, card) {
+    // Try to extract caption and location from card HTML
+    var caption = '';
+    var location = '';
+    if (card) {
+        var captionEl = card.querySelector('.photo-caption');
+        var locationEl = card.querySelector('.photo-location');
+        if (captionEl) caption = captionEl.textContent;
+        if (locationEl) location = locationEl.textContent.replace('📍 ', '');
+    }
+    
+    var overlay = document.createElement('div');
+    overlay.className = 'photo-overlay';
+    var captionHtml = caption ? '<div class="photo-overlay-caption">' + escapeHTML(caption) + '</div>' : '';
+    overlay.innerHTML = '<img src="' + src + '" class="photo-full">' +
+        '<div class="photo-overlay-info">' +
+        captionHtml +
+        '<div>📍 ' + (location || 'Unknown') + '</div>' +
+        '</div>' +
+        '<button class="photo-close" onclick="this.parentElement.remove()">✕</button>';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) overlay.remove();
+    };
+    document.body.appendChild(overlay);
+}

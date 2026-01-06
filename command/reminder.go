@@ -42,16 +42,18 @@ func init() {
 
 // ReminderResponse is the JSON format for client
 type ReminderResponse struct {
-	Verse   string `json:"verse,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Message string `json:"message,omitempty"`
+	Verse      string `json:"verse,omitempty"`
+	Name       string `json:"name,omitempty"`
+	NameNumber int    `json:"name_number,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 func formatReminderJSON(r *spatial.Reminder) string {
 	resp := ReminderResponse{
-		Verse:   r.Verse,
-		Name:    r.Name,
-		Message: r.Message,
+		Verse:      r.Verse,
+		Name:       r.Name,
+		NameNumber: r.GetNameNumber(),
+		Message:    r.Message,
 	}
 	b, _ := json.Marshal(resp)
 	return string(b)

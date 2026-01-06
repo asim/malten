@@ -1373,23 +1373,47 @@ err := RateLimitedCall("api-name", func() error {
 })
 ```
 
+## Regional Couriers (Street Mapping)
+
+Multiple couriers operate in parallel to map streets in different regions.
+
+### How It Works
+
+1. **Clustering**: Agents within 50km are grouped into clusters
+2. **One courier per cluster**: Each cluster gets its own courier
+3. **Independent operation**: Couriers walk between agents in their region
+4. **Street indexing**: Routes are stored as street geometry for the map
+
+### Commands
+
+- `/couriers` - Show status of all regional couriers
+- `/couriers on` - Enable all regional couriers
+- `/couriers off` - Pause all regional couriers
+- `/courier` - Original single courier (backward compat)
+
+### Files
+
+- `spatial/courier_regional.go` - Regional courier manager
+- `spatial/courier.go` - Original single courier
+- `regional_couriers.json` - Persisted state
+
 ## Regional Data Sources
 
-Agents are now region-aware. See `spatial/regions.go` for full implementation.
+Agents are region-aware. Transport APIs only work in specific regions.
 
 ### Current Status
 
-| Region     | Transport API | Status      | Weather | Prayer | POIs |
-|------------|---------------|-------------|---------|--------|------|
-| London     | TfL           | ✓ Working   | ✓       | ✓      | ✓    |
-| Manchester | TfGM          | TODO        | ✓       | ✓      | ✓    |
-| Edinburgh  | Edinburgh Trams| TODO       | ✓       | ✓      | ✓    |
-| Cardiff    | Transport Wales| TODO       | ✓       | ✓      | ✓    |
-| Dublin     | Dublin Bus/Rail| TODO       | ✓       | ✓      | ✓    |
-| Other UK   | National Rail | TODO        | ✓       | ✓      | ✓    |
-| France     | SNCF          | TODO        | ✓       | ✓      | ✓    |
-| USA        | Various       | TODO        | ✓       | ✓      | ✓    |
-| Global     | None          | -           | ✓       | ✓      | ✓    |
+| Region     | Transport API | Status      | Weather | Prayer | POIs | Streets |
+|------------|---------------|-------------|---------|--------|------|--------|
+| London     | TfL           | ✓ Working   | ✓       | ✓      | ✓    | ✓ Active |
+| Manchester | TfGM          | TODO        | ✓       | ✓      | ✓    | TODO |
+| Edinburgh  | Edinburgh Trams| TODO       | ✓       | ✓      | ✓    | TODO |
+| Cardiff    | Transport Wales| TODO       | ✓       | ✓      | ✓    | ✓ Active |
+| Dublin     | Dublin Bus/Rail| TODO       | ✓       | ✓      | ✓    | ✓ Active |
+| USA        | GTFS feeds    | TODO        | ✓       | ✓      | ✓    | Partial |
+| Argentina  | BA transit    | TODO        | ✓       | ✓      | ✓    | TODO |
+| India      | Various       | TODO        | ✓       | ✓      | ✓    | TODO |
+| Global     | None          | -           | ✓       | ✓      | ✓    | Via courier |
 
 ### Transport APIs to Integrate
 
@@ -3341,3 +3365,104 @@ Agents now move through space, mapping streets as they go:
 - ~300 streets mapped
 - ~4,500 places indexed
 - Exploration state persists across restarts
+
+## Session: Jan 6, 2026 - Regional Couriers & UI Polish
+
+### Regional Couriers Implemented
+- Multiple couriers operate in parallel across different regions
+- Agents clustered by 50km proximity
+- Each cluster gets its own courier
+- Files: `spatial/courier_regional.go`, `command/regional_courier.go`
+- Commands: `/couriers`, `/couriers on`, `/couriers off`
+- State persisted to `regional_couriers.json`
+
+### Map UI Improvements
+- Agents hidden from map (work invisibly like angels)
+- Category names formatted: "place_of_worship" → "Place of worship"
+- Title changed from "Malten Spatial Index" to "Map"
+- Buttons use proper symbols (↻, ‖) instead of emojis
+- Compass heading updates when turning (redraws on >5° change)
+- Popup centered on screen instead of near clicked point
+- Less clutter when zoomed out
+
+### Bug Fixes
+- Push notification deduplication: `DailyPushed` map tracks which notification types sent today per user
+- Timeline scrolls to bottom when app reopens (visibilitychange handler)
+- Courier state persisted to survive restarts
+
+### Names of Allah Links
+- Now linked to reminder.dev/name/{number}
+- Both daily reminders and prayer-specific reminders include name_number
+
+### Camera/Photo Capture
+- Camera button (📷) next to input field
+- Photos added to timeline with location
+- Stored in state.photos (up to 50)
+- Tap thumbnail to view fullscreen
+
+### Context Refresh Fix
+- Immediate ping with cached location on app reopen
+- Then GPS update if position changed >50m
+- Refresh if context >30s old on visibility change
+- Refresh if context >60s old on initial load
+
+### Current Agent Status
+- 32 agents globally
+- 2 regional courier clusters:
+  - London area (19 agents)
+  - Cardiff/Castle area (3 agents)
+- 10 isolated agents (single-agent areas, no courier)
+
+### Files Changed This Session
+- `spatial/courier_regional.go` - NEW: Regional courier manager
+- `command/regional_courier.go` - NEW: /couriers command
+- `server/map.html` - v11: UI polish, hide agents, compass fix
+- `server/push.go` - DailyPushed tracking
+- `spatial/courier.go` - State persistence
+- `client/web/malten.js` - Camera, scroll fix, context refresh
+- `client/web/malten.css` - Photo card styling
+- `client/web/index.html` - Camera button
+- `command/reminder.go` - name_number in response
+- `spatial/reminder.go` - GetNameNumber() method
+- `main.go` - Start regional courier loop
+- `README.md` - Updated
+- `claude.md` - Updated
+
+### Known Issues
+- Push notification timestamp mismatch: Ad-Duha shows "1 hour ago" in timeline but push received "1 minute ago"
+  - Likely: push history fetch adds items with old timestamps
+  - TODO: investigate fetchPushHistory timing
+
+### JS Version: 282
+### Map Version: v11
+
+## Session: Jan 6, 2026 - Continued Fixes
+
+### Push Notification Duplicate Fix
+- Removed Ad-Duha from push notifications (was duplicating client-side prayer reminder)
+- Client-side `checkPrayerReminder()` handles Duha, push system no longer sends it
+
+### Map UI Fixes
+- **Map links include place name**: URLs now use `maps/search/Name/@lat,lon` format for better Google Maps matching
+- **Dynamic legend**: Only shows categories visible on screen, with counts, sorted by frequency
+- Legend updates when toggled open
+
+### Timeline Scroll Fix
+- Changed `scrollToBottom()` to target `#messages-area` container directly
+- Uses `scrollTop = scrollHeight` instead of `scrollIntoView`
+- Increased delay to 300ms to ensure layout settles after context card expansion
+
+### Files Changed
+- `server/push.go` - Removed Duha push notification
+- `server/map.html` - v14: Dynamic legend, map links with names
+- `client/web/malten.js` - v283: Scroll fix
+
+### Current State
+- 32 agents globally
+- 2 regional courier clusters active (London + Cardiff)
+- Courier state persists across restarts
+- Map shows places without agents (invisible like angels)
+- Dynamic legend based on visible places
+
+### JS Version: 283
+### Map Version: v14
