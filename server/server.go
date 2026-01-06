@@ -18,6 +18,7 @@ package server
 import (
 	"crypto/rand"
 	"errors"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -259,6 +260,14 @@ func (s *Server) Broadcast(message *Message) {
 		// Filter by channel: public (empty) or addressed to this observer's session
 		if message.Channel != "" && message.Channel != "@"+o.Session {
 			continue
+		}
+		// Dedupe: skip if this content was recently sent to this session
+		// Only dedupe non-command messages (awareness, notifications)
+		if message.Type == "message" && message.CommandID == "" {
+			if !GetDedupe().ShouldSend(o.Session, message.Text) {
+				log.Printf("[ws] Skipping duplicate for %s: %s", o.Session[:8], ExtractContentKey(message.Text))
+				continue
+			}
 		}
 		// send message
 		select {

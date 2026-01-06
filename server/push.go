@@ -5,9 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"regexp"
-	"strconv"
-	"strings"
+
 	"sync"
 	"time"
 
@@ -269,16 +267,13 @@ func (pm *PushManager) SendPush(sessionID string, notification *PushNotification
 		return nil
 	}
 
-	// Content-based deduplication
-	contentKey := extractContentKey(notification.Title, notification.Body)
-	if pm.hasRecentlyPushed(user, contentKey) {
-		log.Printf("[push] Skipping duplicate for %s: %s", sessionID[:8], contentKey)
+	// Content-based deduplication using shared tracker
+	content := notification.Title + " " + notification.Body
+	if !GetDedupe().ShouldSend(sessionID, content) {
+		log.Printf("[push] Skipping duplicate for %s: %s", sessionID[:8], ExtractContentKey(content))
 		pm.mu.Unlock()
 		return nil
 	}
-	
-	// Mark as pushed before sending
-	pm.markContentPushed(user, contentKey)
 	pm.mu.Unlock()
 
 	payload, _ := json.Marshal(notification)
@@ -666,16 +661,12 @@ func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emo
 		}
 
 		for _, item := range items {
-			// Content-based dedupe: extract key info from message
-			// e.g., "Rain at 9pm" -> hash "rain_21" (rain + hour)
-			contentKey := extractContentKey(item.Emoji, item.Message)
-			if pm.hasRecentlyPushed(user, contentKey) {
-				log.Printf("[push] Skipping duplicate for %s: %s", user.SessionID[:8], contentKey)
+			// Content-based dedupe using shared tracker
+			content := item.Emoji + " " + item.Message
+			if !GetDedupe().ShouldSend(user.SessionID, content) {
+				log.Printf("[push] Skipping duplicate for %s: %s", user.SessionID[:8], ExtractContentKey(content))
 				continue
 			}
-			
-			// Mark as pushed BEFORE sending to prevent race with other agents
-			pm.markContentPushed(user, contentKey)
 
 			notification := &PushNotification{
 				Title: item.Emoji + " Malten",
@@ -731,75 +722,6 @@ func (pm *PushManager) sendPushSimple(user *PushUser, notification *PushNotifica
 		}
 		log.Printf("[push] Sent to %s: %s", user.SessionID[:8], bodyPreview)
 	}()
-}
-
-// extractContentKey extracts a dedupe key from notification content
-// Goal: "Rain at 9 PM" and "Rain expected at 21:00" should have same key
-func extractContentKey(emoji, message string) string {
-	lower := strings.ToLower(message)
-	
-	// Rain notifications: key is "rain_<hour>" or "rain_now"
-	if emoji == "🌧️" || strings.Contains(lower, "rain") {
-		if strings.Contains(lower, "now") || strings.Contains(lower, "currently") || strings.Contains(lower, "likely now") {
-			return "rain_now"
-		}
-		// Extract hour from message
-		// Patterns: "at 9 PM", "at 21:00", "at 9pm", "around 14:30"
-		re := regexp.MustCompile(`(?:at |around )(\d{1,2})(?::\d{2})?\s*(?:PM|AM|pm|am)?`)
-		if matches := re.FindStringSubmatch(message); len(matches) > 1 {
-			hour := matches[1]
-			// Normalize to 24h
-			if strings.Contains(strings.ToLower(message), "pm") {
-				if h, _ := strconv.Atoi(hour); h < 12 {
-					hour = strconv.Itoa(h + 12)
-				}
-			}
-			return "rain_" + hour
-		}
-		return "rain_general"
-	}
-	
-	// Temperature warnings
-	if emoji == "❄️" || emoji == "🌡️" {
-		return "temp_warning"
-	}
-	
-	// Default: use first 50 chars of message
-	key := strings.ToLower(message)
-	if len(key) > 50 {
-		key = key[:50]
-	}
-	return emoji + "_" + key
-}
-
-// hasRecentlyPushed checks if content was pushed in last 6 hours
-func (pm *PushManager) hasRecentlyPushed(user *PushUser, contentKey string) bool {
-	if user.PushedContent == nil {
-		return false
-	}
-	timestamp, exists := user.PushedContent[contentKey]
-	if !exists {
-		return false
-	}
-	// Content expires after 6 hours
-	return time.Now().Unix()-timestamp < 6*60*60
-}
-
-// markContentPushed records that content was pushed
-func (pm *PushManager) markContentPushed(user *PushUser, contentKey string) {
-	if user.PushedContent == nil {
-		user.PushedContent = make(map[string]int64)
-	}
-	user.PushedContent[contentKey] = time.Now().Unix()
-	log.Printf("[push] Marked %s as pushed for %s", contentKey, user.SessionID[:8])
-	
-	// Clean old entries (older than 24h)
-	cutoff := time.Now().Unix() - 24*60*60
-	for k, v := range user.PushedContent {
-		if v < cutoff {
-			delete(user.PushedContent, k)
-		}
-	}
 }
 
 // canPushTodayLocked checks if we can push this notification type today (caller holds lock)
