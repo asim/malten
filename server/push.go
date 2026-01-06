@@ -5,6 +5,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,16 +27,17 @@ type PushSubscription struct {
 
 // PushUser tracks a user's push subscription and state
 type PushUser struct {
-	SessionID    string            `json:"session_id"`
-	Subscription *PushSubscription `json:"subscription"`
-	Lat          float64           `json:"lat"`
-	Lon          float64           `json:"lon"`
-	LastPing     time.Time         `json:"last_ping"`
-	LastPush     time.Time         `json:"last_push"`
-	Timezone     *time.Location    `json:"-"`                      // Not persisted, recalculated from lon
-	PushHistory  []PushHistoryItem `json:"push_history,omitempty"` // Recent push notifications
-	BusNotify    bool              `json:"bus_notify"`             // Whether to send bus push notifications (default: false)
-	DailyPushed  map[string]string `json:"daily_pushed,omitempty"` // notifyType -> date string (YYYY-MM-DD)
+	SessionID      string            `json:"session_id"`
+	Subscription   *PushSubscription `json:"subscription"`
+	Lat            float64           `json:"lat"`
+	Lon            float64           `json:"lon"`
+	LastPing       time.Time         `json:"last_ping"`
+	LastPush       time.Time         `json:"last_push"`
+	Timezone       *time.Location    `json:"-"`                      // Not persisted, recalculated from lon
+	PushHistory    []PushHistoryItem `json:"push_history,omitempty"` // Recent push notifications
+	BusNotify      bool              `json:"bus_notify"`             // Whether to send bus push notifications (default: false)
+	DailyPushed    map[string]string `json:"daily_pushed,omitempty"` // notifyType -> date string (YYYY-MM-DD)
+	PushedContent  map[string]int64  `json:"pushed_content,omitempty"` // content hash -> unix timestamp
 }
 
 // PushHistoryItem represents a sent push notification
@@ -610,10 +614,11 @@ func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emo
 		}
 
 		for _, item := range items {
-			// Dedupe: check if we already pushed this type today
-			// Use emoji as notification type key
-			notifyType := "awareness_" + item.Emoji
-			if !pm.canPushTodayLocked(user, notifyType) {
+			// Content-based dedupe: extract key info from message
+			// e.g., "Rain at 9pm" -> hash "rain_21" (rain + hour)
+			contentKey := extractContentKey(item.Emoji, item.Message)
+			if pm.hasRecentlyPushed(user, contentKey) {
+				log.Printf("[push] Skipping duplicate for %s: %s", user.SessionID[:8], contentKey)
 				continue
 			}
 
@@ -622,8 +627,76 @@ func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emo
 				Body:  item.Message,
 			}
 			if pm.sendPushLocked(user, notification) {
-				pm.markPushedLocked(user, notifyType)
+				pm.markContentPushed(user, contentKey)
 			}
+		}
+	}
+}
+
+// extractContentKey extracts a dedupe key from notification content
+// Goal: "Rain at 9 PM" and "Rain expected at 21:00" should have same key
+func extractContentKey(emoji, message string) string {
+	lower := strings.ToLower(message)
+	
+	// Rain notifications: key is "rain_<hour>" or "rain_now"
+	if emoji == "🌧️" || strings.Contains(lower, "rain") {
+		if strings.Contains(lower, "now") || strings.Contains(lower, "currently") || strings.Contains(lower, "likely now") {
+			return "rain_now"
+		}
+		// Extract hour from message
+		// Patterns: "at 9 PM", "at 21:00", "at 9pm", "around 14:30"
+		re := regexp.MustCompile(`(?:at |around )(\d{1,2})(?::\d{2})?\s*(?:PM|AM|pm|am)?`)
+		if matches := re.FindStringSubmatch(message); len(matches) > 1 {
+			hour := matches[1]
+			// Normalize to 24h
+			if strings.Contains(strings.ToLower(message), "pm") {
+				if h, _ := strconv.Atoi(hour); h < 12 {
+					hour = strconv.Itoa(h + 12)
+				}
+			}
+			return "rain_" + hour
+		}
+		return "rain_general"
+	}
+	
+	// Temperature warnings
+	if emoji == "❄️" || emoji == "🌡️" {
+		return "temp_warning"
+	}
+	
+	// Default: use first 50 chars of message
+	key := strings.ToLower(message)
+	if len(key) > 50 {
+		key = key[:50]
+	}
+	return emoji + "_" + key
+}
+
+// hasRecentlyPushed checks if content was pushed in last 6 hours
+func (pm *PushManager) hasRecentlyPushed(user *PushUser, contentKey string) bool {
+	if user.PushedContent == nil {
+		return false
+	}
+	timestamp, exists := user.PushedContent[contentKey]
+	if !exists {
+		return false
+	}
+	// Content expires after 6 hours
+	return time.Now().Unix()-timestamp < 6*60*60
+}
+
+// markContentPushed records that content was pushed
+func (pm *PushManager) markContentPushed(user *PushUser, contentKey string) {
+	if user.PushedContent == nil {
+		user.PushedContent = make(map[string]int64)
+	}
+	user.PushedContent[contentKey] = time.Now().Unix()
+	
+	// Clean old entries (older than 24h)
+	cutoff := time.Now().Unix() - 24*60*60
+	for k, v := range user.PushedContent {
+		if v < cutoff {
+			delete(user.PushedContent, k)
 		}
 	}
 }

@@ -1292,21 +1292,18 @@ function submitCommand() {
     // Track pending to dedupe echo
     pendingMessages[prompt] = true;
     
+    // Use async mode - response comes via WebSocket
+    data.async = 'true';
+    
     debugLog('POST', commandUrl, data);
     $.post(commandUrl, data).done(function(response) {
         debugLog('Response', response ? response.substring(0, 200) : '(empty)');
-        // If we got a direct response, show it immediately
-        if (response && response.length > 0 && !response.startsWith('{')) {
-            hideLoading();
-            delete pendingMessages[prompt];
-            displayResponse(response);
-            scrollToBottom();
-        }
-        // JSON responses (like /ping) are handled elsewhere
-        // Empty responses mean async (AI) - wait for WebSocket
+        // Async mode: response comes via WebSocket, nothing to do here
+        // JSON ack with {id, status: "queued"} is expected
     }).fail(function(xhr, status, err) {
         debugLog('Request failed', status, err);
         hideLoading();
+        delete pendingMessages[prompt];
     });
 
     form.elements["prompt"].value = '';
