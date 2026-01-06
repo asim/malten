@@ -875,6 +875,7 @@ function connectWebSocket() {
                 if (pendingAsyncCommands && pendingAsyncCommands[ev.CommandID]) {
                     delete pendingAsyncCommands[ev.CommandID];
                 }
+                clearTimeout(window.loadingTimeout);
                 hideLoading();
                 displayResponse(ev.Text);
                 clipMessages();
@@ -882,6 +883,7 @@ function connectWebSocket() {
             }
             
             // Show response as a card
+            clearTimeout(window.loadingTimeout);
             hideLoading();
             if (!ev.Text || ev.Text.trim() === '') return; // Skip empty messages
             if (pendingCommand) {
@@ -1292,21 +1294,33 @@ function submitCommand() {
     // Track pending to dedupe echo
     pendingMessages[prompt] = true;
     
+    // Clear input immediately
+    form.elements["prompt"].value = '';
+    
     // Use async mode - response comes via WebSocket
     data.async = 'true';
+    
+    // Timeout to hide loading if no response after 30s
+    clearTimeout(window.loadingTimeout);
+    window.loadingTimeout = setTimeout(function() {
+        hideLoading();
+        delete pendingMessages[prompt];
+        debugLog('Request timed out');
+    }, 30000);
     
     debugLog('POST', commandUrl, data);
     $.post(commandUrl, data).done(function(response) {
         debugLog('Response', response ? response.substring(0, 200) : '(empty)');
-        // Async mode: response comes via WebSocket, nothing to do here
+        // Async mode: response comes via WebSocket
         // JSON ack with {id, status: "queued"} is expected
+        // Don't clear timeout here - wait for WebSocket response
     }).fail(function(xhr, status, err) {
+        clearTimeout(window.loadingTimeout);
         debugLog('Request failed', status, err);
         hideLoading();
         delete pendingMessages[prompt];
     });
 
-    form.elements["prompt"].value = '';
     return false;
 }
 

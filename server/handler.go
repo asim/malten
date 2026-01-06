@@ -129,8 +129,8 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 					Default.Events <- NewChannelMessage(msg, stream, "@"+token)
 				}
 			} else {
-				// AI handling (async mode)
-				result := handleAI(input, stream, token, false)
+				// AI handling (async mode) - get result and send as command_result
+				result := handleAI(input, stream, token, true) // sync=true to get the result back
 				if result != "" {
 					Default.Events <- NewCommandResult(cmdID, result, stream, "@"+token)
 				}
