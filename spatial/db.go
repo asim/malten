@@ -203,6 +203,16 @@ func (d *DB) QueryWithMaxAge(lat, lon, radiusMeters float64, entityType EntityTy
 		if !ok {
 			return false
 		}
+		if entity.Type != entityType {
+			return false
+		}
+		// For ephemeral types (weather, arrivals, prayer), require ExpiresAt
+		// Missing ExpiresAt = treat as expired (corrupted data)
+		if entity.Type == EntityWeather || entity.Type == EntityArrival || entity.Type == EntityPrayer {
+			if entity.ExpiresAt == nil {
+				return false // Corrupted/incomplete data
+			}
+		}
 		if entity.ExpiresAt != nil {
 			expiry := *entity.ExpiresAt
 			if maxAgeSecs > 0 {
@@ -213,7 +223,7 @@ func (d *DB) QueryWithMaxAge(lat, lon, radiusMeters float64, entityType EntityTy
 				return false
 			}
 		}
-		return entity.Type == entityType
+		return true
 	}
 
 	points := d.tree.KNearest(boundary, limit, filter)

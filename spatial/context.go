@@ -131,7 +131,8 @@ func GetContextData(lat, lon float64) *ContextData {
 	tWeather := time.Now()
 	var headerParts []string
 	var rainForecast string
-	weather := db.Query(lat, lon, 10000, EntityWeather, 1)
+	// Weather query radius must match fetch radius (5km) to avoid stale data from further away
+	weather := db.Query(lat, lon, 5000, EntityWeather, 1)
 	log.Printf("[context] weather: %v", time.Since(tWeather))
 	if len(weather) > 0 {
 		w := weather[0]
@@ -146,6 +147,14 @@ func GetContextData(lat, lon float64) *ContextData {
 			if wd.RainForecast != "" {
 				ctx.Weather.RainWarning = wd.RainForecast
 				rainForecast = wd.RainForecast
+			}
+		} else {
+			// Legacy: parse temp from name like "☀️ -3°C"
+			if w.Name != "" {
+				var parsed int
+				if _, err := fmt.Sscanf(w.Name, "%*s %d°C", &parsed); err == nil {
+					tempC = float64(parsed)
+				}
 			}
 		}
 		
