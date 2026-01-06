@@ -26,7 +26,7 @@ Move through the world and it updates. Take a photo of the snow falling. Note wh
 - `/weather` - forecast
 - `/bus` - next arrivals
 
-**AI**: Ask anything. "What's that building?" "Where can I get lunch?" "What time is sunset?"
+**AI**: What's happening. "What's that building?" "Where can I get lunch?" "What time is sunset?"
 
 **Notifications**: Get updates when backgrounded - transport times, weather changes.
 
