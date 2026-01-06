@@ -621,16 +621,64 @@ func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emo
 				log.Printf("[push] Skipping duplicate for %s: %s", user.SessionID[:8], contentKey)
 				continue
 			}
+			
+			// Mark as pushed BEFORE sending to prevent race with other agents
+			pm.markContentPushed(user, contentKey)
 
 			notification := &PushNotification{
 				Title: item.Emoji + " Malten",
 				Body:  item.Message,
 			}
-			if pm.sendPushLocked(user, notification) {
-				pm.markContentPushed(user, contentKey)
-			}
+			// Send without releasing lock (simpler, awareness isn't time-critical)
+			pm.sendPushSimple(user, notification)
 		}
 	}
+	
+	// Persist after batch
+	go pm.save()
+}
+
+// sendPushSimple sends push without releasing lock (for batch operations)
+func (pm *PushManager) sendPushSimple(user *PushUser, notification *PushNotification) {
+	if user.Subscription == nil {
+		return
+	}
+
+	sub := &webpush.Subscription{
+		Endpoint: user.Subscription.Endpoint,
+		Keys: webpush.Keys{
+			P256dh: user.Subscription.Keys.P256dh,
+			Auth:   user.Subscription.Keys.Auth,
+		},
+	}
+
+	payload, _ := json.Marshal(notification)
+	
+	// Send in goroutine to not block
+	go func() {
+		resp, err := webpush.SendNotification(payload, sub, &webpush.Options{
+			VAPIDPublicKey:  pm.vapidPublic,
+			VAPIDPrivateKey: pm.vapidPrivate,
+			Subscriber:      pm.subject,
+			TTL:             3600,
+		})
+		if err != nil {
+			log.Printf("[push] Error sending to %s: %v", user.SessionID[:8], err)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			log.Printf("[push] Failed for %s: status %d", user.SessionID[:8], resp.StatusCode)
+			return
+		}
+
+		bodyPreview := notification.Body
+		if len(bodyPreview) > 50 {
+			bodyPreview = bodyPreview[:50]
+		}
+		log.Printf("[push] Sent to %s: %s", user.SessionID[:8], bodyPreview)
+	}()
 }
 
 // extractContentKey extracts a dedupe key from notification content
