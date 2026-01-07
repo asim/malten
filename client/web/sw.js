@@ -26,6 +26,7 @@ self.addEventListener('push', function(event) {
         body: data.body || '',
         icon: data.icon || '/icon-192.png',
         badge: '/icon-192.png',
+        image: data.image || undefined,  // Large image (Android/Chrome)
         tag: data.tag || 'malten-update',
         renotify: true,
         data: data.data || {}

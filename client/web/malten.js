@@ -24,10 +24,11 @@ var limit = 25;
 
 // Debug logging to screen (enable with /debug on)
 window.debugMode = localStorage.getItem('malten_debug') === 'true';
-function debugLog(msg) {
-    console.log('[debug]', msg);
-    if (window.debugMode) {
-        addToTimeline('🔧 ' + msg);
+function debugLog() {
+    if (!window.debugMode) return;
+    console.log.apply(console, ['[debug]'].concat(Array.prototype.slice.call(arguments)));
+    if (arguments.length === 1) {
+        addToTimeline('🔧 ' + arguments[0]);
     }
 }
 
@@ -313,13 +314,40 @@ var state = {
                 // Prune old messages on load (24 hour retention)
                 var cutoff = Date.now() - (24 * 60 * 60 * 1000);
                 this.timeline = this.timeline.filter(function(c) { return c.time > cutoff; });
+                
+                // Migration: restore timeline entries for photos that exist but aren't in timeline
+                var self = this;
+                if (this.photos && this.photos.length > 0) {
+                    this.photos.forEach(function(photo) {
+                        if (photo.time > cutoff) {
+                            // Check if this photo is in timeline
+                            var inTimeline = self.timeline.some(function(t) {
+                                return t.type === 'photo' && 
+                                    (t.text === 'PHOTO:' + photo.id || 
+                                     t.text.indexOf('data-photo-id="' + photo.id + '"') >= 0);
+                            });
+                            if (!inTimeline) {
+                                debugLog('[migration] Restoring photo to timeline:', photo.id);
+                                self.timeline.push({
+                                    text: 'PHOTO:' + photo.id,
+                                    type: 'photo',
+                                    time: photo.time,
+                                    lat: photo.lat,
+                                    lon: photo.lon
+                                });
+                            }
+                        }
+                    });
+                    // Sort timeline by time after migration
+                    this.timeline.sort(function(a, b) { return a.time - b.time; });
+                }
 
             }
         } catch(e) {}
     },
     save: function() {
         try {
-            localStorage.setItem('malten_state', JSON.stringify({
+            var data = {
                 version: this.version,
                 lat: this.lat,
                 lon: this.lon,
@@ -337,9 +365,13 @@ var state = {
                 natureReminderDate: this.natureReminderDate,
                 photos: this.photos,
                 startFrom: this.startFrom
-            }));
+            };
+            var json = JSON.stringify(data);
+            localStorage.setItem('malten_state', json);
+            debugLog('[state] Saved', Math.round(json.length/1024) + 'KB, timeline:', this.timeline.length, 'items');
         } catch(e) {
-            console.error('Failed to save state:', e);
+            console.error('[state] SAVE FAILED:', e);
+            alert('Failed to save: ' + e.message);
             // If quota exceeded, try removing old photos
             if (e.name === 'QuotaExceededError' && this.photos && this.photos.length > 0) {
                 console.warn('Quota exceeded, removing oldest photo');
@@ -518,7 +550,100 @@ var state = {
         return { lat: this.lat, lon: this.lon, name: null, isCheckedIn: false };
     }
 };
+// IndexedDB for large data (photos) - must be defined before use
+var photoDB = {
+    db: null,
+    dbName: 'malten_photos',
+    storeName: 'photos',
+    
+    init: function() {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+            var request = indexedDB.open(self.dbName, 1);
+            request.onerror = function() { reject(request.error); };
+            request.onsuccess = function() { 
+                self.db = request.result;
+                resolve();
+            };
+            request.onupgradeneeded = function(e) {
+                var db = e.target.result;
+                if (!db.objectStoreNames.contains(self.storeName)) {
+                    db.createObjectStore(self.storeName, { keyPath: 'id' });
+                }
+            };
+        });
+    },
+    
+    save: function(id, dataUrl) {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+            if (!self.db) { reject('DB not initialized'); return; }
+            var tx = self.db.transaction(self.storeName, 'readwrite');
+            var store = tx.objectStore(self.storeName);
+            var request = store.put({ id: id, dataUrl: dataUrl, time: Date.now() });
+            request.onsuccess = function() { resolve(); };
+            request.onerror = function() { reject(request.error); };
+        });
+    },
+    
+    get: function(id) {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+            if (!self.db) { reject('DB not initialized'); return; }
+            var tx = self.db.transaction(self.storeName, 'readonly');
+            var store = tx.objectStore(self.storeName);
+            var request = store.get(id);
+            request.onsuccess = function() { resolve(request.result ? request.result.dataUrl : null); };
+            request.onerror = function() { reject(request.error); };
+        });
+    },
+    
+    delete: function(id) {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+            if (!self.db) { reject('DB not initialized'); return; }
+            var tx = self.db.transaction(self.storeName, 'readwrite');
+            var store = tx.objectStore(self.storeName);
+            var request = store.delete(id);
+            request.onsuccess = function() { resolve(); };
+            request.onerror = function() { reject(request.error); };
+        });
+    }
+};
+
 state.load();
+photoDB.init().then(function() {
+    debugLog('[photoDB] Initialized');
+    
+    // Migrate existing photos from localStorage to IndexedDB
+    var migrated = 0;
+    state.timeline.forEach(function(item) {
+        if (item.type === 'photo') {
+            var dataUrl = null;
+            if (item.photoData && item.photoData.dataUrl) {
+                dataUrl = item.photoData.dataUrl;
+            } else if (item.text && item.text.indexOf('data:') >= 0) {
+                // Extract from old HTML format
+                var match = item.text.match(/src="(data:[^"]+)"/);
+                if (match) dataUrl = match[1];
+            }
+            if (dataUrl) {
+                var photoId = item.text.indexOf('photo_') === 0 ? item.text : 'photo_' + item.time;
+                photoDB.save(photoId, dataUrl);
+                // Remove dataUrl from localStorage copy
+                if (item.photoData) delete item.photoData.dataUrl;
+                item.text = photoId;
+                migrated++;
+            }
+        }
+    });
+    if (migrated > 0) {
+        debugLog('[photoDB] Migrated', migrated, 'photos to IndexedDB');
+        state.save();
+    }
+}).catch(function(err) {
+    console.error('[photoDB] Init failed:', err);
+});
 
 // =============================================================================
 // =============================================================================
@@ -549,7 +674,7 @@ function addToTimeline(text, type, timestamp, skipSave) {
     if (text.indexOf('Where are you?') >= 0 || text.indexOf('GPS seems stuck') >= 0) {
         var nearSaved = state.nearSavedPlace();
         if (nearSaved) {
-            console.log('[timeline] Suppressing check-in prompt, near saved place:', nearSaved);
+            debugLog('[timeline] Suppressing check-in prompt, near saved place:', nearSaved);
             return;
         }
         text = augmentCheckInPrompt(text);
@@ -573,8 +698,21 @@ function addToTimeline(text, type, timestamp, skipSave) {
     
     // Dedupe: skip if same text exists in timeline within last 5 minutes
     // For location messages, extend to 30 minutes and compare just the location
+    // For notifications with timestamps, dedupe by exact timestamp (check entire timeline)
     if (state.timeline && state.timeline.length > 0) {
         var isLocationMsg = text.indexOf('📍') === 0 && text.indexOf('Entered') < 0;
+        var isNotification = text.indexOf('🔔') === 0;
+        
+        // For notifications, check entire timeline by timestamp + text
+        if (isNotification && timestamp) {
+            for (var i = 0; i < state.timeline.length; i++) {
+                var card = state.timeline[i];
+                if (card.time === time && card.text === text) {
+                    return; // Skip duplicate notification
+                }
+            }
+        }
+        
         var dedupWindow = isLocationMsg ? (30 * 60 * 1000) : (5 * 60 * 1000);
         var cutoff = Date.now() - dedupWindow;
         
@@ -609,11 +747,15 @@ function addToTimeline(text, type, timestamp, skipSave) {
     if (!isTransient && !skipSave) {
         // Save to state
         state.timeline.push(item);
+        debugLog('[timeline] Added item:', type, 'timeline now has', state.timeline.length, 'items');
         
         // Prune old items (24 hour retention)
         var cutoff = Date.now() - (24 * 60 * 60 * 1000);
         state.timeline = state.timeline.filter(function(c) { return c.time > cutoff; });
         state.save();
+        debugLog('[timeline] Saved. Photos:', state.photos ? state.photos.length : 0);
+    } else {
+        debugLog('[timeline] NOT saving:', type, 'isTransient:', isTransient, 'skipSave:', skipSave);
     }
     
     // Render
@@ -651,11 +793,51 @@ function renderTimelineItem(item) {
         // User message - escape HTML, no clickable processing
         html = escapeHTML(item.text);
     } else if (type === 'reminder') {
-        // Reminder - preserve HTML (links are already in text)
-        html = item.text.replace(/\n/g, '<br>');
+        // Reminder - render markdown (for images, italic verses)
+        html = renderMarkdown(item.text);
     } else if (type === 'photo') {
-        // Photo - already contains HTML with img tag
-        html = item.text;
+        // Photo: metadata in localStorage, image in IndexedDB
+        var photoId = item.text;
+        var captionHtml = (item.photoData && item.photoData.caption) ? '<div class="photo-caption">' + escapeHTML(item.photoData.caption) + '</div>' : '';
+        var locationHtml = '<div class="photo-location">📍 ' + escapeHTML((item.photoData && item.photoData.location) || 'Unknown') + '</div>';
+        
+        // Check for in-memory dataUrl first (just captured), then IndexedDB
+        if (item._dataUrl) {
+            html = '<div class="photo-card" data-photo-id="' + photoId + '">' +
+                '<img src="' + item._dataUrl + '" class="photo-thumbnail">' +
+                captionHtml + locationHtml + '</div>';
+        } else if (item.photoData && item.photoData.dataUrl) {
+            // Old format with embedded dataUrl
+            html = '<div class="photo-card" data-photo-id="' + photoId + '">' +
+                '<img src="' + item.photoData.dataUrl + '" class="photo-thumbnail">' +
+                captionHtml + locationHtml + '</div>';
+        } else if (item.text && item.text.indexOf('<div') === 0) {
+            // Very old format: full HTML
+            html = item.text;
+        } else {
+            // Placeholder - will be replaced when IndexedDB loads
+            html = '<div class="photo-card" data-photo-id="' + photoId + '">' +
+                '<div class="photo-loading">📷 Loading...</div>' +
+                captionHtml + locationHtml + '</div>';
+            
+            // Load from IndexedDB async
+            (function(pid) {
+                photoDB.get(pid).then(function(dataUrl) {
+                    if (dataUrl) {
+                        var card = document.querySelector('[data-photo-id="' + pid + '"]');
+                        if (card) {
+                            var loading = card.querySelector('.photo-loading');
+                            if (loading) {
+                                var img = document.createElement('img');
+                                img.src = dataUrl;
+                                img.className = 'photo-thumbnail';
+                                loading.replaceWith(img);
+                            }
+                        }
+                    }
+                });
+            })(photoId);
+        }
     } else if (type === 'assistant' || type === 'default') {
         // Assistant/system messages - render markdown
         html = renderMarkdown(item.text);
@@ -762,12 +944,29 @@ function escapeHTML(str) {
     return div.innerHTML.replace(/(?:\r\n|\r|\n)/g, '<br>');
 }
 
-// Simple markdown: **bold**, `code`, newlines
+// Simple markdown: **bold**, `code`, *italic*, images, newlines
 function renderMarkdown(str) {
-    return str
+    // First, protect URLs from being mangled by other replacements
+    var urls = [];
+    str = str.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(match, alt, url) {
+        urls.push({alt: alt, url: url});
+        return '___IMG_' + (urls.length - 1) + '___';
+    });
+    
+    // Now apply text formatting
+    str = str
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')  // **bold**
+        .replace(/(?:^|\s)_([^_]+)_(?:\s|$)/g, ' <em>$1</em> ')  // _italic_ (only with whitespace)
         .replace(/`([^`]+)`/g, '<code>$1</code>')           // `code`
         .replace(/\n/g, '<br>');                            // newlines
+    
+    // Restore images
+    str = str.replace(/___IMG_(\d+)___/g, function(match, idx) {
+        var img = urls[parseInt(idx)];
+        return '<img src="' + img.url + '" alt="' + img.alt + '" style="max-width:100%;border-radius:8px;margin:8px 0;display:block;">';
+    });
+    
+    return str;
 }
 
 
@@ -1005,12 +1204,12 @@ function submitCommand() {
         return false;
     }
     
-    // Handle reset command - set startFrom timestamp so server messages before now are invisible
+    // Handle reset command - full fresh start
     if (prompt.match(/^\/?reset$/i)) {
         form.elements["prompt"].value = '';
         // Set startFrom to now (in nanoseconds to match server Created timestamps)
         state.startFrom = Date.now() * 1000000;
-        // Also clear local timeline
+        // Clear local timeline but keep photos and saved places
         var photos = state.photos || [];
         var savedPlaces = state.savedPlaces || {};
         state.timeline = [];
@@ -1023,23 +1222,20 @@ function submitCommand() {
         state.photos = photos;
         state.savedPlaces = savedPlaces;
         state.save();
-        // Clear DOM
-        document.getElementById('messages').innerHTML = '';
-        addToTimeline('🔄 Reset complete. Fresh start.');
-        return false;
-    }
-    
-    // Handle clear all command - truly nuke everything
-    if (prompt.match(/^\/?clear\s+all$/i)) {
-        form.elements["prompt"].value = '';
-        localStorage.clear();
+        // Clear IndexedDB photos
+        if (photoDB.db) {
+            var tx = photoDB.db.transaction(photoDB.storeName, 'readwrite');
+            tx.objectStore(photoDB.storeName).clear();
+        }
         // Unregister service worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(function(registrations) {
                 registrations.forEach(function(r) { r.unregister(); });
             });
         }
-        addToTimeline('🗑️ Cleared ALL data. Reloading...');
+        // Clear DOM and reload
+        document.getElementById('messages').innerHTML = '';
+        addToTimeline('🔄 Reset complete. Reloading...');
         setTimeout(function() { location.reload(); }, 1000);
         return false;
     }
@@ -2187,8 +2383,8 @@ $(document).on('click touchend', '.place-link', function(e) {
         if (info.length) line += '\n   ' + info.join(', ');
         
         // Add Map and Directions links as HTML (rendered directly, not stored)
-        var encodedName = encodeURIComponent(p.name).replace(/'/g, '%27');
-        var mapUrl = 'https://www.google.com/maps/search/' + encodedName + '/@' + p.lat + ',' + p.lon + ',17z';
+        // Use our own map view
+        var mapUrl = '/map?lat=' + p.lat + '&lon=' + p.lon + '&highlight=' + encodeURIComponent(p.name);
         var links = [];
         links.push('<a href="' + mapUrl + '" target="_blank" class="map-link">Map</a>');
         links.push('<a href="javascript:void(0)" class="directions-link" data-name="' + escapeAttr(p.name) + '" data-lat="' + p.lat + '" data-lon="' + p.lon + '">Directions</a>');
@@ -2674,8 +2870,7 @@ var commands = [
     { cmd: '/import', desc: 'Restore from file' },
     { cmd: '/refresh', desc: 'Force reload' },
     { cmd: '/clear', desc: 'Clear local timeline (keeps photos)' },
-    { cmd: '/clear all', desc: 'Nuke everything' },
-    { cmd: '/reset', desc: 'Fresh start (hide old server messages)' },
+    { cmd: '/reset', desc: 'Fresh start (clears everything, keeps saved places)' },
     { cmd: '/debug', desc: 'Show debug info' },
     { cmd: '/system', desc: 'Server status' },
     { cmd: '/wakelock', desc: 'Prevent phone sleep', usage: '/wakelock on|off' },
@@ -3419,6 +3614,40 @@ $(document).on('click', '.checkin-dismiss', function(e) {
 
 // === CAMERA / PHOTO CAPTURE ===
 
+// Compress image to max 800px and JPEG quality 0.7 (~50-100KB)
+function compressImage(dataUrl, callback) {
+    var img = new Image();
+    img.onload = function() {
+        var canvas = document.createElement('canvas');
+        var maxSize = 800;
+        var width = img.width;
+        var height = img.height;
+        
+        // Scale down if larger than maxSize
+        if (width > height && width > maxSize) {
+            height = Math.round(height * maxSize / width);
+            width = maxSize;
+        } else if (height > maxSize) {
+            width = Math.round(width * maxSize / height);
+            height = maxSize;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convert to JPEG with 0.7 quality
+        var compressed = canvas.toDataURL('image/jpeg', 0.7);
+        callback(compressed);
+    };
+    img.onerror = function() {
+        // Fallback to original if compression fails
+        callback(dataUrl);
+    };
+    img.src = dataUrl;
+}
+
 function openCamera() {
     // Trigger the hidden file input which opens camera on mobile
     document.getElementById('camera-input').click();
@@ -3444,8 +3673,11 @@ function handleCameraCapture(input) {
         var dataUrl = e.target.result;
         debugLog('Camera: DataURL length: ' + dataUrl.length);
         
-        // Show compose card with photo preview and caption input
-        showPhotoCompose(dataUrl);
+        // Compress image to fit in localStorage
+        compressImage(dataUrl, function(compressed) {
+            debugLog('Camera: Compressed to: ' + compressed.length);
+            showPhotoCompose(compressed);
+        });
     };
     
     reader.readAsDataURL(file);
@@ -3497,8 +3729,10 @@ function showPhotoComposeWithLocation(dataUrl, lat, lon, locationText) {
     };
     
     postBtn.onclick = function() {
+        debugLog('[photo] Post clicked');
         var caption = captionInput.value.trim();
         saveAndPostPhoto(dataUrl, caption, lat, lon, locationText);
+        debugLog('[photo] saveAndPostPhoto returned');
         overlay.remove();
     };
     
@@ -3514,62 +3748,72 @@ function showPhotoComposeWithLocation(dataUrl, lat, lon, locationText) {
 }
 
 function saveAndPostPhoto(dataUrl, caption, lat, lon, locationText) {
-    // Create photo entry
-    var photo = {
-        id: 'photo_' + Date.now(),
-        dataUrl: dataUrl,
-        lat: lat,
-        lon: lon,
-        time: Date.now(),
-        location: locationText,
-        caption: caption || null
-    };
+    var time = Date.now();
+    var photoId = 'photo_' + time;
     
-    // Save to photos array in state
-    if (!state.photos) state.photos = [];
-    state.photos.push(photo);
-    
-    // Keep only last 50 photos in localStorage (to manage size)
-    if (state.photos.length > 50) {
-        state.photos = state.photos.slice(-50);
-    }
-    state.save();
-    
-    // Add to timeline with thumbnail
-    var captionHtml = caption ? '<div class="photo-caption">' + escapeHTML(caption) + '</div>' : '';
-    var html = '<div class="photo-card" data-photo-id="' + photo.id + '">' +
-        '<img src="' + dataUrl + '" class="photo-thumbnail">' +
-        captionHtml +
-        '<div class="photo-location">📍 ' + escapeHTML(locationText) + '</div>' +
-        '</div>';
-    
-    debugLog('Photo: Adding to timeline, HTML length: ' + html.length);
-    addToTimeline(html, 'photo');
-    
-    debugLog('Photo captured at ' + locationText + ', timeline now has ' + state.timeline.length + ' items');
+    // Save image data to IndexedDB (unlimited storage)
+    photoDB.save(photoId, dataUrl).then(function() {
+        debugLog('[photo] Saved image to IndexedDB:', photoId);
+        
+        // Create timeline item - only metadata in localStorage
+        var item = {
+            text: photoId,
+            type: 'photo',
+            time: time,
+            lat: lat,
+            lon: lon,
+            photoData: {
+                location: locationText,
+                caption: caption || null
+                // dataUrl stored in IndexedDB, not here
+            }
+        };
+        
+        // Add to timeline and save
+        state.timeline.push(item);
+        state.save();
+        debugLog('[photo] Saved metadata, timeline now has', state.timeline.length, 'items');
+        
+        // Render with the dataUrl we have in memory
+        item._dataUrl = dataUrl;  // Temporary for immediate render
+        renderTimelineItem(item);
+        scrollToBottom();
+    }).catch(function(err) {
+        console.error('[photo] Failed to save:', err);
+        alert('Failed to save photo: ' + err);
+    });
 }
 
 function viewPhoto(photoId) {
-    if (!state.photos) return;
+    // Find the timeline item with photo metadata
+    var item = state.timeline.find(function(t) { return t.type === 'photo' && t.text === photoId; });
+    var photoData = item && item.photoData ? item.photoData : {};
     
-    var photo = state.photos.find(function(p) { return p.id === photoId; });
-    if (!photo) return;
-    
-    // Create fullscreen overlay
-    var overlay = document.createElement('div');
-    overlay.className = 'photo-overlay';
-    var captionHtml = photo.caption ? '<div class="photo-overlay-caption">' + escapeHTML(photo.caption) + '</div>' : '';
-    overlay.innerHTML = '<img src="' + photo.dataUrl + '" class="photo-full">' +
-        '<div class="photo-overlay-info">' +
-        captionHtml +
-        '<div>📍 ' + (photo.location || 'Unknown') + '</div>' +
-        '<div>🕒 ' + new Date(photo.time).toLocaleString() + '</div>' +
-        '</div>' +
-        '<button class="photo-close" onclick="this.parentElement.remove()">✕</button>';
-    overlay.onclick = function(e) {
-        if (e.target === overlay) overlay.remove();
-    };
-    document.body.appendChild(overlay);
+    // Load image from IndexedDB
+    photoDB.get(photoId).then(function(dataUrl) {
+        if (!dataUrl) {
+            console.error('[photo] Image not found in IndexedDB:', photoId);
+            return;
+        }
+        
+        // Create fullscreen overlay
+        var overlay = document.createElement('div');
+        overlay.className = 'photo-overlay';
+        var captionHtml = photoData.caption ? '<div class="photo-overlay-caption">' + escapeHTML(photoData.caption) + '</div>' : '';
+        overlay.innerHTML = '<img src="' + dataUrl + '" class="photo-full">' +
+            '<div class="photo-overlay-info">' +
+            captionHtml +
+            '<div>📍 ' + (photoData.location || 'Unknown') + '</div>' +
+            '<div>🕒 ' + (item ? new Date(item.time).toLocaleString() : '') + '</div>' +
+            '</div>' +
+            '<button class="photo-close" onclick="this.parentElement.remove()">✕</button>';
+        overlay.onclick = function(e) {
+            if (e.target === overlay) overlay.remove();
+        };
+        document.body.appendChild(overlay);
+    }).catch(function(err) {
+        console.error('[photo] Failed to load from IndexedDB:', err);
+    });
 }
 
 // Fallback for old photos without data-photo-id
@@ -3598,3 +3842,5 @@ function viewPhotoFromSrc(src, card) {
     };
     document.body.appendChild(overlay);
 }
+
+// IndexedDB for large data (photos)

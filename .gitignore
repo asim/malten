@@ -8,3 +8,13 @@ spatial.json
 events.jsonl
 backups/
 push_subscriptions.json
+
+# State files
+courier_state.json
+notification_state.json
+regional_couriers.json
+spatial.json.bak
+notification_history.json
+
+# Binary
+malten.ai

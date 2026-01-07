@@ -261,15 +261,11 @@ func truncateMap(m map[string]interface{}) string {
 }
 
 // AddWeatherObservation adds a weather observation if conditions are notable
+// DISABLED: Rain notifications were too noisy. Weather is available on-demand via /weather.
 func AddWeatherObservation(agentID, agentName string, temp float64, condition string, rainWarning string) {
-	// Only observe if there's something notable
-	if rainWarning != "" {
-		GetObservationLog().Add(agentID, agentName, ObsWeatherWarning, map[string]interface{}{
-			"temp":         temp,
-			"condition":    condition,
-			"rain_warning": rainWarning,
-		})
-	}
+	// Disabled - rain notifications were too frequent/noisy
+	// Users can check /weather when they want it
+	return
 }
 
 // AddDisruptionObservation adds a transport disruption observation

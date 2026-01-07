@@ -1,8 +1,11 @@
 package spatial
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
+	"net/url"
 	"time"
 )
 
@@ -88,6 +91,17 @@ var natureReminders = map[string][]NatureReminder{
 			Type:    "snow",
 		},
 	},
+	"evening": {
+		{
+			Caption: "The day draws to a close",
+			Verse:   "And by the night when it covers. (92:1)",
+			Type:    "evening",
+		},
+		{
+			Caption: "Evening light",
+			Type:    "evening",
+		},
+	},
 }
 
 // GetNatureReminder returns an appropriate nature reminder based on conditions
@@ -125,8 +139,13 @@ func GetNatureReminder(lat, lon float64, weather *WeatherData, sunTimes *SunTime
 			reminderType = "sunset"
 		}
 	} else if hour >= 16 && hour < 18 {
-		// Default sunset window
+		// Default sunset window (winter UK ~16:00-17:00)
 		reminderType = "sunset"
+	}
+	
+	// Evening/dusk (18:00-21:00)
+	if reminderType == "" && hour >= 18 && hour < 21 {
+		reminderType = "evening"
 	}
 	
 	// Weather-based
@@ -165,30 +184,16 @@ func FormatNatureReminder(r *NatureReminder) string {
 		return ""
 	}
 	
-	// Emoji based on type
-	emoji := "🌿"
-	switch r.Type {
-	case "stars":
-		emoji = "✨"
-	case "moon":
-		emoji = "🌙"
-	case "sunrise":
-		emoji = "🌅"
-	case "sunset":
-		emoji = "🌇"
-	case "mountains":
-		emoji = "🏔️"
-	case "ocean":
-		emoji = "🌊"
-	case "rain":
-		emoji = "🌧️"
-	case "snow":
-		emoji = "❄️"
+	var result string
+	
+	// Include image if available
+	if r.Image != "" {
+		result = fmt.Sprintf("![%s](%s)\n\n", r.Type, r.Image)
 	}
 	
-	result := fmt.Sprintf("%s %s", emoji, r.Caption)
+	result += r.Caption
 	if r.Verse != "" {
-		result += "\n\n" + r.Verse
+		result += "\n\n_" + r.Verse + "_"
 	}
 	return result
 }
@@ -197,4 +202,70 @@ func FormatNatureReminder(r *NatureReminder) string {
 type SunTimes struct {
 	Sunrise time.Time
 	Sunset  time.Time
+}
+
+// Wikimedia category mappings for each nature type
+var wikimediaCategories = map[string]string{
+	"stars":     "Starry_night_sky",
+	"moon":      "Photographs_of_the_Moon",
+	"sunrise":   "Sunrises",
+	"sunset":    "Sunsets",
+	"mountains": "Mountain_landscapes",
+	"ocean":     "Seascapes",
+	"rain":      "Rain",
+	"snow":      "Snow_landscapes",
+	"evening":   "Dusk",
+}
+
+// FetchNatureImage fetches a random image URL from Wikimedia Commons
+func FetchNatureImage(natureType string) string {
+	category, ok := wikimediaCategories[natureType]
+	if !ok {
+		return ""
+	}
+	
+	// Query Wikimedia Commons API using the rate-limited External client
+	apiURL := fmt.Sprintf(
+		"https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=Category:%s&gcmtype=file&gcmlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=800&format=json",
+		url.QueryEscape(category),
+	)
+	
+	resp, err := External.Get("wikimedia", apiURL)
+	if err != nil {
+		log.Printf("[nature] Failed to fetch image: %v", err)
+		return ""
+	}
+	defer resp.Body.Close()
+	
+	var result struct {
+		Query struct {
+			Pages map[string]struct {
+				ImageInfo []struct {
+					ThumbURL string `json:"thumburl"`
+				} `json:"imageinfo"`
+			} `json:"pages"`
+		} `json:"query"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("[nature] Failed to parse image response: %v", err)
+		return ""
+	}
+	
+	// Collect all image URLs
+	var urls []string
+	for _, page := range result.Query.Pages {
+		for _, info := range page.ImageInfo {
+			if info.ThumbURL != "" {
+				urls = append(urls, info.ThumbURL)
+			}
+		}
+	}
+	
+	if len(urls) == 0 {
+		return ""
+	}
+	
+	// Return a random one
+	return urls[rand.Intn(len(urls))]
 }

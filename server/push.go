@@ -5,45 +5,19 @@ import (
 	"log"
 	"net/http"
 	"os"
-
 	"sync"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
+	"malten.ai/data"
 )
 
 const pushFile = "push_subscriptions.json"
 
-// PushSubscription represents a user's push subscription
-type PushSubscription struct {
-	Endpoint string `json:"endpoint"`
-	Keys     struct {
-		P256dh string `json:"p256dh"`
-		Auth   string `json:"auth"`
-	} `json:"keys"`
-}
-
-// PushUser tracks a user's push subscription and state
-type PushUser struct {
-	SessionID      string            `json:"session_id"`
-	Subscription   *PushSubscription `json:"subscription"`
-	Lat            float64           `json:"lat"`
-	Lon            float64           `json:"lon"`
-	LastPing       time.Time         `json:"last_ping"`
-	LastPush       time.Time         `json:"last_push"`
-	Timezone       *time.Location    `json:"-"`                      // Not persisted, recalculated from lon
-	PushHistory    []PushHistoryItem `json:"push_history,omitempty"` // Recent push notifications
-	BusNotify      bool              `json:"bus_notify"`             // Whether to send bus push notifications (default: false)
-	DailyPushed    map[string]string `json:"daily_pushed,omitempty"` // notifyType -> date string (YYYY-MM-DD)
-	PushedContent  map[string]int64  `json:"pushed_content,omitempty"` // content hash -> unix timestamp
-}
-
-// PushHistoryItem represents a sent push notification
-type PushHistoryItem struct {
-	Time  time.Time `json:"time"`
-	Title string    `json:"title"`
-	Body  string    `json:"body"`
-}
+// Type aliases - use data package types
+type PushSubscription = data.PushSubscription
+type PushUser = data.PushUser
+type PushHistoryItem = data.PushHistoryItem
 
 // PushManager handles web push notifications
 type PushManager struct {
@@ -78,100 +52,33 @@ func GetPushManager() *PushManager {
 }
 
 // load reads subscriptions from disk
+// load copies from data.Subscriptions to local map
 func (pm *PushManager) load() {
-	data, err := os.ReadFile(pushFile)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("[push] Failed to load subscriptions: %v", err)
-		}
-		return
-	}
-
-	var users []*PushUser
-	if err := json.Unmarshal(data, &users); err != nil {
-		log.Printf("[push] Failed to parse subscriptions: %v", err)
-		return
-	}
-
-	// Also load dedupe state from pushed_content
-	dedupeData := make(map[string]map[string]int64)
-	
-	for _, u := range users {
-		// Recalculate timezone from longitude
-		if u.Lon != 0 {
-			offsetHours := int(u.Lon / 15)
-			u.Timezone = time.FixedZone("local", offsetHours*3600)
-		}
+	for _, u := range data.Subscriptions().GetAllUsers() {
 		pm.users[u.SessionID] = u
-		
-		// Collect pushed_content for dedupe tracker
-		if u.PushedContent != nil && len(u.PushedContent) > 0 {
-			dedupeData[u.SessionID] = u.PushedContent
-		}
 	}
-	
-	// Load into shared dedupe tracker
-	if len(dedupeData) > 0 {
-		GetDedupe().LoadFromPush(dedupeData)
-		log.Printf("[push] Loaded dedupe state for %d sessions", len(dedupeData))
-	}
+	log.Printf("[push] Loaded %d users from data.Subscriptions()", len(pm.users))
 }
 
-// save writes subscriptions to disk
+// save syncs to data.Subscriptions and saves
 func (pm *PushManager) save() {
-	pm.mu.RLock()
-	users := make([]*PushUser, 0, len(pm.users))
-	for _, u := range pm.users {
-		users = append(users, u)
-	}
-	pm.mu.RUnlock()
-
-	data, err := json.MarshalIndent(users, "", "  ")
-	if err != nil {
-		log.Printf("[push] Failed to marshal subscriptions: %v", err)
-		return
-	}
-
-	if err := os.WriteFile(pushFile, data, 0644); err != nil {
-		log.Printf("[push] Failed to save subscriptions: %v", err)
-	}
+	pm.syncToDataStore()
+	data.SaveAll()
 }
 
-// saveAsync saves without taking lock (caller must have copied data or not hold lock)
+// saveAsync syncs and saves async
 func (pm *PushManager) saveAsync() {
-	// Copy users while we still have the lock
-	// Also sync dedupe state from shared tracker
-	dedupeState := GetDedupe().GetAllState()
-	
-	users := make([]*PushUser, 0, len(pm.users))
-	for _, u := range pm.users {
-		// Deep copy the user to avoid race
-		userCopy := *u
-		
-		// Get dedupe state from shared tracker
-		if state, ok := dedupeState[u.SessionID]; ok {
-			userCopy.PushedContent = state
-		} else if u.PushedContent != nil {
-			userCopy.PushedContent = make(map[string]int64)
-			for k, v := range u.PushedContent {
-				userCopy.PushedContent[k] = v
-			}
-		}
-		users = append(users, &userCopy)
-	}
-	
-	// Save in goroutine
-	go func() {
-		data, err := json.MarshalIndent(users, "", "  ")
-		if err != nil {
-			log.Printf("[push] Failed to marshal subscriptions: %v", err)
-			return
-		}
+	pm.syncToDataStore()
+	data.SaveAllAsync()
+}
 
-		if err := os.WriteFile(pushFile, data, 0644); err != nil {
-			log.Printf("[push] Failed to save subscriptions: %v", err)
-		}
-	}()
+// syncToDataStore copies local users map to data.Subscriptions
+func (pm *PushManager) syncToDataStore() {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	for _, u := range pm.users {
+		data.Subscriptions().SetUser(u)
+	}
 }
 
 // Subscribe adds or updates a push subscription for a session
@@ -269,8 +176,9 @@ func (pm *PushManager) canPushLocked(user *PushUser) bool {
 type PushNotification struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
-	Icon  string `json:"icon,omitempty"`
-	Tag   string `json:"tag,omitempty"` // Replace previous with same tag
+	Icon  string `json:"icon,omitempty"`  // Small badge icon
+	Image string `json:"image,omitempty"` // Large image in notification
+	Tag   string `json:"tag,omitempty"`   // Replace previous with same tag
 	Data  any    `json:"data,omitempty"`
 }
 

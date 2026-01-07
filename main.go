@@ -15,6 +15,7 @@ import (
 
 	"malten.ai/agent"
 	"malten.ai/command"
+	"malten.ai/data"
 	"malten.ai/server"
 	"malten.ai/spatial"
 )
@@ -147,14 +148,28 @@ func buildWeatherNotification(lat, lon float64) *server.PushNotification {
 		return nil
 	}
 
-	body := ctx.Weather.Condition
+	// Build morning message
+	condition := ctx.Weather.Condition // e.g. "⛅ 2°C"
+
+	// Title: just "Good morning" with weather
+	title := "🌅 Good morning"
+
+	// Body: weather + optional rain warning + optional prayer
+	body := condition
 	if ctx.Weather.RainWarning != "" {
 		body += " · " + ctx.Weather.RainWarning
 	}
+	if ctx.Prayer != nil && ctx.Prayer.Display != "" {
+		body += "\n" + ctx.Prayer.Display
+	}
+
+	// Add a sunrise image
+	image := spatial.FetchNatureImage("sunrise")
 
 	return &server.PushNotification{
-		Title: "🌅 Good morning",
+		Title: title,
 		Body:  body,
+		Image: image,
 		Tag:   "morning",
 	}
 }
@@ -205,6 +220,14 @@ func main() {
 		}
 		staticFS = http.FS(htmlContent)
 	}
+
+	// Initialize data files
+	if err := data.Migrate("."); err != nil {
+		log.Printf("Data migration warning: %v", err)
+	}
+	data.StartBackgroundSave(5 * time.Minute)
+	log.Printf("[data] Loaded: %d subscriptions, %d notification sessions",
+		len(data.Subscriptions().Users), len(data.Notifications().History))
 
 	// Initialize spatial DB (triggers agent recovery)
 	spatial.Get()

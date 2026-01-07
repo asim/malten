@@ -3802,3 +3802,187 @@ shouldSend := llm.ShouldSendNotification(newNotification, events)
 ### JS Version: Check malten.js for current
 ### Go Build: Working
 ### Server: Running on port 9090
+
+## Session Checkpoint: Jan 6, 2026 - Dedupe Persistence Fix
+
+### The Bug
+Notification history (`notification_history.json`) wasn't being saved by `saveAsync()`, only by `save()`. 
+The awareness system uses `saveAsync()`, so every restart lost all notification history, allowing duplicate rain notifications.
+
+### The Fix
+- Added history save to `saveAsync()` in `server/push.go`
+- Nature images now use `External.Get()` rate limiter (not raw http.Client)
+
+### State Problem Still Exists
+We keep hitting "oh we forgot to persist that" because state is scattered:
+- 6+ files for persistence
+- Multiple in-memory maps
+- No single source of truth
+
+### PRIORITY: Unified Data Package
+Must create `data/` package with single Store before adding any new features.
+This prevents future persistence bugs by design.
+
+```go
+// All state through one interface
+store := data.Get()
+store.Dedupe.NotificationHistory // persisted automatically
+store.Sessions.Locations         // in-memory, cleared on restart (expected)
+```
+
+### Files Changed
+- `server/push.go` - Added history save to saveAsync()
+- `spatial/nature.go` - Use External.Get() for Wikimedia API
+- `client/web/malten.js` - Fixed markdown image rendering (URL protection)
+
+### Data Package Created (Jan 6, 2026)
+
+Created `data/` package for unified state management:
+
+**Files:**
+- `data/store.go` - Central Store singleton, Load/Save/SaveAsync
+- `data/notifications.go` - NotificationState (history + content keys)
+- `data/push.go` - PushState (users, subscriptions)  
+- `data/couriers.go` - CourierState (scheduling)
+- `data/sessions.go` - SessionState (in-memory, expected to reset)
+- `data/compat.go` - LLM dedupe integration
+- `data/migrate.go` - Migration from old formats
+
+**Usage:**
+```go
+store := data.Get()
+store.Migrate(".")  // Load existing data
+store.StartBackgroundSave(5 * time.Minute)
+
+// Notifications
+store.Notifications.ShouldSendNotification(sessionID, content) // LLM + rules
+store.Notifications.AddToHistory(sessionID, text)
+store.Notifications.GetRecentHistory(sessionID, hours)
+
+// Push users
+store.Push.GetUser(sessionID)
+store.Push.GetNearbyUsers(lat, lon, radiusKm)
+
+// Sessions (in-memory)
+store.Sessions.SetLocation(sessionID, lat, lon)
+store.Sessions.GetLocation(sessionID)
+```
+
+**Migration Status:**
+- ✅ Store initialized on startup
+- ✅ Migrates from notification_history.json
+- ✅ Migrates PushedContent from push_subscriptions.json  
+- ✅ Background save every 5 minutes
+- ⏳ Old dedupe code still in use (parallel run)
+- ⏳ Need to switch push.go to use data.Store
+
+**Next:** Replace server/dedupe.go and server/dedupe_llm.go with data.Notifications
+
+### Data Package Migration Complete (Jan 6, 2026)
+
+**Migrated:**
+- `server/dedupe.go` → shim to `data.Get().Notifications`
+- `server/dedupe_llm.go` → shim to `data.Get().Notifications`
+- `server/push.go` → uses `data.PushUser` type alias, delegates saves to data.Store
+
+**Files:**
+- `notification_state.json` - unified history + content keys (replaces notification_history.json)
+- `push_subscriptions.json` - still managed by server/push.go but uses data types
+- `spatial.json` - unchanged (managed by spatial package)
+- `courier_state.json`, `regional_couriers.json` - unchanged
+
+**Usage:**
+```go
+// Dedupe (via shims for compatibility)
+server.GetDedupe().ShouldSend(sessionID, content)
+server.ShouldSendLLM(sessionID, content)  // Rule-based only now
+
+// Or directly
+data.Get().Notifications.ShouldSend(sessionID, content)
+data.Get().Notifications.AddToHistory(sessionID, text)
+
+// Saves happen automatically:
+// - Background save every 5 mins
+// - On push subscription changes
+```
+
+**Removed:**
+- `notification_history.json` - merged into notification_state.json
+- `PushedContent` field from PushUser - now in Notifications.ContentKeys
+- LLM dedupe calls - rule-based only to conserve API quota
+
+## Session Checkpoint: Jan 6, 2026 - Data Package Complete
+
+### What Was Done
+
+1. **Disabled rain notifications** - Too noisy, weather available on-demand via /weather
+2. **Switched dedupe to rule-based only** - Saves LLM quota (Fanar 10 req/min shared across 3 apps)
+3. **Created unified data package** with clean API
+
+### Data Package API
+
+```go
+// Each file has explicit Load/Save
+data.Subscriptions().Load()   // push_subscriptions.json
+data.Subscriptions().Save()
+data.Notifications().Load()   // notification_state.json  
+data.Notifications().Save()
+data.Couriers().Load()        // courier_state.json + regional_couriers.json
+data.Couriers().Save()
+
+// Convenience
+data.LoadAll()
+data.SaveAll()
+data.SaveAllAsync()
+data.StartBackgroundSave(5 * time.Minute)
+data.Migrate(".")  // Load all + migrate old formats
+
+// Access data
+data.Subscriptions().Users["session123"]
+data.Subscriptions().GetUser(sessionID)
+data.Subscriptions().SetUser(user)
+data.Notifications().ShouldSend(sessionID, content)
+data.Notifications().AddToHistory(sessionID, text)
+data.Sessions().SetLocation(sessionID, lat, lon)  // in-memory only
+```
+
+### Files
+
+**data/**
+- `store.go` - Singletons, LoadAll/SaveAll, background save
+- `subscriptions.go` - push_subscriptions.json (PushUser, PushSubscription)
+- `notifications.go` - notification_state.json (History, ContentKeys, dedupe)
+- `couriers.go` - courier_state.json + regional_couriers.json
+- `sessions.go` - in-memory session locations
+- `migrate.go` - Migration from old formats
+
+**JSON files:**
+- `push_subscriptions.json` - push users
+- `notification_state.json` - dedupe history + content keys
+- `courier_state.json` - courier scheduling
+- `regional_couriers.json` - regional courier config
+- `spatial.json` - spatial index (managed by spatial package)
+
+### Compatibility Shims
+
+`server/dedupe.go` and `server/dedupe_llm.go` delegate to data package for backward compatibility.
+
+### Nature Reminders
+
+- Images from Wikimedia Commons API (via External rate limiter)
+- Auto-trigger 7pm-10pm, once per day
+- Manual via /nature command
+- Categories: stars, moon, sunrise, sunset, evening, mountains, ocean, rain, snow
+
+### LLM Usage
+
+- **Dedupe**: Rule-based only (no LLM)
+- **Awareness filter**: Still uses LLM but rain notifications disabled
+- **User AI queries**: Uses Fanar via agent.Client
+- Consider self-hosting (Ollama + Llama 3 8B) if quota becomes issue
+
+### Next Steps
+
+- Test nature reminder auto-trigger at 7pm
+- Monitor for any persistence issues
+- Could migrate spatial.json to data package eventually

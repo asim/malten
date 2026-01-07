@@ -265,6 +265,10 @@ func GetContextData(lat, lon float64) *ContextData {
 		if len(places) > 0 {
 			var categoryPlaces []Place
 			for _, p := range places {
+				// Skip places without names
+				if p.Name == "" {
+					continue
+				}
 				place := Place{
 					Name: p.Name,
 					Lat:  p.Lat,

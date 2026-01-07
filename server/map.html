@@ -429,6 +429,21 @@ function draw() {
             if (tooClose) return;
             
             const emoji = getEmoji(place.category);
+            
+            // Highlight if this is the target place (normalize quotes for comparison)
+            const normalizeQuotes = s => s.replace(/[\u2018\u2019\u0027]/g, "'");
+            if (highlightName && normalizeQuotes(place.name) === normalizeQuotes(highlightName)) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, fontSize + 8, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 200, 0, 0.5)';
+                ctx.fill();
+                ctx.strokeStyle = '#f90';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+            }
+            
             ctx.fillText(emoji, pos.x, pos.y);
             renderedPlaces.push({...place, x: pos.x, y: pos.y, radius: fontSize/2 + 10});
         });
@@ -1181,6 +1196,15 @@ function toggleLive() {
         }
     }
 }
+
+// Parse URL parameters for initial view
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has('lat') && urlParams.has('lon')) {
+    viewState.centerLat = parseFloat(urlParams.get('lat'));
+    viewState.centerLon = parseFloat(urlParams.get('lon'));
+    viewState.metersPerPixel = 2; // Zoom in when showing specific location
+}
+let highlightName = urlParams.get('highlight');
 
 // Initialize
 window.addEventListener('resize', resize);

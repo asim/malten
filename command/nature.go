@@ -33,9 +33,12 @@ func handleNature(ctx *Context, args []string) (string, error) {
 		// Return a default one
 		reminder = &spatial.NatureReminder{
 			Caption: "Step outside for a moment",
-			Type:    "general",
+			Type:    "stars", // Default to stars for image
 		}
 	}
+	
+	// Fetch an image for this nature type
+	reminder.Image = spatial.FetchNatureImage(reminder.Type)
 	
 	return spatial.FormatNatureReminder(reminder), nil
 }
