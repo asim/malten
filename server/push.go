@@ -12,8 +12,6 @@ import (
 	"malten.ai/data"
 )
 
-const pushFile = "push_subscriptions.json"
-
 // Type aliases - use data package types
 type PushSubscription = data.PushSubscription
 type PushUser = data.PushUser
@@ -31,6 +29,24 @@ type PushManager struct {
 var pushManager *PushManager
 var pushOnce sync.Once
 
+// PushNotification represents a push message
+type PushNotification struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Icon  string `json:"icon,omitempty"`
+	Image string `json:"image,omitempty"`
+	Tag   string `json:"tag,omitempty"`
+	Data  any    `json:"data,omitempty"`
+}
+
+// Callback for building morning context notification (set by main.go)
+var buildMorningContext func(lat, lon float64) *PushNotification
+
+// SetMorningContextBuilder sets the callback for morning notifications
+func SetMorningContextBuilder(cb func(lat, lon float64) *PushNotification) {
+	buildMorningContext = cb
+}
+
 // GetPushManager returns the singleton push manager
 func GetPushManager() *PushManager {
 	pushOnce.Do(func() {
@@ -43,42 +59,29 @@ func GetPushManager() *PushManager {
 		pushManager.load()
 		if pushManager.vapidPublic != "" {
 			go pushManager.backgroundLoop()
-			log.Printf("[push] Push notifications enabled, %d subscriptions loaded", len(pushManager.users))
+			log.Printf("[push] Enabled, %d subscriptions", len(pushManager.users))
 		} else {
-			log.Printf("[push] VAPID keys not configured, push disabled")
+			log.Printf("[push] VAPID keys not configured, disabled")
 		}
 	})
 	return pushManager
 }
 
-// load reads subscriptions from disk
 // load copies from data.Subscriptions to local map
 func (pm *PushManager) load() {
 	for _, u := range data.Subscriptions().GetAllUsers() {
 		pm.users[u.SessionID] = u
 	}
-	log.Printf("[push] Loaded %d users from data.Subscriptions()", len(pm.users))
 }
 
 // save syncs to data.Subscriptions and saves
 func (pm *PushManager) save() {
-	pm.syncToDataStore()
-	data.SaveAll()
-}
-
-// saveAsync syncs and saves async
-func (pm *PushManager) saveAsync() {
-	pm.syncToDataStore()
-	data.SaveAllAsync()
-}
-
-// syncToDataStore copies local users map to data.Subscriptions
-func (pm *PushManager) syncToDataStore() {
 	pm.mu.RLock()
-	defer pm.mu.RUnlock()
 	for _, u := range pm.users {
 		data.Subscriptions().SetUser(u)
 	}
+	pm.mu.RUnlock()
+	data.SaveAll()
 }
 
 // Subscribe adds or updates a push subscription for a session
@@ -88,15 +91,13 @@ func (pm *PushManager) Subscribe(sessionID string, sub *PushSubscription) {
 	if !exists {
 		user = &PushUser{
 			SessionID: sessionID,
-			Timezone:  time.UTC, // Default, updated on ping
 		}
 		pm.users[sessionID] = user
 	}
 	user.Subscription = sub
 	pm.mu.Unlock()
-
 	pm.save()
-	log.Printf("[push] Subscription added for session %s", sessionID[:8])
+	log.Printf("[push] Subscribed: %s", sessionID[:8])
 }
 
 // Unsubscribe removes a push subscription
@@ -104,12 +105,11 @@ func (pm *PushManager) Unsubscribe(sessionID string) {
 	pm.mu.Lock()
 	delete(pm.users, sessionID)
 	pm.mu.Unlock()
-
 	pm.save()
-	log.Printf("[push] Subscription removed for session %s", sessionID[:8])
+	log.Printf("[push] Unsubscribed: %s", sessionID[:8])
 }
 
-// UpdateLocation updates user's last known location
+// UpdateLocation updates user's last known location and timezone
 func (pm *PushManager) UpdateLocation(sessionID string, lat, lon float64) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -127,82 +127,80 @@ func (pm *PushManager) UpdateLocation(sessionID string, lat, lon float64) {
 	user.Timezone = time.FixedZone("local", offsetHours*3600)
 }
 
-// isQuietHours checks if it's between 10pm and 7am in user's timezone
-func (pm *PushManager) isQuietHours(user *PushUser) bool {
-	return pm.isQuietHoursLocked(user)
-}
+// backgroundLoop runs once per minute, checks for morning notification
+func (pm *PushManager) backgroundLoop() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
 
-func (pm *PushManager) isQuietHoursLocked(user *PushUser) bool {
-	if user.Timezone == nil {
-		return false
+	for range ticker.C {
+		pm.checkMorningNotification()
 	}
-	now := time.Now().In(user.Timezone)
-	hour := now.Hour()
-	return hour >= 22 || hour < 7
 }
 
-// canPush checks rate limits and quiet hours
-func (pm *PushManager) canPush(user *PushUser) bool {
+// checkMorningNotification sends context at 7am local time
+func (pm *PushManager) checkMorningNotification() {
+	if buildMorningContext == nil {
+		return
+	}
+
 	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-	return pm.canPushLocked(user)
+	users := make([]*PushUser, 0, len(pm.users))
+	for _, u := range pm.users {
+		if u.Subscription != nil && u.Lat != 0 {
+			users = append(users, u)
+		}
+	}
+	pm.mu.RUnlock()
+
+	for _, user := range users {
+		// Get user's local time
+		now := time.Now()
+		if user.Timezone != nil {
+			now = now.In(user.Timezone)
+		}
+		hour, minute := now.Hour(), now.Minute()
+
+		// 7:00-7:05am window - log when close to trigger time for debugging
+		if hour == 6 && minute >= 55 {
+			log.Printf("[push] User %s local time: %02d:%02d (approaching 7am window)", user.SessionID[:8], hour, minute)
+		}
+		if hour == 7 && minute < 5 {
+			today := now.Format("2006-01-02")
+			
+			// Check if already sent today
+			pm.mu.RLock()
+			alreadySent := user.DailyPushed != nil && user.DailyPushed["morning"] == today
+			pm.mu.RUnlock()
+			
+			if alreadySent {
+				continue
+			}
+
+			// Build and send notification
+			notification := buildMorningContext(user.Lat, user.Lon)
+			if notification == nil {
+				continue
+			}
+
+			if pm.sendPush(user, notification) {
+				// Mark as sent
+				pm.mu.Lock()
+				if user.DailyPushed == nil {
+					user.DailyPushed = make(map[string]string)
+				}
+				user.DailyPushed["morning"] = today
+				pm.mu.Unlock()
+				pm.save()
+				log.Printf("[push] Morning context sent to %s", user.SessionID[:8])
+			}
+		}
+	}
 }
 
-func (pm *PushManager) canPushLocked(user *PushUser) bool {
-	// No subscription
+// sendPush sends a push notification to a user
+func (pm *PushManager) sendPush(user *PushUser, notification *PushNotification) bool {
 	if user.Subscription == nil {
 		return false
-	}
-
-	// Quiet hours (10pm-7am local time)
-	if pm.isQuietHoursLocked(user) {
-		return false
-	}
-
-	// Rate limit: max 1 push per 5 minutes
-	if time.Since(user.LastPush) < 5*time.Minute {
-		return false
-	}
-
-	// Don't push if user was active recently (they have the app open)
-	if time.Since(user.LastPing) < 2*time.Minute {
-		return false
-	}
-
-	return true
-}
-
-// PushNotification represents a push message
-type PushNotification struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	Icon  string `json:"icon,omitempty"`  // Small badge icon
-	Image string `json:"image,omitempty"` // Large image in notification
-	Tag   string `json:"tag,omitempty"`   // Replace previous with same tag
-	Data  any    `json:"data,omitempty"`
-}
-
-// SendPush sends a push notification to a user
-func (pm *PushManager) SendPush(sessionID string, notification *PushNotification) error {
-	pm.mu.Lock()
-	user, exists := pm.users[sessionID]
-	if !exists || user.Subscription == nil {
-		pm.mu.Unlock()
-		return nil
-	}
-
-	if !pm.canPushLocked(user) {
-		pm.mu.Unlock()
-		return nil
-	}
-
-	// Content-based deduplication using LLM (falls back to rule-based)
-	content := notification.Title + " " + notification.Body
-	pm.mu.Unlock() // Release lock before LLM call
-	
-	if !ShouldSendLLM(sessionID, content) {
-		log.Printf("[push] Skipping duplicate for %s: %s", sessionID[:8], truncate(content, 40))
-		return nil
 	}
 
 	payload, _ := json.Marshal(notification)
@@ -217,97 +215,22 @@ func (pm *PushManager) SendPush(sessionID string, notification *PushNotification
 		VAPIDPublicKey:  pm.vapidPublic,
 		VAPIDPrivateKey: pm.vapidPrivate,
 		Subscriber:      pm.subject,
-		TTL:             60, // 1 minute TTL for time-sensitive data
+		TTL:             3600,
 	})
 
 	if err != nil {
-		log.Printf("[push] Failed to send to %s: %v", sessionID[:8], err)
-		return err
+		log.Printf("[push] Error: %v", err)
+		return false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusGone {
-		// Subscription expired, remove it
-		pm.Unsubscribe(sessionID)
-		return nil
+		// Subscription expired
+		pm.Unsubscribe(user.SessionID)
+		return false
 	}
 
-	pm.mu.Lock()
-	user.LastPush = time.Now()
-	// Store in push history for timeline display
-	user.PushHistory = append(user.PushHistory, PushHistoryItem{
-		Time:  time.Now(),
-		Title: notification.Title,
-		Body:  notification.Body,
-	})
-	// Keep only last 20 push notifications
-	if len(user.PushHistory) > 20 {
-		user.PushHistory = user.PushHistory[len(user.PushHistory)-20:]
-	}
-	pm.mu.Unlock()
-
-	pm.save() // Persist push history
-	log.Printf("[push] Sent to %s: %s", sessionID[:8], notification.Title)
-	return nil
-}
-
-// backgroundLoop checks for users who need push updates
-func (pm *PushManager) backgroundLoop() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		pm.checkAndPush()                // Bus/context updates for backgrounded users
-		pm.checkScheduledNotifications() // Daily scheduled notifications
-	}
-}
-
-// checkAndPush evaluates all users and sends relevant pushes
-func (pm *PushManager) checkAndPush() {
-	pm.mu.RLock()
-	users := make([]*PushUser, 0, len(pm.users))
-	for _, u := range pm.users {
-		users = append(users, u)
-	}
-	pm.mu.RUnlock()
-
-	for _, user := range users {
-		if !pm.canPush(user) {
-			continue
-		}
-
-		// User hasn't pinged in 2-30 minutes = probably backgrounded
-		// Beyond 30 min, they've probably left the area
-		sinceLastPing := time.Since(user.LastPing)
-		if sinceLastPing < 2*time.Minute || sinceLastPing > 30*time.Minute {
-			continue
-		}
-
-		// Get fresh context for their last known location
-		notification := pm.buildNotification(user)
-		if notification != nil {
-			pm.SendPush(user.SessionID, notification)
-		}
-	}
-}
-
-// buildNotification creates a notification based on user's context
-func (pm *PushManager) buildNotification(user *PushUser) *PushNotification {
-	// Import cycle prevention: we can't import spatial here
-	// Instead, we'll call a callback that's set by main.go
-	if buildNotificationCallback == nil {
-		return nil
-	}
-	return buildNotificationCallback(user.Lat, user.Lon, user.BusNotify)
-}
-
-// Callback for building notifications (set by main.go to avoid import cycle)
-// Third param is whether bus notifications are enabled for this user
-var buildNotificationCallback func(lat, lon float64, busNotify bool) *PushNotification
-
-// SetNotificationBuilder sets the callback for building notifications
-func SetNotificationBuilder(cb func(lat, lon float64, busNotify bool) *PushNotification) {
-	buildNotificationCallback = cb
+	return resp.StatusCode < 400
 }
 
 // GetVAPIDPublicKey returns the public key for client subscription
@@ -315,7 +238,8 @@ func (pm *PushManager) GetVAPIDPublicKey() string {
 	return pm.vapidPublic
 }
 
-// HandleSubscribe handles POST /push/subscribe
+// HTTP Handlers
+
 func HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -338,7 +262,6 @@ func HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// HandleUnsubscribe handles POST /push/unsubscribe
 func HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -355,7 +278,6 @@ func HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// HandleVAPIDKey handles GET /push/vapid-key
 func HandleVAPIDKey(w http.ResponseWriter, r *http.Request) {
 	pm := GetPushManager()
 	if pm.vapidPublic == "" {
@@ -366,365 +288,54 @@ func HandleVAPIDKey(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"key": pm.vapidPublic})
 }
 
-// HandlePushHistory handles GET /push/history - returns recent push notifications for timeline
 func HandlePushHistory(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	// Simplified - just return empty for now
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"history": []PushHistoryItem{}})
+}
+
+// HandleTestMorningPush manually triggers the morning push for testing
+func HandleTestMorningPush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	sessionID := getSessionToken(w, r)
-	if sessionID == "" {
-		JsonError(w, "No session", http.StatusUnauthorized)
+	pm := GetPushManager()
+	if buildMorningContext == nil {
+		JsonError(w, "Morning context builder not set", http.StatusServiceUnavailable)
 		return
 	}
 
-	pm := GetPushManager()
 	pm.mu.RLock()
-	user, exists := pm.users[sessionID]
-	pm.mu.RUnlock()
-
-	var history []PushHistoryItem
-	if exists && user.PushHistory != nil {
-		history = user.PushHistory
-		// Clear history after fetching (will be re-populated by new pushes)
-		pm.ClearPushHistory(sessionID)
-	} else {
-		history = []PushHistoryItem{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"history": history,
-	})
-}
-
-// ClearPushHistory clears push history after client has fetched it
-func (pm *PushManager) ClearPushHistory(sessionID string) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	if user, exists := pm.users[sessionID]; exists {
-		user.PushHistory = nil
-	}
-}
-
-// SetBusNotify sets bus notification preference for a session
-func (pm *PushManager) SetBusNotify(sessionID string, enabled bool) {
-	pm.mu.Lock()
-
-	user, exists := pm.users[sessionID]
-	if !exists {
-		// Create a user entry even without push subscription
-		// This allows tracking preferences before they enable notifications
-		user = &PushUser{
-			SessionID: sessionID,
-		}
-		pm.users[sessionID] = user
-	}
-
-	user.BusNotify = enabled
-	pm.mu.Unlock() // Release lock before save (save acquires its own lock)
-
-	pm.save()
-	log.Printf("[push] Bus notifications %s for session %s", map[bool]string{true: "enabled", false: "disabled"}[enabled], sessionID[:8])
-}
-
-// GetBusNotify gets bus notification preference for a session
-func (pm *PushManager) GetBusNotify(sessionID string) bool {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-	if user, exists := pm.users[sessionID]; exists {
-		return user.BusNotify
-	}
-	return false // Default: bus notifications off
-}
-
-// Scheduled notification types
-const (
-	NotifyMorningWeather = "morning_weather"
-	NotifyDuha           = "duha"
-	NotifyPrayerSoon     = "prayer_soon"
-)
-
-// checkScheduledNotifications runs scheduled pushes based on user's local time
-func (pm *PushManager) checkScheduledNotifications() {
-	pm.mu.RLock()
-	users := make([]*PushUser, 0, len(pm.users))
+	var user *PushUser
 	for _, u := range pm.users {
 		if u.Subscription != nil && u.Lat != 0 {
-			users = append(users, u)
+			user = u
+			break
 		}
 	}
 	pm.mu.RUnlock()
 
-	for _, user := range users {
-		// Skip if quiet hours or recently pushed
-		if pm.isQuietHours(user) {
-			continue
-		}
-
-		now := time.Now()
-		if user.Timezone != nil {
-			now = now.In(user.Timezone)
-		}
-		hour, minute := now.Hour(), now.Minute()
-
-		// Morning weather: 7:00-7:05am
-		if hour == 7 && minute < 5 {
-			if pm.canPushType(user, NotifyMorningWeather) {
-				pm.pushMorningWeather(user)
-			}
-		}
-
-		// Ad-Duha: Handled by client-side prayer reminder system
-		// Don't send via push to avoid duplicates
-
-		// Prayer reminders: check if any prayer is 10 min away
-		pm.checkPrayerReminder(user, now)
-	}
-}
-
-// canPushType checks if we can push this type (max once per day per type)
-func (pm *PushManager) canPushType(user *PushUser, notifyType string) bool {
-	now := time.Now()
-	if user.Timezone != nil {
-		now = now.In(user.Timezone)
-	}
-	today := now.Format("2006-01-02")
-
-	if user.DailyPushed == nil {
-		return true
-	}
-
-	lastDate, exists := user.DailyPushed[notifyType]
-	return !exists || lastDate != today
-}
-
-// markPushed marks a notification type as sent today
-func (pm *PushManager) markPushed(user *PushUser, notifyType string) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	now := time.Now()
-	if user.Timezone != nil {
-		now = now.In(user.Timezone)
-	}
-	today := now.Format("2006-01-02")
-
-	if user.DailyPushed == nil {
-		user.DailyPushed = make(map[string]string)
-	}
-	user.DailyPushed[notifyType] = today
-
-	// Persist
-	pm.save()
-}
-
-// pushMorningWeather sends morning weather notification
-func (pm *PushManager) pushMorningWeather(user *PushUser) {
-	if buildNotificationCallback == nil {
+	if user == nil {
+		JsonError(w, "No users with subscription and location", http.StatusNotFound)
 		return
 	}
 
-	ctx := buildWeatherNotification(user.Lat, user.Lon)
-	if ctx != nil {
-		pm.SendPush(user.SessionID, ctx)
-		pm.markPushed(user, NotifyMorningWeather)
+	notification := buildMorningContext(user.Lat, user.Lon)
+	if notification == nil {
+		JsonError(w, "Failed to build notification", http.StatusInternalServerError)
+		return
 	}
-}
 
-// pushDuha sends Ad-Duha reminder
-func (pm *PushManager) pushDuha(user *PushUser) {
-	pm.SendPush(user.SessionID, &PushNotification{
-		Title: "☀️ Ad-Duha",
-		Body:  "By the morning sunlight, and the night when it falls still... (93:1-2)",
-		Tag:   "duha",
+	// Show notification even if send fails (subscription may be stale)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      pm.sendPush(user, notification),
+		"title":        notification.Title,
+		"body":         notification.Body,
+		"image":        notification.Image,
+		"user_session": user.SessionID[:8],
 	})
-	pm.markPushed(user, NotifyDuha)
-}
-
-// checkPrayerReminder checks if any prayer is ~10 min away
-func (pm *PushManager) checkPrayerReminder(user *PushUser, now time.Time) {
-	if buildPrayerNotification == nil {
-		return
-	}
-
-	notification := buildPrayerNotification(user.Lat, user.Lon, now)
-	if notification != nil {
-		pm.SendPush(user.SessionID, notification)
-	}
-}
-
-// Callbacks for building notifications (set by main.go)
-var buildWeatherNotification func(lat, lon float64) *PushNotification
-var buildPrayerNotification func(lat, lon float64, now time.Time) *PushNotification
-
-// SetWeatherNotificationBuilder sets the callback for weather notifications
-func SetWeatherNotificationBuilder(cb func(lat, lon float64) *PushNotification) {
-	buildWeatherNotification = cb
-}
-
-// SetPrayerNotificationBuilder sets the callback for prayer notifications
-func SetPrayerNotificationBuilder(cb func(lat, lon float64, now time.Time) *PushNotification) {
-	buildPrayerNotification = cb
-}
-
-// PushAwarenessToArea pushes awareness items to all users in an area
-func (pm *PushManager) PushAwarenessToArea(lat, lon float64, items []struct{ Emoji, Message string }) {
-	if pm == nil {
-		return
-	}
-
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	for _, user := range pm.users {
-		// Check if user is in this area (within 2km)
-		if user.Lat == 0 && user.Lon == 0 {
-			continue
-		}
-
-		dist := haversine(lat, lon, user.Lat, user.Lon)
-		if dist > 2.0 { // > 2km
-			continue
-		}
-
-		for _, item := range items {
-			// Content-based dedupe using LLM
-			content := item.Emoji + " " + item.Message
-			if !ShouldSendLLM(user.SessionID, content) {
-				log.Printf("[push] Skipping duplicate for %s: %s", user.SessionID[:8], truncate(content, 40))
-				continue
-			}
-
-			notification := &PushNotification{
-				Title: item.Emoji + " Malten",
-				Body:  item.Message,
-			}
-			// Send without releasing lock (simpler, awareness isn't time-critical)
-			pm.sendPushSimple(user, notification)
-		}
-	}
-	
-	// Persist after batch (copy data first since save() takes lock)
-	pm.saveAsync()
-}
-
-// sendPushSimple sends push without releasing lock (for batch operations)
-func (pm *PushManager) sendPushSimple(user *PushUser, notification *PushNotification) {
-	if user.Subscription == nil {
-		return
-	}
-
-	sub := &webpush.Subscription{
-		Endpoint: user.Subscription.Endpoint,
-		Keys: webpush.Keys{
-			P256dh: user.Subscription.Keys.P256dh,
-			Auth:   user.Subscription.Keys.Auth,
-		},
-	}
-
-	payload, _ := json.Marshal(notification)
-	
-	// Send in goroutine to not block
-	go func() {
-		resp, err := webpush.SendNotification(payload, sub, &webpush.Options{
-			VAPIDPublicKey:  pm.vapidPublic,
-			VAPIDPrivateKey: pm.vapidPrivate,
-			Subscriber:      pm.subject,
-			TTL:             3600,
-		})
-		if err != nil {
-			log.Printf("[push] Error sending to %s: %v", user.SessionID[:8], err)
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode >= 400 {
-			log.Printf("[push] Failed for %s: status %d", user.SessionID[:8], resp.StatusCode)
-			return
-		}
-
-		bodyPreview := notification.Body
-		if len(bodyPreview) > 50 {
-			bodyPreview = bodyPreview[:50]
-		}
-		log.Printf("[push] Sent to %s: %s", user.SessionID[:8], bodyPreview)
-	}()
-}
-
-// canPushTodayLocked checks if we can push this notification type today (caller holds lock)
-func (pm *PushManager) canPushTodayLocked(user *PushUser, notifyType string) bool {
-	now := time.Now()
-	if user.Timezone != nil {
-		now = now.In(user.Timezone)
-	}
-	today := now.Format("2006-01-02")
-
-	if user.DailyPushed == nil {
-		return true
-	}
-
-	lastDate, exists := user.DailyPushed[notifyType]
-	return !exists || lastDate != today
-}
-
-// markPushedLocked marks a notification type as sent today (caller holds lock)
-func (pm *PushManager) markPushedLocked(user *PushUser, notifyType string) {
-	now := time.Now()
-	if user.Timezone != nil {
-		now = now.In(user.Timezone)
-	}
-	today := now.Format("2006-01-02")
-
-	if user.DailyPushed == nil {
-		user.DailyPushed = make(map[string]string)
-	}
-	user.DailyPushed[notifyType] = today
-}
-
-// sendPushLocked sends a push notification (caller holds lock, releases for network call)
-func (pm *PushManager) sendPushLocked(user *PushUser, notification *PushNotification) bool {
-	if user.Subscription == nil {
-		return false
-	}
-
-	// Copy what we need before releasing lock
-	sub := &webpush.Subscription{
-		Endpoint: user.Subscription.Endpoint,
-		Keys: webpush.Keys{
-			P256dh: user.Subscription.Keys.P256dh,
-			Auth:   user.Subscription.Keys.Auth,
-		},
-	}
-	sessionID := user.SessionID
-
-	// Release lock for network call
-	pm.mu.Unlock()
-	defer pm.mu.Lock()
-
-	payload, _ := json.Marshal(notification)
-	resp, err := webpush.SendNotification(payload, sub, &webpush.Options{
-		VAPIDPublicKey:  pm.vapidPublic,
-		VAPIDPrivateKey: pm.vapidPrivate,
-		Subscriber:      pm.subject,
-		TTL:             3600,
-	})
-	if err != nil {
-		log.Printf("[push] Error sending to %s: %v", sessionID[:8], err)
-		return false
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		log.Printf("[push] Failed for %s: status %d", sessionID[:8], resp.StatusCode)
-		return false
-	}
-
-	bodyPreview := notification.Body
-	if len(bodyPreview) > 50 {
-		bodyPreview = bodyPreview[:50]
-	}
-	log.Printf("[push] Sent to %s: %s", sessionID[:8], bodyPreview)
-	return true
+	log.Printf("[push] Test morning push attempted for %s", user.SessionID[:8])
 }

@@ -47,7 +47,6 @@ Tools (use ONLY when context doesn't have the answer):
 - price: Crypto prices
 - reminder: Islamic reminders  
 - news: News search
-- video: Video search
 
 CRISIS: Self-harm/suicide → reply ONLY: "samaritans.org - 116 123 (UK)"`
 
@@ -105,11 +104,12 @@ var tools = []openai.Tool{
 			}`),
 		},
 	},
+
 	{
 		Type: openai.ToolTypeFunction,
 		Function: &openai.FunctionDefinition{
 			Name:        "video",
-			Description: "Search for videos. Use when user wants to watch or find videos.",
+			Description: "Search for videos. Use when user wants to find or watch videos.",
 			Parameters: json.RawMessage(`{
 				"type": "object",
 				"properties": {
@@ -284,7 +284,7 @@ Respond with ONLY a JSON object, nothing else:
 
 Examples:
 - "what's the btc price" -> {"tool": "price", "args": {"coin": "btc"}}
-- "show me golang videos" -> {"tool": "video", "args": {"query": "golang"}}
+- "galaxy videos" -> {"tool": "video", "args": {"query": "galaxy"}}
 - "what is 2+2" -> {"tool": "none", "args": {}}
 - "latest news" -> {"tool": "news", "args": {}}
 - "news about gaza" -> {"tool": "news", "args": {"query": "gaza"}}
@@ -337,6 +337,13 @@ func Prompt(systemPrompt string, messages []Message, userPrompt string) (string,
 		return directResponse(systemPrompt, messages, userPrompt)
 	}
 
+	// Short conversational responses (yes, yea, ok, sure, etc.) should use conversation history
+	// rather than trying to select a tool
+	if isShortAffirmative(userPrompt) && len(messages) > 0 {
+		log.Printf("[AI] Short affirmative with history, using direct response")
+		return directResponse(systemPrompt, messages, userPrompt)
+	}
+
 	// No context - use tool selection for things like price, news, etc
 	decision, err := selectTool(userPrompt)
 	if err == nil && decision != nil && decision.Tool != "none" && decision.Tool != "" {
@@ -378,6 +385,22 @@ var contextPlaceTypes = map[string]bool{
 }
 
 // isContextQuestion returns true if the question should be answered from location context
+// isShortAffirmative returns true for short responses like "yes", "yea", "ok", etc.
+func isShortAffirmative(prompt string) bool {
+	lower := strings.ToLower(strings.TrimSpace(prompt))
+	// Remove punctuation
+	lower = strings.TrimRight(lower, "!.?,")
+	
+	shortResponses := map[string]bool{
+		"yes": true, "yea": true, "yeah": true, "yep": true, "yup": true,
+		"ok": true, "okay": true, "sure": true, "alright": true,
+		"no": true, "nope": true, "nah": true,
+		"please": true, "thanks": true, "thank you": true,
+		"go ahead": true, "do it": true, "go for it": true,
+	}
+	return shortResponses[lower]
+}
+
 func isContextQuestion(prompt string) bool {
 	lower := strings.ToLower(prompt)
 
@@ -388,6 +411,7 @@ func isContextQuestion(prompt string) bool {
 		"weather", "temperature", "cold", "hot", "rain",
 		"prayer", "fajr", "dhuhr", "asr", "maghrib", "isha",
 		"what's around", "what is around", "what's happening",
+		"what's here", "what is here", "whats here",
 	}
 	for _, kw := range alwaysContext {
 		if strings.Contains(lower, kw) {
@@ -455,7 +479,7 @@ Available tools:
 - price: cryptocurrency prices (btc, eth, etc)
 - reminder: Islamic content (Quran, Hadith, daily reminder)
 - news: news headlines or search news
-- video: search videos
+- video: search for videos (tutorials, music, documentaries, etc)
 - nearby: find places near user (bowling, cinema, gym, hotel, any place type)
 - directions: walking directions to a place (how do I get to X, directions to X)
 - none: general questions, math, coding, conversation
@@ -464,6 +488,7 @@ Respond ONLY with JSON: {"tool": "name", "args": {"key": "value"}}
 Examples:
 - btc price -> {"tool": "price", "args": {"coin": "btc"}}
 - news about AI -> {"tool": "news", "args": {"query": "AI"}}
+- galaxy videos -> {"tool": "video", "args": {"query": "galaxy"}}
 - search hadith about patience -> {"tool": "reminder", "args": {"query": "patience"}}
 - bowling near me -> {"tool": "nearby", "args": {"type": "bowling"}}
 - find a cinema -> {"tool": "nearby", "args": {"type": "cinema"}}

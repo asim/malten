@@ -79,7 +79,7 @@ func (rm *RegionalCourierManager) detectAndCreateCouriers() {
 			}
 			// Check distance to any agent already in cluster
 			for _, inCluster := range cluster {
-				dist := distanceMeters(inCluster.Lat, inCluster.Lon, other.Lat, other.Lon)
+				dist := DistanceMeters(inCluster.Lat, inCluster.Lon, other.Lat, other.Lon)
 				if dist < clusterRadius {
 					cluster = append(cluster, other)
 					clustered[other.ID] = true
@@ -242,7 +242,7 @@ func pickRegionalDestination(db *DB, clusterID string, courier *CourierState) bo
 
 	var candidates []*Entity
 	for _, agent := range agents {
-		dist := distanceMeters(courier.CurrentLat, courier.CurrentLon, agent.Lat, agent.Lon)
+		dist := DistanceMeters(courier.CurrentLat, courier.CurrentLon, agent.Lat, agent.Lon)
 		if dist < clusterRadius && dist > 100 {
 			candidates = append(candidates, agent)
 		}
@@ -266,7 +266,7 @@ func pickRegionalDestination(db *DB, clusterID string, courier *CourierState) bo
 	for _, agent := range candidates {
 		agentComponent := findComponent(agent.Lat, agent.Lon, candidates, connected)
 		if agentComponent != courierComponent && agentComponent != "" {
-			dist := distanceMeters(courier.CurrentLat, courier.CurrentLon, agent.Lat, agent.Lon)
+			dist := DistanceMeters(courier.CurrentLat, courier.CurrentLon, agent.Lat, agent.Lon)
 			if _, exists := componentDists[agentComponent]; !exists || dist < componentDists[agentComponent] {
 				componentAgents[agentComponent] = agent
 				componentDists[agentComponent] = dist
@@ -298,7 +298,7 @@ func pickRegionalDestination(db *DB, clusterID string, courier *CourierState) bo
 
 	for _, agent := range candidates {
 		conns := countConnections(db, agent)
-		dist := distanceMeters(courier.CurrentLat, courier.CurrentLon, agent.Lat, agent.Lon)
+		dist := DistanceMeters(courier.CurrentLat, courier.CurrentLon, agent.Lat, agent.Lon)
 
 		// Prefer fewer connections, then farther away (to expand network)
 		if conns < minConnections || (conns == minConnections && dist > leastDist) {
@@ -318,7 +318,7 @@ func pickRegionalDestination(db *DB, clusterID string, courier *CourierState) bo
 	farthestDist := float64(0)
 
 	for _, agent := range candidates {
-		dist := distanceMeters(courier.CurrentLat, courier.CurrentLon, agent.Lat, agent.Lon)
+		dist := DistanceMeters(courier.CurrentLat, courier.CurrentLon, agent.Lat, agent.Lon)
 		if dist > farthestDist {
 			farthest = agent
 			farthestDist = dist
@@ -372,14 +372,14 @@ func areAgentsConnected(db *DB, a1, a2 *Entity) bool {
 
 		// Check if street ends near a2
 		endLon, endLat := sd.Points[len(sd.Points)-1][0], sd.Points[len(sd.Points)-1][1]
-		endDist := distanceMeters(endLat, endLon, a2.Lat, a2.Lon)
+		endDist := DistanceMeters(endLat, endLon, a2.Lat, a2.Lon)
 		if endDist < 500 {
 			return true
 		}
 
 		// Also check start (streets can be walked both ways)
 		startLon, startLat := sd.Points[0][0], sd.Points[0][1]
-		startDist := distanceMeters(startLat, startLon, a2.Lat, a2.Lon)
+		startDist := DistanceMeters(startLat, startLon, a2.Lat, a2.Lon)
 		if startDist < 500 {
 			return true
 		}
@@ -395,7 +395,7 @@ func findComponent(lat, lon float64, agents []*Entity, connected map[string]map[
 	minDist := float64(999999999)
 
 	for _, agent := range agents {
-		dist := distanceMeters(lat, lon, agent.Lat, agent.Lon)
+		dist := DistanceMeters(lat, lon, agent.Lat, agent.Lon)
 		if dist < minDist {
 			minDist = dist
 			nearest = agent
@@ -467,7 +467,7 @@ func walkRegionalRoute(db *DB, courier *CourierState) {
 	for i := courier.RouteIndex; i < len(courier.Route)-1 && totalDist < 100; i++ {
 		p1 := courier.Route[i]
 		p2 := courier.Route[i+1]
-		segmentDist := distanceMeters(p1[1], p1[0], p2[1], p2[0])
+		segmentDist := DistanceMeters(p1[1], p1[0], p2[1], p2[0])
 		totalDist += segmentDist
 		advance++
 	}
@@ -485,7 +485,7 @@ func walkRegionalRoute(db *DB, courier *CourierState) {
 	courier.LastMove = time.Now()
 
 	// Track distance
-	stepDist := distanceMeters(oldLat, oldLon, courier.CurrentLat, courier.CurrentLon)
+	stepDist := DistanceMeters(oldLat, oldLon, courier.CurrentLat, courier.CurrentLon)
 	courier.MetersWalked += stepDist
 
 	// Index street geometry
@@ -610,7 +610,7 @@ func SendCourierTo(lat, lon float64, name string) error {
 		if !courier.Enabled {
 			continue
 		}
-		dist := distanceMeters(courier.CurrentLat, courier.CurrentLon, lat, lon)
+		dist := DistanceMeters(courier.CurrentLat, courier.CurrentLon, lat, lon)
 		if dist < nearestDist {
 			nearestDist = dist
 			nearestID = id

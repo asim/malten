@@ -193,10 +193,11 @@ func GetContextData(lat, lon float64) *ContextData {
 			Display: display,
 		}
 		// Parse display to extract current/next
+		// Format: "🕌 Asr now · Maghrib 16:06"
 		if strings.Contains(display, " now") {
 			parts := strings.Split(display, " ")
-			if len(parts) > 0 {
-				ctx.Prayer.Current = parts[0]
+			if len(parts) > 1 {
+				ctx.Prayer.Current = parts[1] // Skip emoji, get prayer name
 			}
 		}
 		headerParts = append(headerParts, display)

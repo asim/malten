@@ -122,6 +122,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 			if result, handled := command.Dispatch(ctx); handled {
 				if result != "" {
 					// Push result with command ID
+					log.Printf("[async] Pushing command_result to stream=%s channel=@%s len=%d", stream, token[:8], len(result))
 					Default.Events <- NewCommandResult(cmdID, result, stream, "@"+token)
 				}
 				// Push any context change messages
@@ -427,3 +428,33 @@ func DebugHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 var startTime = time.Now()
+
+// BackfillStreetsHandler triggers street backfill from a center point
+func BackfillStreetsHandler(w http.ResponseWriter, r *http.Request) {
+	// Hampton coordinates as default
+	lat := 51.4179
+	lon := -0.3706
+	maxRadius := 5000.0 // 5km default
+	
+	if r.URL.Query().Get("lat") != "" {
+		fmt.Sscanf(r.URL.Query().Get("lat"), "%f", &lat)
+	}
+	if r.URL.Query().Get("lon") != "" {
+		fmt.Sscanf(r.URL.Query().Get("lon"), "%f", &lon)
+	}
+	if r.URL.Query().Get("radius") != "" {
+		fmt.Sscanf(r.URL.Query().Get("radius"), "%f", &maxRadius)
+	}
+	
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "Starting street backfill from %.4f,%.4f radius %.0fm\n", lat, lon, maxRadius)
+	w.(http.Flusher).Flush()
+	
+	// Run in background
+	go func() {
+		count := spatial.BackfillStreetsForAllPlaces(lat, lon, maxRadius)
+		log.Printf("[backfill] Complete: %d streets added", count)
+	}()
+	
+	fmt.Fprintf(w, "Backfill started in background. Check logs for progress.\n")
+}

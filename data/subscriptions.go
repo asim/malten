@@ -40,6 +40,7 @@ type PushHistoryItem struct {
 	Time  time.Time `json:"time"`
 	Title string    `json:"title"`
 	Body  string    `json:"body"`
+	Image string    `json:"image,omitempty"`
 }
 
 // Load reads from push_subscriptions.json

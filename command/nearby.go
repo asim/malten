@@ -292,8 +292,8 @@ func SetLocation(token string, lat, lon float64) *LocationUpdate {
 	db := spatial.Get()
 	db.FindOrCreateAgent(lat, lon)
 
-	// Context is built on-demand in handlePing, not here
-	// This avoids duplicate calls
+	// Update context for AI queries
+	updateUserContext(token, lat, lon)
 
 	return result
 }
@@ -900,30 +900,27 @@ func cacheOSMResults(elements []OSMElement, category string) {
 }
 
 // formatCachedEntities formats cached entities for display
+// Output format matches client place-link expansion
 func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("📍 NEARBY %s (cached)\n\n", strings.ToUpper(placeType)))
+	result.WriteString(fmt.Sprintf("📍 %s nearby\n\n", strings.Title(placeType)))
 
-	max := 8
+	max := 6
 	if len(entities) < max {
 		max = len(entities)
 	}
 
 	for i := 0; i < max; i++ {
 		e := entities[i]
-		name := e.Name
-		if name == "" {
-			name = "(unnamed)"
+		if e.Name == "" {
+			continue
 		}
 
-		// Extract website/phone from typed data or legacy
-		var website, phone string
+		// Get tags
 		var tags map[string]string
 		if placeData := e.GetPlaceData(); placeData != nil {
 			tags = placeData.Tags
 		} else if m, ok := e.Data.(map[string]interface{}); ok {
-			website, _ = m["website"].(string)
-			phone, _ = m["phone"].(string)
 			if tagsData, ok := m["tags"].(map[string]interface{}); ok {
 				tags = make(map[string]string)
 				for k, v := range tagsData {
@@ -934,70 +931,50 @@ func formatCachedEntities(entities []*spatial.Entity, placeType string) string {
 			}
 		}
 
-		// Try to get website/phone from tags if not set directly
+		// Name
+		result.WriteString(fmt.Sprintf("📍 %s\n", e.Name))
+
+		// Info line: address, postcode, hours, phone
+		var info []string
 		if len(tags) > 0 {
-			if website == "" {
-				website = tags["website"]
-				if website == "" {
-					website = tags["contact:website"]
-				}
-			}
-			if phone == "" {
-				phone = tags["phone"]
-				if phone == "" {
-					phone = tags["contact:phone"]
-				}
-			}
-		}
-
-		// Links: Map and Website (if available)
-		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", urlEncode(name), e.Lat, e.Lon)
-		if website != "" {
-			result.WriteString(fmt.Sprintf("• %s · %s · %s\n", name, mapLink, website))
-		} else {
-			result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
-		}
-
-		// Address - check legacy data first, then tags
-		var address string
-		if m, ok := e.Data.(map[string]interface{}); ok {
-			address, _ = m["address"].(string)
-		}
-		if address != "" {
-			result.WriteString(fmt.Sprintf("  %s\n", address))
-		} else if len(tags) > 0 {
 			if addr := formatAddress(tags); addr != "" {
-				result.WriteString(fmt.Sprintf("  %s\n", addr))
+				info = append(info, addr)
 			}
-		}
-
-		// Hours
-		if tags != nil {
 			if hours := tags["opening_hours"]; hours != "" {
-				result.WriteString(fmt.Sprintf("  🕐 %s\n", hours))
+				info = append(info, "🕒"+hours)
+			}
+			if phone := tags["phone"]; phone != "" {
+				info = append(info, "📞"+phone)
+			} else if phone := tags["contact:phone"]; phone != "" {
+				info = append(info, "📞"+phone)
 			}
 		}
-
-		// Phone
-		if phone != "" {
-			result.WriteString(fmt.Sprintf("  📞 %s\n", phone))
+		if len(info) > 0 {
+			result.WriteString(fmt.Sprintf("   %s\n", strings.Join(info, ", ")))
 		}
-		result.WriteString("\n")
+
+		// Map and Directions links (HTML, same as client place-link)
+		mapURL := fmt.Sprintf("/map?lat=%f&lon=%f&highlight=%s", e.Lat, e.Lon, urlEncode(e.Name))
+		escapedName := strings.ReplaceAll(e.Name, "\"", "&quot;")
+		result.WriteString(fmt.Sprintf(`   <a href="%s" target="_blank" class="map-link">Map</a> · <a href="javascript:void(0)" class="directions-link" data-name="%s" data-lat="%f" data-lon="%f">Directions</a>`,
+			mapURL, escapedName, e.Lat, e.Lon))
+		result.WriteString("\n\n")
 	}
 
 	if len(entities) > max {
-		result.WriteString(fmt.Sprintf("...and %d more\n", len(entities)-max))
+		result.WriteString(fmt.Sprintf("+%d more", len(entities)-max))
 	}
 
 	return strings.TrimSpace(result.String())
 }
 
 // formatOSMResults formats OSM results for display
+// Output format matches client place-link expansion
 func formatOSMResults(elements []OSMElement, placeType string, lat, lon float64) string {
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("📍 NEARBY %s\n\n", strings.ToUpper(placeType)))
+	result.WriteString(fmt.Sprintf("📍 %s nearby\n\n", strings.Title(placeType)))
 
-	max := 8
+	max := 6
 	if len(elements) < max {
 		max = len(elements)
 	}
@@ -1006,7 +983,7 @@ func formatOSMResults(elements []OSMElement, placeType string, lat, lon float64)
 		el := elements[i]
 		name := el.Tags["name"]
 		if name == "" {
-			name = "(unnamed)"
+			continue
 		}
 
 		elLat, elLon := el.GetCoords()
@@ -1014,22 +991,34 @@ func formatOSMResults(elements []OSMElement, placeType string, lat, lon float64)
 			elLat, elLon = lat, lon
 		}
 
-		// Google Maps link with name and coordinates
-		mapLink := fmt.Sprintf("https://www.google.com/maps/search/%s/@%f,%f,17z", urlEncode(name), elLat, elLon)
-		result.WriteString(fmt.Sprintf("• %s · %s\n", name, mapLink))
+		// Name
+		result.WriteString(fmt.Sprintf("📍 %s\n", name))
 
+		// Info line
+		var info []string
 		if addr := formatAddress(el.Tags); addr != "" {
-			result.WriteString(fmt.Sprintf("  %s\n", addr))
+			info = append(info, addr)
+		}
+		if hours := el.Tags["opening_hours"]; hours != "" {
+			info = append(info, "🕒"+hours)
+		}
+		if phone := el.Tags["phone"]; phone != "" {
+			info = append(info, "📞"+phone)
+		}
+		if len(info) > 0 {
+			result.WriteString(fmt.Sprintf("   %s\n", strings.Join(info, ", ")))
 		}
 
-		if hours := el.Tags["opening_hours"]; hours != "" {
-			result.WriteString(fmt.Sprintf("  🕐 %s\n", hours))
-		}
-		result.WriteString("\n")
+		// Map and Directions links (HTML)
+		mapURL := fmt.Sprintf("/map?lat=%f&lon=%f&highlight=%s", elLat, elLon, urlEncode(name))
+		escapedName := strings.ReplaceAll(name, "\"", "&quot;")
+		result.WriteString(fmt.Sprintf(`   <a href="%s" target="_blank" class="map-link">Map</a> · <a href="javascript:void(0)" class="directions-link" data-name="%s" data-lat="%f" data-lon="%f">Directions</a>`,
+			mapURL, escapedName, elLat, elLon))
+		result.WriteString("\n\n")
 	}
 
 	if len(elements) > max {
-		result.WriteString(fmt.Sprintf("...and %d more\n", len(elements)-max))
+		result.WriteString(fmt.Sprintf("+%d more", len(elements)-max))
 	}
 
 	return strings.TrimSpace(result.String())

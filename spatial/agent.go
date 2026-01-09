@@ -158,7 +158,7 @@ func agentLoop(agent *Entity) {
 	if region != nil {
 		regionName = region.Name
 	}
-	log.Printf("[agent] %s started (region: %s, agentic: %v)", agent.Name, regionName, AgenticMode)
+	log.Printf("[agent] %s started (region: %s)", agent.Name, regionName)
 
 	// Start data loop immediately (don't wait for POI index)
 	go func() {
@@ -166,52 +166,18 @@ func agentLoop(agent *Entity) {
 		initialDelay := time.Duration(time.Now().UnixNano()%30000) * time.Millisecond
 		time.Sleep(initialDelay)
 
-		runAgentCycle(agent)
+		updateLiveData(agent)
 
-		// Continuous loop
+		// Continuous loop: 30s base + 0-5s jitter
 		for {
-			state := GetAgentState(agent.ID)
-
-			// If agentic mode set a specific next cycle time, honor it
-			if AgenticMode && !state.NextCycle.IsZero() && time.Now().Before(state.NextCycle) {
-				sleepDuration := time.Until(state.NextCycle)
-				if sleepDuration > 0 {
-					time.Sleep(sleepDuration)
-				}
-			} else {
-				// Default: 30s base + 0-5s jitter
-				jitter := time.Duration(time.Now().UnixNano()%5000) * time.Millisecond
-				time.Sleep(30*time.Second + jitter)
-			}
-
-			runAgentCycle(agent)
+			jitter := time.Duration(time.Now().UnixNano()%5000) * time.Millisecond
+			time.Sleep(30*time.Second + jitter)
+			updateLiveData(agent)
 		}
 	}()
 
 	// POI index runs in parallel (takes longer)
 	IndexAgent(agent)
-}
-
-// runAgentCycle executes one cycle - either agentic or simple polling
-func runAgentCycle(agent *Entity) {
-	if AgenticMode {
-		if err := AgentCycle(agent); err != nil {
-			log.Printf("[agent] %s cycle error: %v", agent.Name, err)
-			// Fall back to simple polling on error
-			updateLiveData(agent)
-		}
-	} else {
-		updateLiveData(agent)
-	}
-
-	// Exploration mode: agent moves and maps streets (run async to not block)
-	if ExplorationMode {
-		go func() {
-			if ExploreStep(agent) {
-				// Step was taken
-			}
-		}()
-	}
 }
 
 func updateLiveData(agent *Entity) {
@@ -222,15 +188,7 @@ func updateLiveData(agent *Entity) {
 	fetchLocation(agent.Lat, agent.Lon)
 
 	// Weather - fetchWeather inserts under lock
-	if weather := fetchWeather(agent.Lat, agent.Lon); weather != nil {
-		// Check for notable weather
-		if wd := weather.GetWeatherData(); wd != nil {
-			if wd.RainForecast != "" {
-				AddWeatherObservation(agent.ID, agent.Name,
-					wd.TempC, weather.Name, wd.RainForecast)
-			}
-		}
-	}
+	fetchWeather(agent.Lat, agent.Lon)
 
 	// Prayer times - fetchPrayerTimes inserts under lock
 	fetchPrayerTimes(agent.Lat, agent.Lon)
@@ -271,8 +229,6 @@ func updateLiveData(agent *Entity) {
 	}
 	db.Insert(agent)
 
-	// Check if awareness processing is due
-	processAwarenessIfDue(agent)
 }
 
 // recoverStaleAgents starts loops for all agents
@@ -290,8 +246,21 @@ func IndexAgent(agent *Entity) {
 		return
 	}
 
-	// Serialize indexing to avoid hammering Overpass
-	indexMu.Lock()
+	// Check if we already have recent POI data for this area (last 24h)
+	db := Get()
+	recentPOIs := db.Query(agent.Lat, agent.Lon, AgentRadius, EntityPlace, 100)
+	if len(recentPOIs) > 20 {
+		// Already have decent POI coverage, skip indexing
+		log.Printf("[spatial] Skipping index for %s - have %d POIs", agent.Name, len(recentPOIs))
+		return
+	}
+
+	// Use TryLock to avoid blocking on startup
+	// If another agent is indexing, skip this round
+	if !indexMu.TryLock() {
+		log.Printf("[spatial] Skipping index for %s - another agent indexing", agent.Name)
+		return
+	}
 	defer indexMu.Unlock()
 
 	log.Printf("[spatial] Indexing %s", agent.Name)
@@ -493,51 +462,4 @@ func ReverseGeocode(lat, lon float64) string {
 	return addr.City
 }
 
-// processAwarenessIfDue checks if awareness processing should run for this agent
-func processAwarenessIfDue(agent *Entity) {
-	state := GetAgentState(agent.ID)
-	obsLog := GetObservationLog()
 
-	// Check if we should process
-	if !obsLog.ShouldProcess(agent.ID, state.ActiveUsers > 0) {
-		return
-	}
-
-	pending := obsLog.GetPending(agent.ID)
-	if len(pending) == 0 {
-		return
-	}
-
-	// Process awareness
-	items, err := ProcessAwareness(agent.ID, agent.Name, map[string]interface{}{
-		"active_users": state.ActiveUsers,
-	})
-	if err != nil {
-		log.Printf("[awareness] %s processing error: %v", agent.Name, err)
-		return
-	}
-
-	if len(items) > 0 {
-		log.Printf("[awareness] %s surfacing %d items", agent.Name, len(items))
-		// Push to users in this area
-		if AwarenessPushCallback != nil {
-			var pushItems []struct{ Emoji, Message string }
-			for _, item := range items {
-				pushItems = append(pushItems, struct{ Emoji, Message string }{item.Emoji, item.Message})
-			}
-			AwarenessPushCallback(agent.Lat, agent.Lon, pushItems)
-		}
-		for _, item := range items {
-			log.Printf("[awareness] %s: %s %s", agent.Name, item.Emoji, item.Message)
-		}
-	}
-}
-
-// AwarenessPushCallback is called to push awareness items to users
-// Set by main.go to avoid import cycle with server package
-var AwarenessPushCallback func(lat, lon float64, items []struct{ Emoji, Message string })
-
-// SetAwarenessPushCallback sets the callback
-func SetAwarenessPushCallback(cb func(lat, lon float64, items []struct{ Emoji, Message string })) {
-	AwarenessPushCallback = cb
-}

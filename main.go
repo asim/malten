@@ -36,25 +36,42 @@ const goGetTemplate = `<!DOCTYPE html>
 
 var versionRegex = regexp.MustCompile(`\?v=\d+`)
 
-func serveFileWithVersion(w http.ResponseWriter, r *http.Request, staticFS http.FileSystem, path, version, contentType string) {
-	f, err := staticFS.Open(path)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer f.Close()
-
-	data, err := io.ReadAll(f)
-	if err != nil {
-		http.Error(w, "Error reading file", 500)
-		return
-	}
-
-	content := strings.ReplaceAll(string(data), "__VERSION__", version)
-
-	w.Header().Set("Content-Type", contentType)
+// serveSW generates the service worker dynamically - no sw.js file needed
+func serveSW(w http.ResponseWriter, version string) {
+	sw := `// Malten Service Worker v` + version + ` - Push only, no caching
+self.addEventListener('install', function(e) { self.skipWaiting(); });
+self.addEventListener('activate', function(e) {
+    e.waitUntil(
+        caches.keys().then(function(names) {
+            return Promise.all(names.map(function(name) { return caches.delete(name); }));
+        }).then(function() { return clients.claim(); })
+    );
+});
+self.addEventListener('push', function(e) {
+    if (!e.data) return;
+    var data;
+    try { data = e.data.json(); } catch(err) { data = { title: 'Malten', body: e.data.text() }; }
+    e.waitUntil(self.registration.showNotification(data.title || 'Malten', {
+        body: data.body || '',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        image: data.image,
+        tag: data.tag || 'malten',
+        renotify: true,
+        data: data.data || {}
+    }));
+});
+self.addEventListener('notificationclick', function(e) {
+    e.notification.close();
+    e.waitUntil(clients.matchAll({type: 'window'}).then(function(list) {
+        for (var i = 0; i < list.length; i++) if ('focus' in list[i]) return list[i].focus();
+        if (clients.openWindow) return clients.openWindow('/');
+    }));
+});
+`
+	w.Header().Set("Content-Type", "application/javascript")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Write([]byte(content))
+	w.Write([]byte(sw))
 }
 
 func serveIndexWithVersion(w http.ResponseWriter, r *http.Request, staticFS http.FileSystem, jsVersion string) {
@@ -141,30 +158,37 @@ func buildPushNotification(lat, lon float64, busNotify bool) *server.PushNotific
 	return nil
 }
 
-// buildWeatherNotification creates morning weather notification
-func buildWeatherNotification(lat, lon float64) *server.PushNotification {
+// buildMorningContext creates the 7am morning notification with weather and prayer times
+func buildMorningContext(lat, lon float64) *server.PushNotification {
 	ctx := spatial.GetContextData(lat, lon)
-	if ctx == nil || ctx.Weather == nil {
+	if ctx == nil {
 		return nil
 	}
 
-	// Build morning message
-	condition := ctx.Weather.Condition // e.g. "⛅ 2°C"
-
-	// Title: just "Good morning" with weather
 	title := "🌅 Good morning"
+	var body string
 
-	// Body: weather + optional rain warning + optional prayer
-	body := condition
-	if ctx.Weather.RainWarning != "" {
-		body += " · " + ctx.Weather.RainWarning
+	// Weather
+	if ctx.Weather != nil {
+		body = ctx.Weather.Condition
+		if ctx.Weather.RainWarning != "" {
+			body += " · " + ctx.Weather.RainWarning
+		}
 	}
+
+	// Prayer times
 	if ctx.Prayer != nil && ctx.Prayer.Display != "" {
-		body += "\n" + ctx.Prayer.Display
+		if body != "" {
+			body += "\n"
+		}
+		body += ctx.Prayer.Display
 	}
 
-	// Add a sunrise image
-	image := spatial.FetchNatureImage("sunrise")
+	if body == "" {
+		return nil
+	}
+
+	image := spatial.FetchNatureImage("morning")
 
 	return &server.PushNotification{
 		Title: title,
@@ -172,36 +196,6 @@ func buildWeatherNotification(lat, lon float64) *server.PushNotification {
 		Image: image,
 		Tag:   "morning",
 	}
-}
-
-// buildPrayerNotification creates prayer reminder if prayer is ~10 min away
-func buildPrayerNotification(lat, lon float64, now time.Time) *server.PushNotification {
-	ctx := spatial.GetContextData(lat, lon)
-	if ctx == nil || ctx.Prayer == nil || ctx.Prayer.NextTime == "" {
-		return nil
-	}
-
-	// Parse next prayer time (format: "HH:MM")
-	prayerTime, err := time.Parse("15:04", ctx.Prayer.NextTime)
-	if err != nil {
-		return nil
-	}
-
-	// Set prayer time to today
-	prayerTime = time.Date(now.Year(), now.Month(), now.Day(),
-		prayerTime.Hour(), prayerTime.Minute(), 0, 0, now.Location())
-
-	// Check if prayer is 8-12 minutes away (window for "10 min" reminder)
-	untilPrayer := prayerTime.Sub(now)
-	if untilPrayer >= 8*time.Minute && untilPrayer <= 12*time.Minute {
-		return &server.PushNotification{
-			Title: "🕌 " + ctx.Prayer.Next + " soon",
-			Body:  "in about 10 minutes (" + ctx.Prayer.NextTime + ")",
-			Tag:   "prayer-" + strings.ToLower(ctx.Prayer.Next),
-		}
-	}
-
-	return nil
 }
 
 func main() {
@@ -239,28 +233,17 @@ func main() {
 	spatial.StartCourierLoop()         // Original courier for backward compat
 	spatial.StartRegionalCourierLoop() // Regional couriers for global coverage
 
-	// Initialize push notifications
+	// Initialize push notifications (simple: just morning context at 7am)
 	pm := server.GetPushManager()
 	command.UpdatePushLocation = pm.UpdateLocation
-	server.SetNotificationBuilder(buildPushNotification)
-	server.SetWeatherNotificationBuilder(buildWeatherNotification)
-	server.SetPrayerNotificationBuilder(buildPrayerNotification)
+	server.SetMorningContextBuilder(buildMorningContext)
 
 	// Wire up callbacks for command package
-	command.GetBusNotifyCallback = pm.GetBusNotify
-	command.SetBusNotifyCallback = pm.SetBusNotify
 	command.ResetSessionCallback = func(stream, session string) int {
-		// Clear channel messages
 		cleared := server.Default.ClearSessionChannel(stream, session)
-		// Clear push subscription
 		pm.Unsubscribe(session)
 		return cleared
 	}
-
-	// Awareness push callback
-	spatial.SetAwarenessPushCallback(func(lat, lon float64, items []struct{ Emoji, Message string }) {
-		server.GetPushManager().PushAwarenessToArea(lat, lon, items)
-	})
 
 	// Initialize AI agent
 	if err := agent.Init(); err != nil {
@@ -271,14 +254,22 @@ func main() {
 		server.SetDedupeClient(agent.Client)
 	}
 
-	// Get JS version from file mtime (for cache busting)
+	// Get JS version from malten.js VERSION constant
 	var jsVersion string
+	var jsContent []byte
 	if *webDir != "" {
-		if info, err := os.Stat(*webDir + "/malten.js"); err == nil {
-			jsVersion = fmt.Sprintf("%d", info.ModTime().Unix())
-		}
+		jsContent, _ = os.ReadFile(*webDir + "/malten.js")
 	} else {
-		// Embedded: use build time
+		// Embedded
+		if f, err := staticFS.Open("/malten.js"); err == nil {
+			jsContent, _ = io.ReadAll(f)
+			f.Close()
+		}
+	}
+	// Parse VERSION from: var VERSION = 342;
+	if matches := regexp.MustCompile(`var VERSION = (\d+);`).FindSubmatch(jsContent); len(matches) > 1 {
+		jsVersion = string(matches[1])
+	} else {
 		jsVersion = fmt.Sprintf("%d", time.Now().Unix())
 	}
 	log.Printf("JS version: %s", jsVersion)
@@ -299,9 +290,9 @@ func main() {
 			return
 		}
 
-		// For sw.js, inject version into cache name
+		// Generate sw.js dynamically (no separate file needed)
 		if path == "/sw.js" {
-			serveFileWithVersion(w, r, staticFS, "/sw.js", jsVersion, "application/javascript")
+			serveSW(w, jsVersion)
 			return
 		}
 
@@ -363,7 +354,9 @@ func main() {
 	http.HandleFunc("/push/unsubscribe", server.HandleUnsubscribe)
 	http.HandleFunc("/push/vapid-key", server.HandleVAPIDKey)
 	http.HandleFunc("/push/history", server.HandlePushHistory)
+	http.HandleFunc("/push/test-morning", server.HandleTestMorningPush)
 	http.HandleFunc("/map", server.MapHandler)
+	http.HandleFunc("/backfill-streets", server.BackfillStreetsHandler)
 
 	h := server.WithCors(http.DefaultServeMux)
 

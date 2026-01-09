@@ -40,8 +40,6 @@ var Registry = make(map[string]*Command)
 
 // Callbacks - set by main.go to avoid import cycle
 var (
-	GetBusNotifyCallback func(sessionID string) bool
-	SetBusNotifyCallback func(sessionID string, enabled bool)
 	ResetSessionCallback func(stream, sessionID string) int // Returns cleared message count
 )
 

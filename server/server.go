@@ -259,6 +259,7 @@ func (s *Server) Broadcast(message *Message) {
 		}
 		// Filter by channel: public (empty) or addressed to this observer's session
 		if message.Channel != "" && message.Channel != "@"+o.Session {
+			log.Printf("[ws] Channel mismatch: msg.Channel=%s, want @%s", message.Channel, o.Session[:8])
 			continue
 		}
 		// Dedupe: skip if this content was recently sent to this session
@@ -272,7 +273,9 @@ func (s *Server) Broadcast(message *Message) {
 		// send message
 		select {
 		case o.Events <- message:
+			log.Printf("[ws] Sent to %s: type=%s len=%d", o.Session[:8], message.Type, len(message.Text))
 		default:
+			log.Printf("[ws] DROPPED for %s (buffer full): type=%s", o.Session[:8], message.Type)
 		}
 	}
 }

@@ -143,7 +143,7 @@ func pickCourierDestination(db *DB) bool {
 
 	for _, agent := range agents {
 		// Skip if we're already at this agent
-		dist := distanceMeters(courierState.CurrentLat, courierState.CurrentLon, agent.Lat, agent.Lon)
+		dist := DistanceMeters(courierState.CurrentLat, courierState.CurrentLon, agent.Lat, agent.Lon)
 		if dist < 100 {
 			continue
 		}
@@ -160,7 +160,7 @@ func pickCourierDestination(db *DB) bool {
 			// Check if this street starts near our current position
 			if len(sd.Points) > 0 {
 				startLon, startLat := sd.Points[0][0], sd.Points[0][1]
-				startDist := distanceMeters(courierState.CurrentLat, courierState.CurrentLon, startLat, startLon)
+				startDist := DistanceMeters(courierState.CurrentLat, courierState.CurrentLon, startLat, startLon)
 				if startDist < 200 {
 					hasStreet = true
 					break
@@ -244,7 +244,7 @@ func walkCourierRoute(db *DB) bool {
 	for i := courierState.RouteIndex; i < len(courierState.Route)-1 && totalDist < 100; i++ {
 		p1 := courierState.Route[i]
 		p2 := courierState.Route[i+1]
-		segmentDist := distanceMeters(p1[1], p1[0], p2[1], p2[0])
+		segmentDist := DistanceMeters(p1[1], p1[0], p2[1], p2[0])
 		totalDist += segmentDist
 		advance++
 	}
@@ -263,7 +263,7 @@ func walkCourierRoute(db *DB) bool {
 	courierState.LastMove = time.Now()
 
 	// Track distance
-	stepDist := distanceMeters(oldLat, oldLon, courierState.CurrentLat, courierState.CurrentLon)
+	stepDist := DistanceMeters(oldLat, oldLon, courierState.CurrentLat, courierState.CurrentLon)
 	courierState.MetersWalked += stepDist
 
 	// Index POIs along the way

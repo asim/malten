@@ -37,24 +37,27 @@ func GetStats() *SystemStats {
 	return stats
 }
 
-// GetAPI returns stats for an API, creating if needed
-func (s *SystemStats) GetAPI(name string) *APIStats {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+// getOrCreateAPI returns stats for an API, creating if needed (caller must hold lock)
+func (s *SystemStats) getOrCreateAPI(name string) *APIStats {
 	if api, ok := s.APIs[name]; ok {
 		return api
 	}
-
 	api := &APIStats{Name: name}
 	s.APIs[name] = api
 	return api
 }
 
+// GetAPI returns stats for an API (public, takes lock)
+func (s *SystemStats) GetAPI(name string) *APIStats {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.getOrCreateAPI(name)
+}
+
 // RecordCall records an API call attempt
 func (s *SystemStats) RecordCall(name string) {
-	api := s.GetAPI(name)
 	s.mu.Lock()
+	api := s.getOrCreateAPI(name)
 	api.Calls++
 	api.LastCall = time.Now()
 	s.mu.Unlock()
@@ -62,8 +65,8 @@ func (s *SystemStats) RecordCall(name string) {
 
 // RecordSuccess records a successful API call
 func (s *SystemStats) RecordSuccess(name string) {
-	api := s.GetAPI(name)
 	s.mu.Lock()
+	api := s.getOrCreateAPI(name)
 	api.Successes++
 	api.LastSuccess = time.Now()
 	api.ConsecErrors = 0
@@ -72,8 +75,8 @@ func (s *SystemStats) RecordSuccess(name string) {
 
 // RecordError records an API error
 func (s *SystemStats) RecordError(name string, err error) {
-	api := s.GetAPI(name)
 	s.mu.Lock()
+	api := s.getOrCreateAPI(name)
 	api.Errors++
 	api.LastError = time.Now()
 	api.LastErrorMsg = err.Error()
@@ -83,8 +86,8 @@ func (s *SystemStats) RecordError(name string, err error) {
 
 // RecordRateLimit records a rate limit hit
 func (s *SystemStats) RecordRateLimit(name string) {
-	api := s.GetAPI(name)
 	s.mu.Lock()
+	api := s.getOrCreateAPI(name)
 	api.RateLimitHits++
 	api.ConsecErrors++
 	s.mu.Unlock()
@@ -92,9 +95,12 @@ func (s *SystemStats) RecordRateLimit(name string) {
 
 // GetBackoffDuration returns how long to wait based on consecutive errors
 func (s *SystemStats) GetBackoffDuration(name string) time.Duration {
-	api := s.GetAPI(name)
 	s.mu.RLock()
-	consecErrors := api.ConsecErrors
+	api := s.APIs[name]
+	var consecErrors int
+	if api != nil {
+		consecErrors = api.ConsecErrors
+	}
 	s.mu.RUnlock()
 
 	if consecErrors == 0 {
@@ -147,6 +153,25 @@ func (s *SystemStats) Summary() string {
 	}
 
 	return result
+}
+
+func formatTimeAgo(t time.Time) string {
+	d := time.Since(t)
+	if d < time.Minute {
+		return "just now"
+	} else if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	} else if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	return t.Format("Jan 2 15:04")
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 func formatDuration(d time.Duration) string {

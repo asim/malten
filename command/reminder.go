@@ -46,6 +46,9 @@ type ReminderResponse struct {
 	Name       string `json:"name,omitempty"`
 	NameNumber int    `json:"name_number,omitempty"`
 	Message    string `json:"message,omitempty"`
+	Title      string `json:"title,omitempty"`
+	Emoji      string `json:"emoji,omitempty"`
+	Image      string `json:"image,omitempty"`
 }
 
 func formatReminderJSON(r *spatial.Reminder) string {
@@ -54,6 +57,9 @@ func formatReminderJSON(r *spatial.Reminder) string {
 		Name:       r.Name,
 		NameNumber: r.GetNameNumber(),
 		Message:    r.Message,
+		Title:      r.Title,
+		Emoji:      r.Emoji,
+		Image:      r.Image,
 	}
 	b, _ := json.Marshal(resp)
 	return string(b)

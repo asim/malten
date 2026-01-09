@@ -206,34 +206,69 @@ type SunTimes struct {
 
 // Wikimedia category mappings for each nature type
 var wikimediaCategories = map[string]string{
-	"stars":     "Starry_night_sky",
+	"stars":     "Night_sky",
 	"moon":      "Photographs_of_the_Moon",
 	"sunrise":   "Sunrises",
 	"sunset":    "Sunsets",
 	"mountains": "Mountain_landscapes",
 	"ocean":     "Seascapes",
-	"rain":      "Rain",
+	"rain":      "Rainy_weather",
 	"snow":      "Snow_landscapes",
 	"evening":   "Dusk",
+	// Animals
+	"animals":   "Wildlife_photography",
+	"safari":    "Safari",
+	"africa":    "Savannas",
+	"lion":      "Panthera_leo_(male)",
+	"elephant":  "Loxodonta_africana",
+	"giraffe":   "Giraffa_camelopardalis",
+	"zebra":     "Zebras",
+	"birds":     "Photographs_of_birds",
+	"butterfly": "Butterflies",
 }
 
 // FetchNatureImage fetches a random image URL from Wikimedia Commons
+// Uses curated categories when available, falls back to search
 func FetchNatureImage(natureType string) string {
-	category, ok := wikimediaCategories[natureType]
-	if !ok {
-		return ""
+	// Try category first if we have a curated mapping
+	if category, ok := wikimediaCategories[natureType]; ok {
+		if urls := fetchWikimediaByCategory(category); len(urls) > 0 {
+			return urls[rand.Intn(len(urls))]
+		}
 	}
 	
-	// Query Wikimedia Commons API using the rate-limited External client
+	// Fall back to search for unknown types
+	if urls := searchWikimediaImages(natureType + " animal"); len(urls) > 0 {
+		return urls[rand.Intn(len(urls))]
+	}
+	
+	return ""
+}
+
+// fetchWikimediaByCategory fetches images from a specific category
+func fetchWikimediaByCategory(category string) []string {
 	apiURL := fmt.Sprintf(
-		"https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=Category:%s&gcmtype=file&gcmlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=800&format=json",
+		"https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=Category:%s&gcmtype=file&gcmlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=960&format=json",
 		url.QueryEscape(category),
 	)
-	
+	return fetchWikimediaURLs(apiURL)
+}
+
+// searchWikimediaImages searches for images by keyword
+func searchWikimediaImages(query string) []string {
+	apiURL := fmt.Sprintf(
+		"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=%s&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=960&format=json",
+		url.QueryEscape(query),
+	)
+	return fetchWikimediaURLs(apiURL)
+}
+
+// fetchWikimediaURLs fetches image URLs from a Wikimedia API endpoint
+func fetchWikimediaURLs(apiURL string) []string {
 	resp, err := External.Get("wikimedia", apiURL)
 	if err != nil {
-		log.Printf("[nature] Failed to fetch image: %v", err)
-		return ""
+		log.Printf("[nature] Failed to fetch images: %v", err)
+		return nil
 	}
 	defer resp.Body.Close()
 	
@@ -249,10 +284,9 @@ func FetchNatureImage(natureType string) string {
 	
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		log.Printf("[nature] Failed to parse image response: %v", err)
-		return ""
+		return nil
 	}
 	
-	// Collect all image URLs
 	var urls []string
 	for _, page := range result.Query.Pages {
 		for _, info := range page.ImageInfo {
@@ -261,11 +295,5 @@ func FetchNatureImage(natureType string) string {
 			}
 		}
 	}
-	
-	if len(urls) == 0 {
-		return ""
-	}
-	
-	// Return a random one
-	return urls[rand.Intn(len(urls))]
+	return urls
 }

@@ -1,14 +1,13 @@
 #!/bin/bash
-# Bump JS version in both index.html and malten.js
+# Bump VERSION in malten.js - the single source of truth
 
 cd "$(dirname "$0")"
 
-# Get current version from index.html
-CURRENT=$(grep -oP 'malten\.js\?v=\K\d+' client/web/index.html)
+# Get current version from malten.js
+CURRENT=$(grep -oP '^var VERSION = \K\d+' client/web/malten.js)
 NEXT=$((CURRENT + 1))
 
-# Update both files
-sed -i "s/malten\.js?v=$CURRENT/malten.js?v=$NEXT/" client/web/index.html
-sed -i "s/JS version: $CURRENT/JS version: $NEXT/" client/web/malten.js
+# Update VERSION in malten.js
+sed -i "s/^var VERSION = $CURRENT;/var VERSION = $NEXT;/" client/web/malten.js
 
-echo "Bumped JS version: $CURRENT → $NEXT"
+echo "Bumped VERSION: $CURRENT → $NEXT"

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 )
@@ -20,6 +19,10 @@ type Reminder struct {
 	Message    string            `json:"message"`
 	Links      map[string]string `json:"links"`
 	Updated    string            `json:"updated"`
+	// Additional fields for time-based reminders
+	Title string `json:"title,omitempty"`
+	Emoji string `json:"emoji,omitempty"`
+	Image string `json:"image,omitempty"` // URL to nature image
 }
 
 // GetNameNumber extracts the name number from the Links map or returns the NameNumber field
@@ -43,9 +46,10 @@ func (r *Reminder) GetNameNumber() int {
 
 // Surah holds a chapter from the Quran
 type Surah struct {
-	Name   string  `json:"name"`
-	Number int     `json:"number"`
-	Verses []Verse `json:"verses"`
+	Name    string  `json:"name"`
+	Number  int     `json:"number"`
+	English string  `json:"english"` // English name (e.g. "The Declining Day")
+	Verses  []Verse `json:"verses"`
 }
 
 // Verse holds a single verse
@@ -71,6 +75,7 @@ var (
 func GetDailyReminder() *Reminder {
 	today := time.Now().Format("2006-01-02")
 
+	// Check cache first
 	reminderMu.RLock()
 	if cachedReminder != nil && reminderDate == today {
 		r := cachedReminder
@@ -79,42 +84,47 @@ func GetDailyReminder() *Reminder {
 	}
 	reminderMu.RUnlock()
 
-	// Fetch fresh
-	reminderMu.Lock()
-	defer reminderMu.Unlock()
-
-	// Double-check after acquiring write lock
-	if cachedReminder != nil && reminderDate == today {
-		return cachedReminder
-	}
-
-	resp, err := http.Get("https://reminder.dev/api/daily")
+	// Fetch WITHOUT holding lock (network call)
+	resp, err := External.Get("reminder", "https://reminder.dev/api/daily")
 	if err != nil {
 		log.Printf("[reminder] fetch error: %v", err)
-		return cachedReminder // Return stale if available
+		reminderMu.RLock()
+		r := cachedReminder
+		reminderMu.RUnlock()
+		return r // Return stale if available
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		log.Printf("[reminder] API returned %d", resp.StatusCode)
-		return cachedReminder
+		reminderMu.RLock()
+		r := cachedReminder
+		reminderMu.RUnlock()
+		return r
 	}
 
 	var r Reminder
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		log.Printf("[reminder] decode error: %v", err)
-		return cachedReminder
+		reminderMu.RLock()
+		stale := cachedReminder
+		reminderMu.RUnlock()
+		return stale
 	}
 
+	// Store in cache
+	reminderMu.Lock()
 	cachedReminder = &r
 	reminderDate = today
-	log.Printf("[reminder] fetched daily reminder: %s", r.Hijri)
+	reminderMu.Unlock()
 
+	log.Printf("[reminder] fetched daily reminder: %s", r.Hijri)
 	return &r
 }
 
 // GetSurah fetches a specific surah by number
 func GetSurah(number int) *Surah {
+	// Check cache first
 	surahCacheMu.RLock()
 	if s, ok := surahCache[number]; ok {
 		surahCacheMu.RUnlock()
@@ -122,16 +132,9 @@ func GetSurah(number int) *Surah {
 	}
 	surahCacheMu.RUnlock()
 
-	surahCacheMu.Lock()
-	defer surahCacheMu.Unlock()
-
-	// Double-check
-	if s, ok := surahCache[number]; ok {
-		return s
-	}
-
+	// Fetch WITHOUT holding lock (network call)
 	url := fmt.Sprintf("https://reminder.dev/api/quran/%d", number)
-	resp, err := http.Get(url)
+	resp, err := External.Get("reminder", url)
 	if err != nil {
 		log.Printf("[reminder] fetch surah %d error: %v", number, err)
 		return nil
@@ -149,9 +152,12 @@ func GetSurah(number int) *Surah {
 		return nil
 	}
 
+	// Store in cache
+	surahCacheMu.Lock()
 	surahCache[number] = &s
-	log.Printf("[reminder] cached surah %d: %s", number, s.Name)
+	surahCacheMu.Unlock()
 
+	log.Printf("[reminder] cached surah %d: %s", number, s.Name)
 	return &s
 }
 
@@ -174,6 +180,7 @@ var (
 
 // GetName fetches a Name of Allah by number (1-99)
 func GetName(number int) *Name {
+	// Check cache first
 	nameCacheMu.RLock()
 	if n, ok := nameCache[number]; ok {
 		nameCacheMu.RUnlock()
@@ -181,16 +188,9 @@ func GetName(number int) *Name {
 	}
 	nameCacheMu.RUnlock()
 
-	nameCacheMu.Lock()
-	defer nameCacheMu.Unlock()
-
-	// Double-check
-	if n, ok := nameCache[number]; ok {
-		return n
-	}
-
+	// Fetch WITHOUT holding lock (network call)
 	url := fmt.Sprintf("https://reminder.dev/api/names/%d", number)
-	resp, err := http.Get(url)
+	resp, err := External.Get("reminder", url)
 	if err != nil {
 		log.Printf("[reminder] fetch name %d error: %v", number, err)
 		return nil
@@ -208,7 +208,10 @@ func GetName(number int) *Name {
 		return nil
 	}
 
+	// Store in cache
+	nameCacheMu.Lock()
 	nameCache[number] = &n
+	nameCacheMu.Unlock()
 	log.Printf("[reminder] cached name %d: %s", number, n.English)
 
 	return &n
@@ -216,64 +219,84 @@ func GetName(number int) *Name {
 
 // TimeBasedReminder represents a curated reminder for a specific time
 type TimeBasedReminder struct {
-	Type   string // "surah", "name", "verse"
-	Number int    // Surah number or Name number
-	Verses []int  // For surahs, which verses to show (empty = first 3)
-	Reason string // Why this reminder at this time
+	Type      string // "surah", "name", "verse"
+	Number    int    // Surah number or Name number
+	Verses    []int  // For surahs, which verses to show (empty = first 3)
+	Reason    string // Why this reminder at this time
+	ImageType string // For FetchNatureImage: "sunrise", "morning", "mountains", "evening", "sunset", "moon", "stars"
+	Title     string // Display title (e.g. "Dawn", "The Morning Light")
+	Emoji     string // Emoji for display
 }
 
 // Curated time-based reminders
 var timeReminders = map[string]TimeBasedReminder{
-	// Morning reminders (Fajr to sunrise)
 	"fajr": {
-		Type:   "surah",
-		Number: 89, // Al-Fajr (The Dawn)
-		Verses: []int{1, 2, 3, 4},
-		Reason: "By the dawn...",
+		Type:      "surah",
+		Number:    89, // Al-Fajr (The Dawn)
+		Verses:    []int{1, 2, 3, 4},
+		Title:     "Dawn",
+		Emoji:     "🌅",
+		ImageType: "sunrise",
 	},
-	// Duha time (after sunrise, before Dhuhr)
 	"duha": {
-		Type:   "surah",
-		Number: 93, // Ad-Duhaa (The Morning Hours)
-		Verses: []int{1, 2, 3},
-		Reason: "By the morning sunlight...",
+		Type:      "surah",
+		Number:    93, // Ad-Duhaa (The Morning Hours)
+		Verses:    []int{1, 2, 3},
+		Title:     "The Morning Light",
+		Emoji:     "☀️",
+		ImageType: "morning",
 	},
-	// Midday - The Provider
 	"dhuhr": {
-		Type:   "name",
-		Number: 17, // Ar-Razzaq (The Provider)
-		Reason: "Midday reminder of provision",
+		Type:      "name",
+		Number:    17, // Ar-Razzaq (The Provider)
+		Title:     "Midday",
+		Emoji:     "🏔️",
+		ImageType: "mountains",
 	},
-	// Afternoon - The Designer
 	"asr": {
-		Type:   "name",
-		Number: 13, // Al-Musawwir (The Fashioner)
-		Reason: "Afternoon reflection on creation",
+		Type:      "surah",
+		Number:    103, // Al-Asr (The Declining Day)
+		Verses:    []int{1, 2, 3},
+		Title:     "The Declining Day",
+		Emoji:     "📖",
+		ImageType: "evening",
 	},
-	// Evening - The Light
 	"maghrib": {
-		Type:   "name",
-		Number: 93, // An-Nur (The Light)
-		Reason: "As day turns to night",
+		Type:      "name",
+		Number:    93, // An-Nur (The Light)
+		Title:     "Sunset",
+		Emoji:     "🌇",
+		ImageType: "sunset",
 	},
-	// Night
 	"isha": {
-		Type:   "surah",
-		Number: 92, // Al-Layl (The Night)
-		Verses: []int{1, 2, 3, 4},
-		Reason: "By the night when it covers...",
+		Type:      "surah",
+		Number:    92, // Al-Layl (The Night)
+		Verses:    []int{1, 2, 3, 4},
+		Title:     "Night",
+		Emoji:     "🌙",
+		ImageType: "moon",
 	},
-	// Eternal Refuge - for difficult moments
+	"night": {
+		Type:      "surah",
+		Number:    86, // At-Tariq (The Nightcommer)
+		Verses:    []int{1, 2, 3},
+		Title:     "The Stars",
+		Emoji:     "✨",
+		ImageType: "stars",
+	},
 	"refuge": {
-		Type:   "name",
-		Number: 68, // As-Samad (The Eternal Refuge)
-		Reason: "The Self-Sufficient, upon whom all depend",
+		Type:      "name",
+		Number:    68, // As-Samad (The Eternal Refuge)
+		Title:     "Eternal Refuge",
+		Emoji:     "🖤",
+		ImageType: "",
 	},
-	// The Creator - seeing nature
 	"creator": {
-		Type:   "name",
-		Number: 11, // Al-Khaliq (The Creator)
-		Reason: "Reminder of creation",
+		Type:      "name",
+		Number:    11, // Al-Khaliq (The Creator)
+		Title:     "The Creator",
+		Emoji:     "🌿",
+		ImageType: "nature",
 	},
 }
 
@@ -284,14 +307,28 @@ func GetTimeReminder(key string) *Reminder {
 		return nil
 	}
 
+	var r *Reminder
 	switch tr.Type {
 	case "surah":
-		return getSurahReminder(tr.Number, tr.Verses)
+		r = getSurahReminder(tr.Number, tr.Verses)
 	case "name":
-		return getNameReminder(tr.Number)
+		r = getNameReminder(tr.Number)
 	default:
 		return nil
 	}
+
+	if r == nil {
+		return nil
+	}
+
+	// Add title, emoji, and image from config
+	r.Title = tr.Title
+	r.Emoji = tr.Emoji
+	if tr.ImageType != "" {
+		r.Image = FetchNatureImage(tr.ImageType)
+	}
+
+	return r
 }
 
 func getSurahReminder(number int, verses []int) *Reminder {

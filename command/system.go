@@ -43,7 +43,6 @@ func handleSystem(ctx *Context, args []string) (string, error) {
 
 **Agents**
   Total: %d
-  Agentic mode: %v
 
 **Entities** (approx)
   Places: %d
@@ -54,7 +53,6 @@ func handleSystem(ctx *Context, args []string) (string, error) {
 		float64(m.Sys)/1024/1024,
 		m.NumGC,
 		len(agents),
-		spatial.AgenticMode,
 		places,
 		arrivals,
 	)

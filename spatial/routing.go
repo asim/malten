@@ -3,7 +3,11 @@ package spatial
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"math"
+	"net/url"
 	"strings"
+	"time"
 )
 
 const osrmBaseURL = "https://router.project-osrm.org"
@@ -260,4 +264,128 @@ func SearchOSM(query string, nearLat, nearLon float64) ([]*Entity, error) {
 	}
 
 	return entities, nil
+}
+
+// RouteGeometry contains route coordinates
+type RouteGeometry struct {
+	Coordinates [][]float64 // [lon, lat] pairs
+	Distance    float64     // meters
+	Duration    float64     // seconds
+}
+
+// GetWalkingRoute returns the geometry of a walking route
+func GetWalkingRoute(fromLat, fromLon, toLat, toLon float64) (*RouteGeometry, error) {
+	url := fmt.Sprintf("%s/route/v1/foot/%f,%f;%f,%f?overview=full&geometries=geojson",
+		osrmBaseURL, fromLon, fromLat, toLon, toLat)
+
+	resp, err := OSRMGet(url)
+	if err != nil {
+		return nil, fmt.Errorf("routing failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("routing API returned %d", resp.StatusCode)
+	}
+
+	var data struct {
+		Code   string `json:"code"`
+		Routes []struct {
+			Distance float64 `json:"distance"`
+			Duration float64 `json:"duration"`
+			Geometry struct {
+				Coordinates [][]float64 `json:"coordinates"`
+			} `json:"geometry"`
+		} `json:"routes"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("decode failed: %v", err)
+	}
+
+	if data.Code != "Ok" || len(data.Routes) == 0 {
+		return nil, fmt.Errorf("no route found")
+	}
+
+	route := data.Routes[0]
+	return &RouteGeometry{
+		Coordinates: route.Geometry.Coordinates,
+		Distance:    route.Distance,
+		Duration:    route.Duration,
+	}, nil
+}
+
+// DistanceMeters returns distance between two points in meters
+func DistanceMeters(lat1, lon1, lat2, lon2 float64) float64 {
+	R := 6371000.0 // Earth radius in meters
+	phi1 := lat1 * math.Pi / 180
+	phi2 := lat2 * math.Pi / 180
+	deltaPhi := (lat2 - lat1) * math.Pi / 180
+	deltaLambda := (lon2 - lon1) * math.Pi / 180
+
+	a := math.Sin(deltaPhi/2)*math.Sin(deltaPhi/2) +
+		math.Cos(phi1)*math.Cos(phi2)*math.Sin(deltaLambda/2)*math.Sin(deltaLambda/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return R * c
+}
+
+// queryOSMPOIsNearby fetches POIs from Overpass API
+func queryOSMPOIsNearby(lat, lon, radiusM float64, agentID string) []*Entity {
+	query := fmt.Sprintf(`[out:json][timeout:10];
+	(
+		node["amenity"](around:%f,%f,%f);
+		node["shop"](around:%f,%f,%f);
+	);
+	out body;`, radiusM, lat, lon, radiusM, lat, lon)
+
+	apiURL := "https://overpass-api.de/api/interpreter?data=" + url.QueryEscape(query)
+	resp, err := OSMGet(apiURL)
+	if err != nil {
+		log.Printf("[routing] OSM query failed: %v", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Elements []struct {
+			ID   int64             `json:"id"`
+			Lat  float64           `json:"lat"`
+			Lon  float64           `json:"lon"`
+			Tags map[string]string `json:"tags"`
+		} `json:"elements"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil
+	}
+
+	var entities []*Entity
+	for _, el := range result.Elements {
+		name := el.Tags["name"]
+		if name == "" {
+			continue
+		}
+
+		category := el.Tags["amenity"]
+		if category == "" {
+			category = el.Tags["shop"]
+		}
+
+		entities = append(entities, &Entity{
+			ID:        GenerateID(EntityPlace, el.Lat, el.Lon, name),
+			Type:      EntityPlace,
+			Name:      name,
+			Lat:       el.Lat,
+			Lon:       el.Lon,
+			Data: &PlaceData{
+				Category: category,
+				Tags:     el.Tags,
+				AgentID:  agentID,
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+	}
+
+	return entities
 }

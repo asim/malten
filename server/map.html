@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v16 2026-01-06 dynamic-legend -->
+<!-- v17 2026-01-09 highlight-marker-always-visible -->
 <html>
 <head>
     <meta charset="UTF-8">
@@ -329,6 +329,7 @@ function draw() {
     if (!mapData) return;
     
     // Draw streets first (under everything else)
+    const streetLabels = []; // Collect labels to draw after all lines
     if (mapData.streets && mapData.streets.length > 0) {
         ctx.strokeStyle = '#666';
         ctx.lineWidth = Math.max(1, 3 / viewState.metersPerPixel);
@@ -342,12 +343,79 @@ function draw() {
             const start = latLonToXY(street.points[0][1], street.points[0][0]); // [lon, lat]
             ctx.moveTo(start.x, start.y);
             
+            let minX = start.x, maxX = start.x, minY = start.y, maxY = start.y;
+            
             for (let i = 1; i < street.points.length; i++) {
                 const pt = latLonToXY(street.points[i][1], street.points[i][0]);
                 ctx.lineTo(pt.x, pt.y);
+                minX = Math.min(minX, pt.x);
+                maxX = Math.max(maxX, pt.x);
+                minY = Math.min(minY, pt.y);
+                maxY = Math.max(maxY, pt.y);
             }
             ctx.stroke();
+            
+            // Collect street label if zoomed in enough and street is on screen
+            // Skip internal route names (Route to..., Courier route...)
+            const isRealStreet = street.name && 
+                !street.name.startsWith('Route to') && 
+                !street.name.startsWith('Courier route');
+            if (isRealStreet && viewState.metersPerPixel <= 4) {
+                const midX = (minX + maxX) / 2;
+                const midY = (minY + maxY) / 2;
+                
+                // Only if center is on screen
+                if (midX > -50 && midX < canvas.width + 50 && midY > -20 && midY < canvas.height + 20) {
+                    // Calculate angle from street direction
+                    const dx = maxX - minX;
+                    const dy = maxY - minY;
+                    let angle = Math.atan2(dy, dx);
+                    // Keep text readable (not upside down)
+                    if (angle > Math.PI/2) angle -= Math.PI;
+                    if (angle < -Math.PI/2) angle += Math.PI;
+                    
+                    streetLabels.push({ name: street.name, x: midX, y: midY, angle });
+                }
+            }
         });
+    }
+    
+    // Draw street labels (after lines, with spacing to avoid overlap)
+    if (streetLabels.length > 0) {
+        ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        const drawnLabels = [];
+        const minSpacing = 80; // Minimum pixels between labels
+        
+        for (const label of streetLabels) {
+            // Check overlap with already drawn labels
+            let tooClose = false;
+            for (const drawn of drawnLabels) {
+                const dx = label.x - drawn.x;
+                const dy = label.y - drawn.y;
+                if (Math.sqrt(dx*dx + dy*dy) < minSpacing) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (tooClose) continue;
+            
+            ctx.save();
+            ctx.translate(label.x, label.y);
+            ctx.rotate(label.angle);
+            
+            // White outline for readability
+            ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+            ctx.lineWidth = 3;
+            ctx.strokeText(label.name, 0, 0);
+            ctx.fillStyle = '#555';
+            ctx.fillText(label.name, 0, 0);
+            
+            ctx.restore();
+            drawnLabels.push(label);
+        }
     }
     
     // Draw area names from agents (at moderate zoom levels)
@@ -430,21 +498,34 @@ function draw() {
             
             const emoji = getEmoji(place.category);
             
-            // Highlight if this is the target place (normalize quotes for comparison)
-            const normalizeQuotes = s => s.replace(/[\u2018\u2019\u0027]/g, "'");
-            if (highlightName && normalizeQuotes(place.name) === normalizeQuotes(highlightName)) {
+            // Hover highlight
+            if (hoveredPlace && hoveredPlace.name === place.name && 
+                Math.abs(hoveredPlace.lat - place.lat) < 0.0001) {
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(pos.x, pos.y, fontSize + 8, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 200, 0, 0.5)';
+                ctx.arc(pos.x, pos.y, fontSize/2 + 6, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(66, 133, 244, 0.2)';
                 ctx.fill();
-                ctx.strokeStyle = '#f90';
+                ctx.strokeStyle = 'rgba(66, 133, 244, 0.6)';
                 ctx.lineWidth = 2;
                 ctx.stroke();
                 ctx.restore();
             }
             
             ctx.fillText(emoji, pos.x, pos.y);
+            
+            // Show place name when zoomed in close (1m/px or less)
+            if (viewState.metersPerPixel <= 1 && place.name) {
+                ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                const labelY = pos.y + fontSize/2 + 2;
+                ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+                ctx.lineWidth = 3;
+                ctx.strokeText(place.name, pos.x, labelY);
+                ctx.fillStyle = '#333';
+                ctx.fillText(place.name, pos.x, labelY);
+            }
             renderedPlaces.push({...place, x: pos.x, y: pos.y, radius: fontSize/2 + 10});
         });
         
@@ -454,6 +535,48 @@ function draw() {
     
     // Agents work invisibly - like angels, they operate in the background
     // Not rendered on map, but still doing their work
+    
+    // Draw highlight marker for target location (subtle ring)
+    if (highlightLat && highlightLon) {
+        const pos = latLonToXY(highlightLat, highlightLon);
+        
+        // Subtle pulsing ring
+        const pulse = Math.sin(Date.now() / 400) * 0.1 + 0.9;
+        const radius = 18 * pulse;
+        
+        // Just a ring, no fill
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 120, 0, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Place name label (smaller, below)
+        if (highlightName) {
+            ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            
+            const labelY = pos.y + radius + 4;
+            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+            ctx.lineWidth = 3;
+            ctx.strokeText(highlightName, pos.x, labelY);
+            ctx.fillStyle = '#c40';
+            ctx.fillText(highlightName, pos.x, labelY);
+        }
+        
+        // Add to renderedPlaces so it's clickable
+        renderedPlaces.push({
+            name: highlightName || 'Selected location',
+            lat: highlightLat,
+            lon: highlightLon,
+            category: 'default',
+            x: pos.x,
+            y: pos.y,
+            radius: 20,
+            isHighlight: true
+        });
+    }
     
     // Draw user location marker
     if (userLat && userLon) {
@@ -579,7 +702,10 @@ function drawGrid() {
 function updateScale() {
     // Calculate scale bar
     let scaleMeters = 1000;
-    if (viewState.metersPerPixel < 2) scaleMeters = 50;
+    if (viewState.metersPerPixel < 0.3) scaleMeters = 5;
+    else if (viewState.metersPerPixel < 0.7) scaleMeters = 10;
+    else if (viewState.metersPerPixel < 1.5) scaleMeters = 20;
+    else if (viewState.metersPerPixel < 2) scaleMeters = 50;
     else if (viewState.metersPerPixel < 5) scaleMeters = 100;
     else if (viewState.metersPerPixel < 10) scaleMeters = 200;
     else if (viewState.metersPerPixel < 20) scaleMeters = 500;
@@ -786,7 +912,7 @@ function updateLegend() {
 }
 
 function zoomIn() {
-    viewState.metersPerPixel = Math.max(0.5, viewState.metersPerPixel / 1.5);
+    viewState.metersPerPixel = Math.max(0.1, viewState.metersPerPixel / 1.5);
     draw();
     updateStats();
 }
@@ -921,7 +1047,7 @@ function zoomAtPoint(clientX, clientY, factor) {
     
     // Apply zoom
     const oldMpp = viewState.metersPerPixel;
-    const newMpp = Math.max(0.5, Math.min(500, oldMpp * factor));
+    const newMpp = Math.max(0.1, Math.min(500, oldMpp * factor));
     viewState.metersPerPixel = newMpp;
     
     // Get where that lat/lon would appear after zoom (without offset adjustment)
@@ -935,27 +1061,31 @@ function zoomAtPoint(clientX, clientY, factor) {
     updateStats();
 }
 
+let hoveredPlace = null;
+
 function showTooltip(x, y) {
     if (!mapData) return;
     
-    const searchRadius = 15; // pixels
+    // Check rendered places for hover (more accurate than raw mapData)
     let nearest = null;
-    let minDist = searchRadius;
-    
-    // Check places
-    mapData.places.forEach(place => {
-        const pos = latLonToXY(place.lat, place.lon);
-        const dist = Math.sqrt(Math.pow(pos.x - x, 2) + Math.pow(pos.y - y, 2));
-        if (dist < minDist) {
-            minDist = dist;
+    for (const place of renderedPlaces) {
+        const dx = x - place.x;
+        const dy = y - place.y;
+        if (Math.sqrt(dx*dx + dy*dy) < place.radius + 5) {
             nearest = place;
+            break;
         }
-    });
+    }
     
-    // Agents work invisibly - no tooltip
+    // Update hover state and cursor
+    if (nearest !== hoveredPlace) {
+        hoveredPlace = nearest;
+        canvas.style.cursor = nearest ? 'pointer' : 'grab';
+        draw(); // Redraw to show hover highlight
+    }
     
     if (nearest) {
-        tooltip.innerHTML = `<strong>${getEmoji(nearest.category)} ${nearest.name}</strong><br>${nearest.category}`;
+        tooltip.innerHTML = `<strong>${getEmoji(nearest.category)} ${nearest.name}</strong><br>${nearest.category || 'Place'}`;
         tooltip.style.display = 'block';
         tooltip.style.left = (x + 15) + 'px';
         tooltip.style.top = (y + 15) + 'px';
@@ -1202,14 +1332,32 @@ const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.has('lat') && urlParams.has('lon')) {
     viewState.centerLat = parseFloat(urlParams.get('lat'));
     viewState.centerLon = parseFloat(urlParams.get('lon'));
-    viewState.metersPerPixel = 2; // Zoom in when showing specific location
+    viewState.metersPerPixel = 2; // Zoom in tight when showing specific location
 }
 let highlightName = urlParams.get('highlight');
+let highlightLat = urlParams.has('lat') ? parseFloat(urlParams.get('lat')) : null;
+let highlightLon = urlParams.has('lon') ? parseFloat(urlParams.get('lon')) : null;
 
 // Initialize
 window.addEventListener('resize', resize);
 canvas.style.cursor = 'grab';
 resize();
+
+// Animation loop for highlight pulse
+let animationRunning = false;
+function animate() {
+    if (highlightLat && highlightLon) {
+        draw();
+        requestAnimationFrame(animate);
+    } else {
+        animationRunning = false;
+    }
+}
+
+if (highlightLat && highlightLon && !animationRunning) {
+    animationRunning = true;
+    animate();
+}
 
 // Refresh data periodically (slow mode)
 setInterval(() => {

@@ -72,11 +72,11 @@ func init() {
 		},
 	})
 
-	// Next bus / bus notifications
+	// Next bus
 	Register(&Command{
 		Name:        "bus",
-		Description: "Get next bus times or toggle bus notifications",
-		Usage:       "/bus [on|off]",
+		Description: "Get next bus times",
+		Usage:       "/bus",
 		Emoji:       "🚌",
 		LoadingText: "Checking bus times...",
 		Match: func(input string) (bool, []string) {
@@ -90,31 +90,6 @@ func init() {
 			return false, nil
 		},
 		Handler: func(ctx *Context, args []string) (string, error) {
-			// Check for on/off toggle
-			if len(args) > 0 {
-				arg := strings.ToLower(args[0])
-				switch arg {
-				case "on", "enable", "yes", "1":
-					if SetBusNotifyCallback != nil {
-						SetBusNotifyCallback(ctx.Session, true)
-					}
-					return "🚌 Bus notifications enabled.\n\nYou'll receive push notifications for bus times when the app is in the background.", nil
-				case "off", "disable", "no", "0":
-					if SetBusNotifyCallback != nil {
-						SetBusNotifyCallback(ctx.Session, false)
-					}
-					return "🚌 Bus notifications disabled.", nil
-				case "status":
-					if GetBusNotifyCallback != nil {
-						if GetBusNotifyCallback(ctx.Session) {
-							return "🚌 Bus notifications: ON\n\nUse `/bus off` to disable.", nil
-						}
-					}
-					return "🚌 Bus notifications: OFF\n\nUse `/bus on` to enable.", nil
-				}
-			}
-
-			// Default: show bus times
 			if ctx.Lat == 0 && ctx.Lon == 0 {
 				return "📍 No location. Enable location to get bus times.", nil
 			}
