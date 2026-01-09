@@ -22,9 +22,14 @@ Move through the world and it updates. Take a photo of the snow falling. Note wh
 
 **Commands**: Ask for what you need.
 - `/nearby cafe` - find coffee
-- `/directions home` - walking route
+- `/directions home` - walking route  
 - `/weather` - forecast
 - `/bus` - next arrivals
+- `/prayer` - prayer times
+- `/reminder text` - set a reminder
+- `/nature` - sunrise, sunset, moon phase
+- `/map` - view the spatial index
+- `/checkin` / `/checkout` - mark your presence
 
 **AI**: What's happening. "What's that building?" "Where can I get lunch?" "What time is sunset?"
 
