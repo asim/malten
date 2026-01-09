@@ -405,6 +405,7 @@ func DebugHandler(w http.ResponseWriter, r *http.Request) {
 
 	db := spatial.Get()
 	stats := db.Stats()
+	cacheStats := spatial.GetCacheStats().CacheSummary()
 
 	data := map[string]interface{}{
 		"memory": map[string]interface{}{
@@ -420,6 +421,7 @@ func DebugHandler(w http.ResponseWriter, r *http.Request) {
 			"arrivals": stats.Arrivals,
 			"places":   stats.Places,
 		},
+		"cache":  cacheStats,
 		"uptime": time.Since(startTime).Round(time.Second).String(),
 	}
 

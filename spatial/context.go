@@ -114,12 +114,14 @@ func GetContextData(lat, lon float64) *ContextData {
 	var locationName string
 	if loc != nil {
 		locationName = loc.Name
+		GetCacheStats().RecordLocationHit()
 	} else {
-		// No point nearby - fetch and create one at THESE coords
-		newLoc := fetchLocation(lat, lon)
-		if newLoc != nil {
-			locationName = newLoc.Name
-		}
+		// No point nearby - fetch in background, don't block
+		// This ensures /ping never waits for Nominatim API
+		go fetchLocation(lat, lon)
+		// Use coordinates as fallback name
+		locationName = fmt.Sprintf("%.4f, %.4f", lat, lon)
+		GetCacheStats().RecordLocationMiss()
 	}
 
 	if locationName != "" {

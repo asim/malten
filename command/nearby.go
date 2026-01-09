@@ -1429,6 +1429,7 @@ func handleCheckIn(ctx *Context, args []string) (string, error) {
 
 // handlePing processes location update and returns context as JSON
 func handlePing(ctx *Context, args []string) (string, error) {
+	start := time.Now()
 	if !ctx.HasLocation() {
 		return "📍 Location not provided", nil
 	}
@@ -1455,7 +1456,9 @@ func handlePing(ctx *Context, args []string) (string, error) {
 	}
 
 	// Get context with change detection
+	tGetContext := time.Now()
 	contextData, changes := spatial.GetContextWithChanges(ctx.Session, contextLat, contextLon, accuracy, speed)
+	log.Printf("[ping] GetContext: %v", time.Since(tGetContext))
 
 	// Cache for AI requests
 	userContextsMu.Lock()
@@ -1469,6 +1472,9 @@ func handlePing(ctx *Context, args []string) (string, error) {
 
 	// Return JSON context
 	b, _ := json.Marshal(contextData)
+	durationMs := time.Since(start).Milliseconds()
+	spatial.GetCacheStats().RecordPing(durationMs)
+	log.Printf("[ping] Total: %dms, session=%s", durationMs, ctx.Session[:8])
 	return string(b), nil
 }
 

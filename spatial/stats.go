@@ -20,6 +20,73 @@ type APIStats struct {
 	ConsecErrors  int // Consecutive errors (for backoff)
 }
 
+// CacheStats tracks cache hit/miss statistics
+type CacheStats struct {
+	mu            sync.RWMutex
+	LocationHits  int64
+	LocationMiss  int64
+	WeatherHits   int64
+	WeatherMiss   int64
+	PrayerHits    int64
+	PrayerMiss    int64
+	PingCount     int64
+	PingTotalMs   int64 // Total milliseconds for all pings
+}
+
+var cacheStats = &CacheStats{}
+
+// GetCacheStats returns global cache stats
+func GetCacheStats() *CacheStats {
+	return cacheStats
+}
+
+// RecordLocationHit records a location cache hit
+func (c *CacheStats) RecordLocationHit() {
+	c.mu.Lock()
+	c.LocationHits++
+	c.mu.Unlock()
+}
+
+// RecordLocationMiss records a location cache miss
+func (c *CacheStats) RecordLocationMiss() {
+	c.mu.Lock()
+	c.LocationMiss++
+	c.mu.Unlock()
+}
+
+// RecordPing records a ping timing
+func (c *CacheStats) RecordPing(durationMs int64) {
+	c.mu.Lock()
+	c.PingCount++
+	c.PingTotalMs += durationMs
+	c.mu.Unlock()
+}
+
+// CacheSummary returns cache hit statistics
+func (c *CacheStats) CacheSummary() map[string]interface{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	avgPingMs := float64(0)
+	if c.PingCount > 0 {
+		avgPingMs = float64(c.PingTotalMs) / float64(c.PingCount)
+	}
+	
+	locTotal := c.LocationHits + c.LocationMiss
+	locHitRate := float64(0)
+	if locTotal > 0 {
+		locHitRate = float64(c.LocationHits) / float64(locTotal) * 100
+	}
+	
+	return map[string]interface{}{
+		"ping_count":       c.PingCount,
+		"ping_avg_ms":      avgPingMs,
+		"location_hits":    c.LocationHits,
+		"location_misses":  c.LocationMiss,
+		"location_hit_pct": locHitRate,
+	}
+}
+
 // SystemStats tracks overall system statistics
 type SystemStats struct {
 	mu        sync.RWMutex
