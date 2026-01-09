@@ -50,6 +50,43 @@ func handleNature(ctx *Context, args []string) (string, error) {
 		return "❌ Unknown type: " + natureType, nil
 	}
 	
-	// Return as HTML with clickable image
-	return `<img src="` + image + `" class="reminder-image" onclick="viewReminderImage(this.src)" alt="` + natureType + `">`, nil
+	// Get a caption for the type
+	caption := getNatureCaption(natureType)
+	
+	// Return as HTML with clickable image and caption
+	return `<img src="` + image + `" class="reminder-image" onclick="viewReminderImage(this.src)" alt="` + natureType + `">` +
+		`<div class="nature-caption">` + caption + `</div>`, nil
+}
+
+// getNatureCaption returns a reflective caption for the nature type
+func getNatureCaption(natureType string) string {
+	captions := map[string]string{
+		"stars":     "✨ The night sky",
+		"moon":      "🌙 The moon",
+		"sunrise":   "🌅 A new day begins",
+		"sunset":    "🌇 Day turns to night",
+		"morning":   "☀️ Good morning",
+		"evening":   "🌆 Good evening",
+		"night":     "🌃 The night",
+		"rain":      "🌧️ Rain",
+		"snow":      "❄️ Snow",
+		"clouds":    "☁️ Clouds",
+		"fog":       "🌫️ Fog",
+		"beach":     "🏖️ The shore",
+		"mountains": "⛰️ Mountains",
+		"forest":    "🌲 The forest",
+		"flowers":   "🌺 Flowers",
+		"autumn":    "🍂 Autumn",
+		"spring":    "🌸 Spring",
+		"winter":    "❄️ Winter",
+		"desert":    "🏜️ The desert",
+		"ocean":     "🌊 The ocean",
+		"river":     "🌊 A river",
+		"lake":      "💧 A lake",
+	}
+	
+	if caption, ok := captions[natureType]; ok {
+		return caption
+	}
+	return "🌿 " + natureType
 }

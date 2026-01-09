@@ -392,6 +392,14 @@ input:focus { outline: none; }
   cursor: pointer;
 }
 
+.nature-caption {
+  font-size: 14px;
+  color: #666;
+  text-align: center;
+  margin-top: -4px;
+  margin-bottom: 4px;
+}
+
 /* On mobile (narrow screens), use smaller height */
 @media (max-width: 480px) {
   .reminder-image {
