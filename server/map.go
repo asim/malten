@@ -168,7 +168,7 @@ func MapHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get street data
-	streetEntities := db.Query(centerLat, centerLon, radius, spatial.EntityStreet, 500)
+	streetEntities := db.Query(centerLat, centerLon, radius, spatial.EntityStreet, 2000)
 	mapStreets := make([]MapStreet, 0, len(streetEntities))
 	for _, s := range streetEntities {
 		var convertedPoints [][]float64

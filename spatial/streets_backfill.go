@@ -180,3 +180,37 @@ out geom;
 	
 	return bestGeometry
 }
+
+// CleanupBrokenStreets removes street entries with less than 2 points (incomplete geometry)
+func CleanupBrokenStreets() int {
+	db := Get()
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	var toDelete []string
+	for id, point := range db.entities {
+		entity, ok := point.Data().(*Entity)
+		if !ok || entity.Type != EntityStreet {
+			continue
+		}
+
+		sd := entity.GetStreetData()
+		if sd == nil || len(sd.Points) < 2 {
+			toDelete = append(toDelete, id)
+		}
+	}
+
+	for _, id := range toDelete {
+		if point, ok := db.entities[id]; ok {
+			db.tree.Remove(point)
+			delete(db.entities, id)
+			db.store.Delete(id)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		log.Printf("[cleanup] Removed %d broken street entries (< 2 points)", len(toDelete))
+	}
+
+	return len(toDelete)
+}

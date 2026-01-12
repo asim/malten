@@ -197,7 +197,7 @@ func (pm *PushManager) checkMorningNotification() {
 	}
 }
 
-// sendPush sends a push notification to a user
+// sendPush sends a push notification to a user and stores it in history
 func (pm *PushManager) sendPush(user *PushUser, notification *PushNotification) bool {
 	if user.Subscription == nil {
 		return false
@@ -230,7 +230,25 @@ func (pm *PushManager) sendPush(user *PushUser, notification *PushNotification) 
 		return false
 	}
 
-	return resp.StatusCode < 400
+	if resp.StatusCode < 400 {
+		// Store in history for retrieval when app opens
+		pm.mu.Lock()
+		user.PushHistory = append(user.PushHistory, PushHistoryItem{
+			Time:  time.Now(),
+			Title: notification.Title,
+			Body:  notification.Body,
+			Image: notification.Image,
+		})
+		// Keep only last 10 items
+		if len(user.PushHistory) > 10 {
+			user.PushHistory = user.PushHistory[len(user.PushHistory)-10:]
+		}
+		log.Printf("[push] Stored notification in history for %s, now have %d items", user.SessionID[:8], len(user.PushHistory))
+		pm.mu.Unlock()
+		return true
+	}
+
+	return false
 }
 
 // GetVAPIDPublicKey returns the public key for client subscription
@@ -289,9 +307,32 @@ func HandleVAPIDKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandlePushHistory(w http.ResponseWriter, r *http.Request) {
-	// Simplified - just return empty for now
+	sessionID := getSessionToken(w, r)
+	if sessionID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"history": []PushHistoryItem{}})
+		return
+	}
+
+	pm := GetPushManager()
+	pm.mu.Lock()
+	user, exists := pm.users[sessionID]
+	var history []PushHistoryItem
+	if exists && len(user.PushHistory) > 0 {
+		history = user.PushHistory
+		user.PushHistory = nil // Clear after retrieval
+	}
+	pm.mu.Unlock()
+
+	if len(history) > 0 {
+		pm.save() // Persist the cleared history
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"history": []PushHistoryItem{}})
+	if history == nil {
+		history = []PushHistoryItem{}
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"history": history})
 }
 
 // HandleTestMorningPush manually triggers the morning push for testing

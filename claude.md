@@ -62,9 +62,40 @@ To the world, Malten is:
 3. **The tool helps you see, it doesn't tell you what to see**
 4. **Utility and purpose together** - Every feature has practical value
 
-## Session Checkpoint: Jan 9, 2026
+## Session Checkpoint: Jan 10, 2026
 
 ### What Was Done This Session
+
+1. **Fixed push notification history not appearing in timeline**
+   - `HandlePushHistory` was hardcoded to return empty array
+   - `sendPush` wasn't storing notifications to `user.PushHistory`
+   - Fixed both: notifications now stored on successful send, returned and cleared on fetch
+   - Also fetch history on app cold start (not just on visibility change)
+
+2. **Fixed broken street geometry (847 entries with 1 point)**
+   - Buggy backfill on Jan 9 created street entries with only location, no geometry
+   - These blocked proper geometry from being fetched later
+   - Added `CleanupBrokenStreets()` function and `/cleanup-streets` command
+   - Removed 847 broken entries, re-running backfill to get proper geometry
+
+3. **Fixed initial load not refreshing context on PWA resume**
+   - PWA resume fires `$(document).ready()` again, appearing as "initial load"
+   - `getLocationAndContext()` was slower (15s timeout) and didn't fall back to cached location
+   - Now uses `locationManager.update()` (5s timeout, cached fallback) when we have cached location
+   - Only uses `getLocationAndContext()` for truly fresh starts needing permission prompts
+
+### Files Changed
+- `server/push.go` - Store notifications in history, implement history retrieval
+- `spatial/streets_backfill.go` - Added `CleanupBrokenStreets()` function  
+- `command/backfill.go` - Added `/cleanup-streets` command
+- `server/map.go` - Increased street query limit from 500 to 2000
+- `client/web/malten.js` - Fetch push history on cold start; use fast refresh on PWA resume
+
+---
+
+## Session Checkpoint: Jan 9, 2026
+
+### What Was Done That Session
 
 1. **Fixed deadlocks in push notification system**
    - `PushAwarenessToArea` was calling `saveAsync()` while holding `pm.mu.Lock()`, but `saveAsync()` internally tries to acquire `RLock()` → deadlock

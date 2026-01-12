@@ -210,6 +210,7 @@ var wikimediaCategories = map[string]string{
 	"moon":      "Photographs_of_the_Moon",
 	"sunrise":   "Sunrises",
 	"sunset":    "Sunsets",
+	"morning":   "Sunrises",
 	"mountains": "Mountain_landscapes",
 	"ocean":     "Seascapes",
 	"rain":      "Rainy_weather",

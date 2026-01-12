@@ -35,3 +35,15 @@ func handleBackfillStreets(ctx *Context, args []string) (string, error) {
 	
 	return fmt.Sprintf("🗺️ Starting street backfill from %.4f,%.4f radius %.0fm\nCheck logs for progress.", ctx.Lat, ctx.Lon, radius), nil
 }
+
+func init() {
+	Register(&Command{
+		Name:        "cleanup-streets",
+		Description: "Remove broken street entries (< 2 points)",
+		Usage:       "/cleanup-streets",
+		Handler: func(ctx *Context, args []string) (string, error) {
+			count := spatial.CleanupBrokenStreets()
+			return fmt.Sprintf("🧹 Removed %d broken street entries", count), nil
+		},
+	})
+}
