@@ -1,3 +1,3 @@
 # malten
 
-A customer service agent
+A conversational support agent
