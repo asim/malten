@@ -16,8 +16,8 @@ stands in), so the whole system is testable and demoable offline.
 ## Docs
 
 - **[SPEC.md](SPEC.md)** — scope and requirements (what and why)
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it fits together
 - **[CLAUDE.md](CLAUDE.md)** — guidance for AI agents working in the repo
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it fits together
 
 ## Quick start
 
