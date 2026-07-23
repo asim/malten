@@ -37,6 +37,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/chat", s.handleChat)
 	mux.HandleFunc("/api/session/", s.handleSession)
 	mux.HandleFunc("/api/tickets", s.handleTickets)
+	mux.HandleFunc("/tickets", s.handleTicketsPage)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "model": s.Agent.Model.Name()})
 	})
@@ -115,6 +116,16 @@ func (s *Server) handleTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tickets": tickets})
+}
+
+func (s *Server) handleTicketsPage(w http.ResponseWriter, r *http.Request) {
+	data, err := webFS.ReadFile("web/tickets.html")
+	if err != nil {
+		http.Error(w, "ui not found", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(data)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

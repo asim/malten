@@ -163,8 +163,8 @@ run; pinning it is more secure.
 
 ## 4. First deploy
 
-Everything after this is automatic on push to `main`, but kick off the first one
-manually: **Actions → deploy → Run workflow**, or push any commit to `main`.
+Everything after this deploys automatically when a PR is merged into `main`, but
+kick off the first one manually: **Actions → deploy → Run workflow**.
 
 The job will: `go vet` + `go test`, build a static `linux/amd64` binary, `scp` it
 to `/home/malten/malten.new`, atomically `mv` it into place, and

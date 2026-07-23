@@ -1,9 +1,11 @@
 name: deploy
 
 # Builds the binary in CI, then ships it to the server and restarts the
-# systemd service. Runs on every push to main and can be triggered manually.
+# systemd service. Runs when a pull request is merged into main, and can be
+# triggered manually.
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches: [main]
   workflow_dispatch:
 
@@ -15,8 +17,13 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Fire on a real merge into main (a PR closed without merging is skipped),
+    # or on a manual dispatch. Never on a bare push to main.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # build exactly what's on main after the merge
 
       - uses: actions/setup-go@v5
         with:
