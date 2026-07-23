@@ -75,11 +75,11 @@ All configuration is via environment variables:
 | Method & path | Purpose |
 | --- | --- |
 | `GET /` | the embedded chat UI (HTML) |
+| `GET /tickets` | the support backlog page (HTML) |
+| `GET /status` | customer-facing status page (HTML) |
 | `POST /api/chat` | send a message, get a reply |
 | `GET /api/session/{id}` | full transcript for a session |
-| `GET /tickets` | the support backlog page (HTML) |
 | `GET /api/tickets` | backlog data (JSON) |
-| `GET /status` | customer-facing status page (HTML) |
 | `GET /api/status` | operational/degraded signal (JSON) |
 | `GET /api/health` | operational check: model, uptime, row counts (JSON) |
 
