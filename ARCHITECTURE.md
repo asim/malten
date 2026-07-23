@@ -183,8 +183,12 @@ asks for it when a request needs it and none is known.
 | `GET /` | the embedded chat UI |
 | `POST /api/chat` | `{session_id?, customer_id?, message}` → agent `Reply` |
 | `GET /api/session/{id}` | full transcript for a session |
-| `GET /api/tickets` | the backlog (tickets + escalations) |
-| `GET /api/health` | liveness + active model name |
+| `GET /tickets`, `GET /api/tickets` | the backlog (tickets + escalations), page and JSON |
+| `GET /status`, `GET /api/status` | customer-facing status (operational/degraded) |
+| `GET /api/health` | operational check: model, uptime, row counts |
+
+See [docs/DECISIONS.md](docs/DECISIONS.md) for the running log of design
+decisions, including the restart-safety rule behind random ids.
 
 ## Evaluation
 

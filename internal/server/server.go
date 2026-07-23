@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/asim/malten/internal/agent"
 	"github.com/asim/malten/internal/id"
@@ -23,13 +24,14 @@ var webFS embed.FS
 
 // Server wires the agent and store to HTTP handlers.
 type Server struct {
-	Agent *agent.Agent
-	Store *store.Store
+	Agent   *agent.Agent
+	Store   *store.Store
+	started time.Time
 }
 
 // New builds a Server.
 func New(a *agent.Agent, s *store.Store) *Server {
-	return &Server{Agent: a, Store: s}
+	return &Server{Agent: a, Store: s, started: time.Now()}
 }
 
 // Handler returns the HTTP mux for the application.
@@ -39,11 +41,43 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/session/", s.handleSession)
 	mux.HandleFunc("/api/tickets", s.handleTickets)
 	mux.HandleFunc("/tickets", s.handleTicketsPage)
-	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "model": s.Agent.Model.Name()})
-	})
+	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/status", s.handleStatusAPI)
+	mux.HandleFunc("/status", s.handleStatusPage)
 	mux.HandleFunc("/", s.handleIndex)
 	return mux
+}
+
+// handleHealth is the operational check: model, uptime and row counts. Handy
+// for spotting whether the persisted store looks as expected after a restart.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	resp := map[string]any{
+		"status":         "ok",
+		"model":          s.Agent.Model.Name(),
+		"uptime_seconds": int(time.Since(s.started).Seconds()),
+	}
+	if stats, err := s.Store.Stats(); err == nil {
+		resp["sessions"] = stats.Sessions
+		resp["messages"] = stats.Messages
+		resp["tickets"] = stats.Tickets
+		resp["escalations"] = stats.Escalations
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleStatusAPI is the customer-facing status: an operational/degraded signal
+// backed by a lightweight database liveness check. No internal details.
+func (s *Server) handleStatusAPI(w http.ResponseWriter, r *http.Request) {
+	status, code := "operational", http.StatusOK
+	if err := s.Store.Ping(r.Context()); err != nil {
+		status, code = "degraded", http.StatusServiceUnavailable
+		log.Printf("malten: status ping failed: %v", err)
+	}
+	writeJSON(w, code, map[string]any{
+		"status":         status, // "operational" | "degraded"
+		"service":        "Malten support assistant",
+		"uptime_seconds": int(time.Since(s.started).Seconds()),
+	})
 }
 
 type chatRequest struct {
@@ -144,13 +178,11 @@ func (s *Server) handleTickets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTicketsPage(w http.ResponseWriter, r *http.Request) {
-	data, err := webFS.ReadFile("web/tickets.html")
-	if err != nil {
-		http.Error(w, "ui not found", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(data)
+	servePage(w, "web/tickets.html")
+}
+
+func (s *Server) handleStatusPage(w http.ResponseWriter, r *http.Request) {
+	servePage(w, "web/status.html")
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +190,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	data, err := webFS.ReadFile("web/index.html")
+	servePage(w, "web/index.html")
+}
+
+// servePage writes an embedded HTML page.
+func servePage(w http.ResponseWriter, name string) {
+	data, err := webFS.ReadFile(name)
 	if err != nil {
 		http.Error(w, "ui not found", http.StatusInternalServerError)
 		return
