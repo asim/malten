@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Malten — Backlog</title>
 <style>
   :root {
@@ -46,6 +46,19 @@
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; }
   .error { color: var(--err); padding: 20px 0; }
+
+  /* On phones, stack each row into a labelled card instead of a wide table. */
+  @media (max-width: 640px) {
+    .wrap { padding: 0 14px 32px; }
+    table, tbody, tr, td { display: block; }
+    thead { position: absolute; left: -9999px; }   /* visually hide the header row */
+    tr { border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; padding: 4px 2px; background: var(--panel); }
+    tr:hover td { background: transparent; }
+    td { border: none; padding: 7px 12px; display: flex; gap: 10px; align-items: baseline; }
+    td::before { content: attr(data-label); color: var(--muted); font-size: 12px; text-transform: uppercase;
+                 letter-spacing: 0.03em; flex: 0 0 84px; }
+    td.summary-cell { max-width: none; }
+  }
 </style>
 </head>
 <body>
@@ -84,14 +97,14 @@
 
     const rows = tickets.map(t => `
       <tr>
-        <td class="mono">${esc(t.id)}</td>
-        <td><span class="badge kind-${esc(t.kind)}">${esc(t.kind)}</span></td>
-        <td class="summary-cell">${esc(t.summary)}</td>
-        <td><span class="badge prio-${esc(t.priority)}">${esc(t.priority)}</span></td>
-        <td><span class="badge status-${esc(t.status)}">${esc(t.status)}</span></td>
-        <td class="mono">${esc(t.customer_id) || '—'}</td>
-        <td class="mono">${esc(t.session_id) || '—'}</td>
-        <td class="mono">${when(t.created_at)}</td>
+        <td class="mono" data-label="ID">${esc(t.id)}</td>
+        <td data-label="Kind"><span class="badge kind-${esc(t.kind)}">${esc(t.kind)}</span></td>
+        <td class="summary-cell" data-label="Summary">${esc(t.summary)}</td>
+        <td data-label="Priority"><span class="badge prio-${esc(t.priority)}">${esc(t.priority)}</span></td>
+        <td data-label="Status"><span class="badge status-${esc(t.status)}">${esc(t.status)}</span></td>
+        <td class="mono" data-label="Customer">${esc(t.customer_id) || '—'}</td>
+        <td class="mono" data-label="Session">${esc(t.session_id) || '—'}</td>
+        <td class="mono" data-label="Created">${when(t.created_at)}</td>
       </tr>`).join('');
 
     content.innerHTML = `
