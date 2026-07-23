@@ -139,7 +139,7 @@ localhost-only anyway):
 
 ```bash
 sudo ufw allow 'Nginx Full'    # 80 + 443
-sudo ufw allow OpenSSH
+sudo ufw allow 22/tcp          # SSH — or your custom port, e.g. `sudo ufw allow 61194/tcp`
 ```
 
 ---
@@ -153,8 +153,8 @@ Settings → Secrets and variables → Actions → **New repository secret**:
 | `DEPLOY_SSH_KEY` | contents of the **private** key `malten_deploy` (whole file) |
 | `DEPLOY_HOST` | `malten.ai` (or the server IP) |
 | `DEPLOY_USER` | `malten` |
-| `DEPLOY_PORT` | optional; SSH port (defaults to `22`) |
-| `DEPLOY_KNOWN_HOSTS` | optional but recommended; output of `ssh-keyscan malten.ai` to pin the host key |
+| `DEPLOY_PORT` | SSH port; omit for `22`, otherwise set it (e.g. `61194`) |
+| `DEPLOY_KNOWN_HOSTS` | optional but recommended; output of `ssh-keyscan -p <port> malten.ai` to pin the host key |
 
 Without `DEPLOY_KNOWN_HOSTS` the workflow trust-on-first-uses the host key each
 run; pinning it is more secure.
