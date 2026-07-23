@@ -67,7 +67,8 @@ end-to-end contract and asserts **zero safety violations**.
   persists. Anything that must be unique, monotonic, or continuous across the
   data's lifetime must derive from the store or from randomness — never a
   process-memory counter (that reset-on-restart is exactly what caused the id
-  collision). See [docs/DECISIONS.md](docs/DECISIONS.md).
+  collision). See [ARCHITECTURE.md](ARCHITECTURE.md) → "Design decisions &
+  restart safety".
 
 ## Model usage
 

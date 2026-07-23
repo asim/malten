@@ -187,9 +187,6 @@ asks for it when a request needs it and none is known.
 | `GET /status`, `GET /api/status` | customer-facing status (operational/degraded) |
 | `GET /api/health` | operational check: model, uptime, row counts |
 
-See [docs/DECISIONS.md](docs/DECISIONS.md) for the running log of design
-decisions, including the restart-safety rule behind random ids.
-
 ## Evaluation
 
 The evaluation hook (`internal/eval`, run via `cmd/eval` or `go test`) measures
@@ -222,3 +219,61 @@ The same harness can be pointed at the real Claude backend
 (`MALTEN_LLM=claude go run ./cmd/eval`) to measure the model against the
 identical bar. The release gate (`Report.OK()`) is: every scenario passes and
 zero safety violations.
+
+## Design decisions & restart safety
+
+A running log of decisions worth remembering — especially ones that bit us or
+would bite a future change. Read this before adding state.
+
+### The restart-safety rule
+
+Malten runs as a single binary that is **restarted on every deploy** (and on
+crashes, and when systemd cycles it), while its data lives in a **persistent
+SQLite file**. That split is the source of a whole class of bugs:
+
+> **Anything that must be unique, monotonic, or continuous across the life of
+> the data must derive from the persisted store or from randomness — never from
+> process memory.** Process memory resets to zero on every restart; the database
+> does not.
+
+Before adding any in-process counter, cache, "next id", sequence, dedup set, or
+rate-limit window, ask: *what happens when the process restarts but the database
+keeps its rows?* If the answer is "it collides / double-counts / regresses",
+push the state into SQLite or make it random.
+
+What is currently safe, and why:
+
+| State | Where it lives | Restart-safe because |
+| --- | --- | --- |
+| Session / ticket / escalation ids | `internal/id`, random | 64 bits of `crypto/rand`, no coordination with the DB needed |
+| Conversation transcript | `messages` table | persisted; replayed per turn |
+| Support backlog | `tickets` table | persisted |
+| Seed data (accounts/orders/KB) | seeded once, guarded by a row count | re-seed is skipped when data exists |
+| Uptime on the status page | process memory | intentionally per-process; cosmetic |
+| Stub tool-call ids | process memory | in-request only; never persisted or compared across restarts |
+
+### ADR-002 — Random ids, not a per-process counter
+
+`id.New` originally used an in-process atomic counter (`SESS-000001`, …).
+Readable, but the counter resets to zero on restart while sessions/tickets
+persist in SQLite. After a deploy, the first new session minted `SESS-000001`
+again — a row that already existed — and the insert failed with `UNIQUE
+constraint failed: sessions.id`; the user saw the raw SQL error, and a refresh
+"fixed" it only because the counter had advanced past the collision. Ticket ids
+had the same latent bug.
+
+**Decision:** generate ids from 64 bits of `crypto/rand`, base32-encoded
+(`SESS-k7q2m9f3xa4t8`) — no DB coordination, unguessable, negligible collision
+probability. `server.ensureSession` also retries on a duplicate. Ids are no
+longer sequential, which we never relied on. Do not reintroduce a
+persisted-sequence id scheme without storing the sequence in the database.
+
+### ADR-001 — Never leak internal errors to users
+
+Handlers originally returned `err.Error()` straight to the client, so a database
+error surfaced verbatim in the chat UI. **Decision:** handlers log the real error
+server-side and return a generic "something went wrong, please try again" via
+`server.fail`. Debugging relies on server logs (`journalctl -u malten`), so keep
+logging the real error. Operational detail lives behind `/api/health` (model,
+uptime, row counts) and the customer-facing `/status` page (`/api/status`:
+operational/degraded only, no internals).
