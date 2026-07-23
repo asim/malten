@@ -61,7 +61,7 @@
     <h1>Malten</h1>
     <span class="sub">conversational support agent</span>
     <span class="spacer"></span>
-    <a href="/api/tickets" target="_blank">backlog →</a>
+    <a href="/tickets">backlog →</a>
   </header>
   <div class="controls">
     <label for="cust">Customer ID</label>
@@ -83,13 +83,27 @@
   let sessionId = localStorage.getItem('malten_session') || '';
   cust.value = localStorage.getItem('malten_customer') || '';
 
+  // Debug view exposes the internal tool calls and policy decisions. It is OFF
+  // for customers. Turn it on with ?debug=1 (persists), off with ?debug=0.
+  const dbgParam = new URLSearchParams(location.search).get('debug');
+  if (dbgParam === '1') localStorage.setItem('malten_debug', '1');
+  if (dbgParam === '0') localStorage.removeItem('malten_debug');
+  const DEBUG = localStorage.getItem('malten_debug') === '1';
+
   function el(cls, html) { const d = document.createElement('div'); d.className = cls; if (html !== undefined) d.innerHTML = html; return d; }
   function esc(s) { return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
   function addMessage(role, text, reply) {
     const wrap = el('msg ' + role);
     wrap.appendChild(el('bubble', esc(text)));
-    if (reply) {
+    if (reply && reply.escalated && !DEBUG) {
+      // Customer-facing: a gentle note only — no steps, no tool internals.
+      const meta = el('meta');
+      meta.innerHTML = `<span class="badge esc">a human will follow up</span>`;
+      wrap.appendChild(meta);
+    }
+    if (reply && DEBUG) {
+      // Debug-only: the full trace of steps, tool calls and decisions.
       const meta = el('meta');
       meta.innerHTML = `<span>${reply.steps} step${reply.steps===1?'':'s'}</span>`;
       if (reply.escalated) meta.innerHTML += ` <span class="badge esc">escalated</span>`;
@@ -107,6 +121,24 @@
     log.appendChild(wrap);
     log.scrollTop = log.scrollHeight;
     return wrap;
+  }
+
+  // Concatenate the visible text of a stored message (skips tool_use/tool_result).
+  function textOf(content) {
+    return (content || []).filter(b => b.type === 'text' && b.text && b.text.trim()).map(b => b.text).join('');
+  }
+
+  // On load, rebuild the conversation from the server so a refresh keeps history.
+  async function loadHistory() {
+    if (!sessionId) return;
+    try {
+      const res = await fetch('/api/session/' + encodeURIComponent(sessionId));
+      const data = await res.json();
+      for (const m of (data.messages || [])) {
+        const t = textOf(m.content);
+        if (t) addMessage(m.role === 'user' ? 'user' : 'agent', t);
+      }
+    } catch (err) { /* if history can't load, just start fresh */ }
   }
 
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; });
@@ -141,6 +173,7 @@
     }
   });
 
+  loadHistory();
   input.focus();
 </script>
 </body>

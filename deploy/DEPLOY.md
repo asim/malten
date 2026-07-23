@@ -32,8 +32,9 @@ Do the one-time server setup below once; after that, merging to `main` deploys.
 ### 1.1 Create the `malten` user and directory
 
 ```bash
-sudo useradd --system --create-home --home-dir /home/malten --shell /usr/sbin/nologin malten
-sudo install -d -o malten -g malten -m 0755 /home/malten
+# A real login shell (bash) is required: the deploy Action runs `ssh malten@host
+# 'bash -s'`, which a nologin shell would refuse.
+sudo useradd --system --create-home --home-dir /home/malten --shell /bin/bash malten
 ```
 
 ### 1.2 Create the config file
@@ -82,9 +83,9 @@ sudo -u malten tee -a /home/malten/.ssh/authorized_keys < malten_deploy.pub
 sudo -u malten chmod 600 /home/malten/.ssh/authorized_keys
 ```
 
-The **private** key `malten_deploy` goes into a GitHub secret (step 3). SSH as
-`malten` must be permitted (it's a `nologin` shell, but `scp`/`ssh <cmd>` and the
-Action's `bash -s` still work; if your `sshd` restricts users, allow `malten`).
+The **private** key `malten_deploy` goes into a GitHub secret (step 3). The
+`malten` user has a real login shell (set in 1.1) so `ssh malten@host '<cmd>'`
+works; if your `sshd` restricts logins (e.g. an `AllowUsers` list), add `malten`.
 
 ---
 
@@ -138,7 +139,7 @@ localhost-only anyway):
 
 ```bash
 sudo ufw allow 'Nginx Full'    # 80 + 443
-sudo ufw allow OpenSSH
+sudo ufw allow 22/tcp          # SSH — or your custom port, e.g. `sudo ufw allow 61194/tcp`
 ```
 
 ---
@@ -152,8 +153,8 @@ Settings → Secrets and variables → Actions → **New repository secret**:
 | `DEPLOY_SSH_KEY` | contents of the **private** key `malten_deploy` (whole file) |
 | `DEPLOY_HOST` | `malten.ai` (or the server IP) |
 | `DEPLOY_USER` | `malten` |
-| `DEPLOY_PORT` | optional; SSH port (defaults to `22`) |
-| `DEPLOY_KNOWN_HOSTS` | optional but recommended; output of `ssh-keyscan malten.ai` to pin the host key |
+| `DEPLOY_PORT` | SSH port; omit for `22`, otherwise set it (e.g. `61194`) |
+| `DEPLOY_KNOWN_HOSTS` | optional but recommended; output of `ssh-keyscan -p <port> malten.ai` to pin the host key |
 
 Without `DEPLOY_KNOWN_HOSTS` the workflow trust-on-first-uses the host key each
 run; pinning it is more secure.
@@ -162,8 +163,8 @@ run; pinning it is more secure.
 
 ## 4. First deploy
 
-Everything after this is automatic on push to `main`, but kick off the first one
-manually: **Actions → deploy → Run workflow**, or push any commit to `main`.
+Everything after this deploys automatically when a PR is merged into `main`, but
+kick off the first one manually: **Actions → deploy → Run workflow**.
 
 The job will: `go vet` + `go test`, build a static `linux/amd64` binary, `scp` it
 to `/home/malten/malten.new`, atomically `mv` it into place, and
