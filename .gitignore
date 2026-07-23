@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Malten runtime artifacts
+malten.db
+*.db
+/malten
