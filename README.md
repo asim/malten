@@ -2,6 +2,8 @@
 
 A conversational customer-support agent for a SaaS product, written in Go.
 
+## Overview
+
 A customer sends a message; Malten **resolves the issue, takes an action, or
 escalates to a human**. It searches a product knowledge base, looks up accounts,
 issues refunds, resets passwords and files tickets — and it never takes a
