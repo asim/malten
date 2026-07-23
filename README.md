@@ -70,16 +70,43 @@ All configuration is via environment variables:
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /` | the embedded chat UI |
+| `GET /` | the embedded chat UI (HTML) |
 | `POST /api/chat` | send a message, get a reply |
 | `GET /api/session/{id}` | full transcript for a session |
-| `GET /tickets` | the support backlog page (tickets + escalations) |
+| `GET /tickets` | the support backlog page (HTML) |
 | `GET /api/tickets` | backlog data (JSON) |
-| `GET /status` | customer-facing status page |
+| `GET /status` | customer-facing status page (HTML) |
 | `GET /api/status` | operational/degraded signal (JSON) |
-| `GET /api/health` | operational check: model, uptime, row counts |
+| `GET /api/health` | operational check: model, uptime, row counts (JSON) |
 
-**Chat request/response:**
+### Conventions
+
+- **Base URL** is the server origin (`http://localhost:8080` in dev,
+  `https://malten.ai` in production).
+- **Request/response bodies are JSON**; send `Content-Type: application/json` on
+  `POST`.
+- **Errors** return a non-2xx status and `{"error": "<message>"}`. Internal
+  failures return `500` with a generic message (the real error is logged
+  server-side, never returned to the client).
+- **Sessions have no login.** Supply `session_id` to continue a conversation, or
+  omit it and the server mints one, returns it, and sets it as an `HttpOnly`
+  cookie (`malten_session`). `customer_id` is the (currently unverified) account
+  the agent acts on; it asks for one when a request needs it and none is known.
+
+---
+
+### `POST /api/chat`
+
+Send one customer message; the agent runs its loop and returns a final reply or
+an escalation.
+
+**Request body**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `message` | string | yes | The customer's message. |
+| `session_id` | string | no | Continue an existing session. Omit on the first message; the response returns a new one. |
+| `customer_id` | string | no | The account to act on (e.g. `CUST-1001`). |
 
 ```bash
 curl -s -X POST localhost:8080/api/chat \
@@ -87,26 +114,143 @@ curl -s -X POST localhost:8080/api/chat \
   -d '{"customer_id":"CUST-1001","message":"Refund my order ORD-5001"}'
 ```
 
+**Response** `200 OK`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `session_id` | string | The session id (reuse it on the next message). |
+| `text` | string | The agent's natural-language reply. |
+| `escalated` | bool | True if the request was handed to a human. |
+| `steps` | int | Number of model turns taken. |
+| `actions` | array | Tools the agent invoked this turn (see below). Omitted if none. |
+
+Each `actions[]` entry:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tool` | string | Tool name (`kb_search`, `account_lookup`, `issue_refund`, `reset_password`, `create_ticket`). |
+| `input` | object | The arguments the model supplied. |
+| `decision` | string | Policy decision: `allow`, `deny`, `escalate`, or `n/a` (non-validated). |
+| `reason` | string | Why it was denied/escalated (present for `deny`/`escalate`). |
+| `result` | string | Tool output (present when executed). |
+| `is_error` | bool | True if the tool/validation failed. |
+
 ```json
 {
-  "session_id": "SESS-000001",
-  "text": "Refund of $49.00 issued for order ORD-5001. ...",
+  "session_id": "SESS-k7q2m9f3xa4t8",
+  "text": "I've issued a $49.00 refund for order ORD-5001. It should appear within a few business days.",
   "escalated": false,
   "steps": 3,
   "actions": [
-    {"tool": "account_lookup", "decision": "allow", "result": "..."},
-    {"tool": "issue_refund", "decision": "allow", "result": "Refund of $49.00 issued..."}
+    {"tool": "account_lookup", "input": {"customer_id": "CUST-1001"}, "decision": "allow", "result": "{...account json...}"},
+    {"tool": "issue_refund", "input": {"order_id": "ORD-5001", "amount": 49}, "decision": "allow", "result": "Refund of $49.00 issued for order ORD-5001."}
   ]
 }
 ```
 
-**Sessions (no login).** Provide `session_id` to continue a conversation, or omit
-it and the server mints one and returns it (also set as a cookie). `customer_id`
-is how the agent identifies the account for lookups and actions — it will ask for
-it when a request needs it and none is known.
+An escalation instead returns `"escalated": true` (and a matching entry appears
+in `GET /api/tickets`):
 
-An escalation response has `"escalated": true` and a matching entry appears in
-`GET /api/tickets` for a human to review.
+```json
+{ "session_id": "SESS-...", "text": "I've escalated this to a human...", "escalated": true, "steps": 2,
+  "actions": [ {"tool": "issue_refund", "input": {"order_id": "ORD-5002", "amount": 499}, "decision": "escalate", "reason": "refund of $499.00 exceeds the $200 auto-approval limit and needs manager approval"} ] }
+```
+
+**Errors** `400` — missing `message` or invalid JSON. `500` — generic message on
+an internal error.
+
+> The `actions` array is intended for operators/observability. The bundled chat
+> UI hides it from customers by default and reveals it under `/?debug=1`. If you
+> build your own customer-facing client, don't surface it.
+
+---
+
+### `GET /api/session/{id}`
+
+Return the full transcript for a session (used by the UI to restore history on
+reload).
+
+```bash
+curl -s localhost:8080/api/session/SESS-k7q2m9f3xa4t8
+```
+
+**Response** `200 OK` — `{ "session_id", "messages": [ ... ] }`, where each
+message is `{ "role": "user"|"assistant", "content": [ block, ... ] }` and a
+block is one of:
+
+| Block `type` | Fields | Meaning |
+| --- | --- | --- |
+| `text` | `text` | Plain message text. |
+| `tool_use` | `id`, `name`, `input` | A tool call the model made. |
+| `tool_result` | `tool_use_id`, `content`, `is_error` | The result fed back to the model. |
+
+An unknown session id returns `{ "session_id": "...", "messages": null }`.
+
+---
+
+### `GET /api/tickets`
+
+The support backlog — tickets the agent filed and escalations — newest first.
+
+```bash
+curl -s localhost:8080/api/tickets
+```
+
+**Response** `200 OK` — `{ "tickets": [ ... ] }`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | string | Ticket id (`TCK-...` or `ESC-...`). |
+| `kind` | string | `ticket` or `escalation`. |
+| `summary` | string | One-line description. |
+| `priority` | string | `low`, `normal`, `high`, or `urgent`. |
+| `status` | string | `open` or `closed`. |
+| `customer_id` | string | Associated customer, if any. |
+| `session_id` | string | Originating session, if any. |
+| `created_at` | string | RFC 3339 timestamp. |
+
+`GET /tickets` renders this as an HTML page.
+
+---
+
+### `GET /api/status`  ·  `GET /status`
+
+Customer-facing status, backed by a lightweight database liveness check. No
+internal details.
+
+```bash
+curl -s localhost:8080/api/status
+```
+
+**Response** `200 OK` (or `503` when degraded):
+
+```json
+{ "status": "operational", "service": "Malten support assistant", "uptime_seconds": 3600 }
+```
+
+`status` is `operational` or `degraded`. `GET /status` renders this as an
+auto-refreshing HTML status page.
+
+---
+
+### `GET /api/health`
+
+Operational/diagnostic check (model, uptime, row counts) — handy for confirming
+the persisted store after a restart.
+
+```bash
+curl -s localhost:8080/api/health
+```
+
+**Response** `200 OK`
+
+```json
+{ "status": "ok", "model": "claude:claude-opus-4-8", "uptime_seconds": 3600,
+  "sessions": 12, "messages": 84, "tickets": 5, "escalations": 2 }
+```
+
+> `/api/health` exposes row counts; if you don't want those public, restrict it
+> to localhost in nginx (`location /api/health { allow 127.0.0.1; deny all; }`).
 
 ## How it works
 
