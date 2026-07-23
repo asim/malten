@@ -77,11 +77,11 @@ All configuration is via environment variables:
 | `GET /` | the embedded chat UI (HTML) |
 | `GET /tickets` | the support backlog page (HTML) |
 | `GET /status` | customer-facing status page (HTML) |
-| `POST /api/chat` | send a message, get a reply |
 | `GET /api/session/{id}` | full transcript for a session |
 | `GET /api/tickets` | backlog data (JSON) |
 | `GET /api/status` | operational/degraded signal (JSON) |
 | `GET /api/health` | operational check: model, uptime, row counts (JSON) |
+| `POST /api/chat` | send a message, get a reply |
 
 ### Conventions
 
