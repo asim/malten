@@ -32,8 +32,9 @@ Do the one-time server setup below once; after that, merging to `main` deploys.
 ### 1.1 Create the `malten` user and directory
 
 ```bash
-sudo useradd --system --create-home --home-dir /home/malten --shell /usr/sbin/nologin malten
-sudo install -d -o malten -g malten -m 0755 /home/malten
+# A real login shell (bash) is required: the deploy Action runs `ssh malten@host
+# 'bash -s'`, which a nologin shell would refuse.
+sudo useradd --system --create-home --home-dir /home/malten --shell /bin/bash malten
 ```
 
 ### 1.2 Create the config file
@@ -82,9 +83,9 @@ sudo -u malten tee -a /home/malten/.ssh/authorized_keys < malten_deploy.pub
 sudo -u malten chmod 600 /home/malten/.ssh/authorized_keys
 ```
 
-The **private** key `malten_deploy` goes into a GitHub secret (step 3). SSH as
-`malten` must be permitted (it's a `nologin` shell, but `scp`/`ssh <cmd>` and the
-Action's `bash -s` still work; if your `sshd` restricts users, allow `malten`).
+The **private** key `malten_deploy` goes into a GitHub secret (step 3). The
+`malten` user has a real login shell (set in 1.1) so `ssh malten@host '<cmd>'`
+works; if your `sshd` restricts logins (e.g. an `AllowUsers` list), add `malten`.
 
 ---
 
