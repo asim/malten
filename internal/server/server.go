@@ -9,6 +9,7 @@ package server
 import (
 	"embed"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -74,14 +75,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if sessionID == "" {
-		sessionID = id.New("SESS")
-		if err := s.Store.CreateSession(sessionID, req.CustomerID); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if err := s.ensureSession(id.New("SESS"), req.CustomerID, &sessionID); err != nil {
+			s.fail(w, r, err)
 			return
 		}
 	} else if ok, _ := s.Store.SessionExists(sessionID); !ok {
 		if err := s.Store.CreateSession(sessionID, req.CustomerID); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.fail(w, r, err)
 			return
 		}
 	}
@@ -89,10 +89,35 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	reply, err := s.Agent.Handle(r.Context(), sessionID, strings.TrimSpace(req.CustomerID), req.Message)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		s.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, reply)
+}
+
+// ensureSession creates a session, retrying with a fresh id on the astronomically
+// unlikely event of an id collision, and writes the id actually used to out.
+func (s *Server) ensureSession(candidate, customerID string, out *string) error {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := s.Store.CreateSession(candidate, customerID); err == nil {
+			*out = candidate
+			return nil
+		} else {
+			lastErr = err
+		}
+		candidate = id.New("SESS")
+	}
+	return lastErr
+}
+
+// fail logs the real error server-side and returns a generic message to the
+// client so internal details (e.g. SQL errors) are never shown to users.
+func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
+	log.Printf("malten: %s %s: %v", r.Method, r.URL.Path, err)
+	writeJSON(w, http.StatusInternalServerError, map[string]string{
+		"error": "Sorry, something went wrong on our end. Please try again.",
+	})
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +128,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	msgs, err := s.Store.LoadMessages(sessionID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		s.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"session_id": sessionID, "messages": msgs})
@@ -112,7 +137,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTickets(w http.ResponseWriter, r *http.Request) {
 	tickets, err := s.Store.ListTickets()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		s.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tickets": tickets})
