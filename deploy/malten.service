@@ -1,0 +1,45 @@
+# systemd unit for Malten.
+#
+# Install:
+#   sudo cp deploy/malten.service /etc/systemd/system/malten.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now malten
+#
+# The binary lives at /home/malten/malten and is run as the `malten` user with
+# working directory /home/malten, so the SQLite database is /home/malten/malten.db.
+# Configuration is read from /home/malten/.env (see deploy/env.example).
+
+[Unit]
+Description=Malten conversational support agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=malten
+Group=malten
+WorkingDirectory=/home/malten
+
+# Safe defaults; anything set in /home/malten/.env overrides these because the
+# EnvironmentFile is read after these Environment= lines. Binding to localhost
+# keeps the app reachable only through nginx.
+Environment=MALTEN_ADDR=127.0.0.1:8080
+Environment=MALTEN_DB=/home/malten/malten.db
+EnvironmentFile=-/home/malten/.env
+
+ExecStart=/home/malten/malten
+Restart=on-failure
+RestartSec=2s
+
+# Hardening (kept moderate so /home/malten stays writable for the database).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

@@ -173,6 +173,21 @@ zero safety violations. Rationale in ARCHITECTURE.md § Evaluation.
 
 Point the same harness at the real model with `MALTEN_LLM=claude go run ./cmd/eval`.
 
+## Deployment
+
+Malten deploys to a single Linux server behind nginx, with a GitHub Action that
+builds the binary in CI and restarts the service on every push to `main`:
+
+- `deploy/malten.service` — systemd unit (runs as the `malten` user, reads
+  `/home/malten/.env`, binds localhost).
+- `deploy/nginx/malten.ai.conf` — nginx TLS terminator + reverse proxy.
+- `deploy/env.example` — the production environment file template.
+- `.github/workflows/deploy.yml` — build → `go vet` + `go test` → ship binary
+  over SSH → `systemctl restart`.
+
+Full step-by-step (server prep, TLS via certbot, the required GitHub secrets) is
+in **[deploy/DEPLOY.md](deploy/DEPLOY.md)**.
+
 ## Project structure
 
 ```
