@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Malten — Status</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #2a2f3a;
+    --text: #e6e8ec; --muted: #9aa3b2; --accent: #6ea8fe;
+    --ok: #3fb950; --ok-bg: rgba(63,185,80,0.12); --bad: #e06c75; --bad-bg: rgba(224,108,117,0.12);
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f5f7; --panel: #ffffff; --border: #dfe3e8;
+      --text: #1b1f27; --muted: #667085; --accent: #2563eb;
+      --ok: #2f855a; --ok-bg: rgba(47,133,90,0.10); --bad: #c0392b; --bad-bg: rgba(192,57,43,0.10);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); padding: 24px; }
+  .card { width: 100%; max-width: 560px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .spacer { flex: 1; }
+  header a { color: var(--accent); font-size: 13px; text-decoration: none; }
+  .banner { border-radius: 14px; padding: 22px 20px; border: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
+  .banner.ok { background: var(--ok-bg); border-color: var(--ok); }
+  .banner.bad { background: var(--bad-bg); border-color: var(--bad); }
+  .dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .banner.ok .dot { background: var(--ok); box-shadow: 0 0 0 4px var(--ok-bg); }
+  .banner.bad .dot { background: var(--bad); box-shadow: 0 0 0 4px var(--bad-bg); }
+  .banner .headline { font-size: 18px; font-weight: 650; }
+  .banner .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .components { margin-top: 16px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: 0; }
+  .row .name { flex: 1; font-size: 15px; }
+  .row .state { font-size: 13px; font-weight: 600; }
+  .row .state.ok { color: var(--ok); }
+  .row .state.bad { color: var(--bad); }
+  .pill { width: 9px; height: 9px; border-radius: 50%; }
+  .pill.ok { background: var(--ok); }
+  .pill.bad { background: var(--bad); }
+  .foot { margin-top: 14px; font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="card">
+  <header>
+    <h1>Malten Status</h1>
+    <span class="spacer"></span>
+    <a href="/">← back to chat</a>
+  </header>
+
+  <div class="banner ok" id="banner">
+    <span class="dot"></span>
+    <div>
+      <div class="headline" id="headline">Checking…</div>
+      <div class="sub" id="subline">Fetching current status</div>
+    </div>
+  </div>
+
+  <div class="components">
+    <div class="row">
+      <span class="pill ok" id="pill-chat"></span>
+      <span class="name">Support chat assistant</span>
+      <span class="state ok" id="state-chat">—</span>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span id="uptime"></span>
+    <span id="checked"></span>
+  </div>
+</div>
+<script>
+  const banner = document.getElementById('banner');
+  const headline = document.getElementById('headline');
+  const subline = document.getElementById('subline');
+  const pillChat = document.getElementById('pill-chat');
+  const stateChat = document.getElementById('state-chat');
+  const uptimeEl = document.getElementById('uptime');
+  const checkedEl = document.getElementById('checked');
+
+  function humanUptime(s) {
+    if (s == null) return '';
+    const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  function apply(ok, data) {
+    banner.className = 'banner ' + (ok ? 'ok' : 'bad');
+    headline.textContent = ok ? 'All systems operational' : 'Service disruption';
+    subline.textContent = ok
+      ? 'Malten is available and responding normally.'
+      : 'We are experiencing an issue and are looking into it.';
+    pillChat.className = 'pill ' + (ok ? 'ok' : 'bad');
+    stateChat.className = 'state ' + (ok ? 'ok' : 'bad');
+    stateChat.textContent = ok ? 'Operational' : 'Degraded';
+    uptimeEl.textContent = data && data.uptime_seconds != null ? 'Uptime ' + humanUptime(data.uptime_seconds) : '';
+    checkedEl.textContent = 'Checked ' + new Date().toLocaleTimeString();
+  }
+
+  async function check() {
+    try {
+      const res = await fetch('/api/status', { cache: 'no-store' });
+      const data = await res.json();
+      apply(res.ok && data.status === 'operational', data);
+    } catch (err) {
+      apply(false, null);
+    }
+  }
+
+  check();
+  setInterval(check, 30000);   // refresh every 30s
+</script>
+</body>
+</html>

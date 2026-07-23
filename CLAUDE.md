@@ -63,6 +63,11 @@ end-to-end contract and asserts **zero safety violations**.
   case. Prefer that shape over special-casing in the agent.
 - **Single binary.** Keep SQLite pure-Go (`modernc.org/sqlite`, no cgo) and keep
   the UI embedded (`//go:embed`). Don't add cgo or external asset dependencies.
+- **Restart safety.** The binary restarts on every deploy while the SQLite data
+  persists. Anything that must be unique, monotonic, or continuous across the
+  data's lifetime must derive from the store or from randomness — never a
+  process-memory counter (that reset-on-restart is exactly what caused the id
+  collision). See [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Model usage
 

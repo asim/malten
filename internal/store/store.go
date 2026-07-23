@@ -24,7 +24,16 @@ var schema string
 
 // Store wraps a SQLite database.
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
+}
+
+// Stats is a snapshot of row counts, used for startup diagnostics and health.
+type Stats struct {
+	Sessions    int `json:"sessions"`
+	Messages    int `json:"messages"`
+	Tickets     int `json:"tickets"`
+	Escalations int `json:"escalations"`
 }
 
 // Account is a customer record returned by account_lookup.
@@ -71,7 +80,7 @@ func Open(path string) (*Store, error) {
 	// SQLite tolerates a single writer; cap connections to avoid "database is
 	// locked" under concurrent HTTP requests.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
@@ -83,6 +92,31 @@ func Open(path string) (*Store, error) {
 
 // Close closes the underlying database.
 func (s *Store) Close() error { return s.db.Close() }
+
+// Path returns the database path this store was opened with.
+func (s *Store) Path() string { return s.path }
+
+// Ping verifies the database is reachable.
+func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
+
+// Stats returns current row counts.
+func (s *Store) Stats() (Stats, error) {
+	var st Stats
+	for _, q := range []struct {
+		sql string
+		dst *int
+	}{
+		{`SELECT COUNT(*) FROM sessions`, &st.Sessions},
+		{`SELECT COUNT(*) FROM messages`, &st.Messages},
+		{`SELECT COUNT(*) FROM tickets`, &st.Tickets},
+		{`SELECT COUNT(*) FROM tickets WHERE kind='escalation'`, &st.Escalations},
+	} {
+		if err := s.db.QueryRow(q.sql).Scan(q.dst); err != nil {
+			return st, err
+		}
+	}
+	return st, nil
+}
 
 func now() time.Time { return time.Now().UTC() }
 
@@ -388,5 +422,3 @@ func tokenize(s string) []string {
 	}
 	return out
 }
-
-var _ = context.Background // reserved for future context-aware queries
