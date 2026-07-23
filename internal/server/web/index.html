@@ -192,7 +192,7 @@
       });
       const data = await res.json();
       typing.remove();
-      if (data.error) { addMessage('agent', 'Error: ' + data.error); }
+      if (data.error) { addMessage('agent', data.error); }
       else {
         sessionId = data.session_id; localStorage.setItem('malten_session', sessionId);
         addMessage('agent', data.text, data);
