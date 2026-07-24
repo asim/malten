@@ -1,0 +1,148 @@
+{{define "head"}}
+<style>
+  .pagehead { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
+  .pagehead h1 { font-size: 20px; margin: 0; }
+  .pagehead .spacer { flex: 1; }
+  .refresh { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+             padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .refresh:hover { border-color: var(--accent); }
+  .lede { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+
+  section.queue { margin: 26px 0; }
+  section.queue h2 { font-size: 15px; margin: 0 0 4px; }
+  section.queue .sub { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr:hover td { background: var(--panel); }
+  td.summary-cell { max-width: 380px; }
+  .kind-escalation { color: var(--warn); border-color: var(--warn); }
+  .prio-urgent, .prio-high { color: var(--err); border-color: var(--err); }
+  .prio-normal, .prio-low { color: var(--muted); }
+  .status-open { color: var(--ok); border-color: var(--ok); }
+  .status-closed { color: var(--muted); }
+  .tool { color: var(--accent); border-color: var(--accent); }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+  .error { color: var(--err); padding: 20px 0; }
+
+  /* On phones, stack each row into a labelled card instead of a wide table. */
+  @media (max-width: 640px) {
+    .tablewrap { overflow-x: visible; }
+    table, tbody, tr, td { display: block; }
+    thead { position: absolute; left: -9999px; }
+    tr { border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; padding: 4px 2px; background: var(--panel); }
+    tr:hover td { background: transparent; }
+    td { border: none; padding: 7px 12px; display: flex; gap: 10px; align-items: baseline; }
+    td::before { content: attr(data-label); color: var(--muted); font-size: 12px; text-transform: uppercase;
+                 letter-spacing: 0.03em; flex: 0 0 84px; }
+    td.summary-cell { max-width: none; }
+  }
+</style>
+{{end}}
+
+{{define "content"}}
+<div class="wrap">
+  <div class="pagehead">
+    <h1>Admin</h1>
+    <span class="spacer"></span>
+    <button class="refresh" id="refresh">Refresh</button>
+  </div>
+  <p class="lede">Internal review queue — destructive actions the policy held for approval, and conversations handed off to a human.</p>
+
+  <section class="queue">
+    <h2>Actions awaiting approval</h2>
+    <p class="sub">Destructive tool calls the policy escalated instead of executing (e.g. a refund over the auto-approval limit).</p>
+    <div id="pending"></div>
+  </section>
+
+  <section class="queue">
+    <h2>Escalations to a human</h2>
+    <p class="sub">Sessions the agent handed off — an explicit request for a person, or a case it could not resolve.</p>
+    <div id="escalations"></div>
+  </section>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+  const pendingEl = document.getElementById('pending');
+  const escEl = document.getElementById('escalations');
+
+  function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  function when(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d)) return esc(iso);
+    return d.toLocaleString();
+  }
+
+  function renderPending(actions) {
+    if (!actions || actions.length === 0) {
+      pendingEl.innerHTML = '<div class="empty">Nothing awaiting approval.</div>';
+      return;
+    }
+    const rows = actions.map(a => `
+      <tr>
+        <td data-label="Tool"><span class="badge tool">${esc(a.tool)}</span></td>
+        <td class="summary-cell mono" data-label="Input">${esc(a.input)}</td>
+        <td class="summary-cell" data-label="Reason">${esc(a.reason) || '—'}</td>
+        <td class="mono" data-label="Customer">${esc(a.customer_id) || '—'}</td>
+        <td class="mono" data-label="Session">${esc(a.session_id) || '—'}</td>
+        <td class="mono" data-label="When">${when(a.created_at)}</td>
+      </tr>`).join('');
+    pendingEl.innerHTML = `
+      <div class="tablewrap"><table>
+        <thead>
+          <tr><th>Tool</th><th>Input</th><th>Reason</th><th>Customer</th><th>Session</th><th>When</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+
+  function renderEscalations(items) {
+    if (!items || items.length === 0) {
+      escEl.innerHTML = '<div class="empty">No escalations yet.</div>';
+      return;
+    }
+    const rows = items.map(t => `
+      <tr>
+        <td class="mono" data-label="ID">${esc(t.id)}</td>
+        <td class="summary-cell" data-label="Summary">${esc(t.summary)}</td>
+        <td data-label="Priority"><span class="badge prio-${esc(t.priority)}">${esc(t.priority)}</span></td>
+        <td data-label="Status"><span class="badge status-${esc(t.status)}">${esc(t.status)}</span></td>
+        <td class="mono" data-label="Customer">${esc(t.customer_id) || '—'}</td>
+        <td class="mono" data-label="Session">${esc(t.session_id) || '—'}</td>
+        <td class="mono" data-label="Created">${when(t.created_at)}</td>
+      </tr>`).join('');
+    escEl.innerHTML = `
+      <div class="tablewrap"><table>
+        <thead>
+          <tr><th>ID</th><th>Summary</th><th>Priority</th><th>Status</th><th>Customer</th><th>Session</th><th>Created</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+
+  async function load() {
+    pendingEl.innerHTML = '<div class="empty">Loading…</div>';
+    escEl.innerHTML = '';
+    try {
+      const res = await fetch('/api/admin');
+      const data = await res.json();
+      if (data.error) {
+        pendingEl.innerHTML = `<div class="error">Error: ${esc(data.error)}</div>`;
+        return;
+      }
+      renderPending(data.pending_actions || []);
+      renderEscalations(data.escalations || []);
+    } catch (err) {
+      pendingEl.innerHTML = `<div class="error">Failed to load: ${esc(err.message)}</div>`;
+    }
+  }
+
+  document.getElementById('refresh').addEventListener('click', load);
+  load();
+</script>
+{{end}}

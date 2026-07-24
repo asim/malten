@@ -22,7 +22,7 @@ func Build(model llm.LLM, dbPath string) (*agent.Agent, *store.Store, error) {
 
 	reg := tools.NewRegistry()
 	// Read-only tools first, then actions, then escalation.
-	reg.Register(&tools.KBSearch{Store: st})
+	reg.Register(&tools.Search{Store: st})
 	reg.Register(&tools.AccountLookup{Store: st})
 	reg.Register(&tools.IssueRefund{Store: st})
 	reg.Register(&tools.ResetPassword{Store: st})

@@ -384,6 +384,43 @@ func (s *Store) ListTickets() ([]Ticket, error) {
 
 // --- Audit ------------------------------------------------------------------
 
+// AuditEntry is one row from the immutable audit log: a tool call, the policy
+// decision made about it, and its outcome.
+type AuditEntry struct {
+	ID         int64     `json:"id"`
+	SessionID  string    `json:"session_id"`
+	CustomerID string    `json:"customer_id"`
+	Tool       string    `json:"tool"`
+	Input      string    `json:"input"`
+	Decision   string    `json:"decision"`
+	Reason     string    `json:"reason"`
+	Result     string    `json:"result"`
+	IsError    bool      `json:"is_error"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ListEscalatedActions returns audit entries where the policy escalated a
+// destructive action for human approval (decision='escalate'), newest first.
+// These are the "needs approval" items surfaced on the admin page.
+func (s *Store) ListEscalatedActions() ([]AuditEntry, error) {
+	rows, err := s.db.Query(`SELECT id,COALESCE(session_id,''),COALESCE(customer_id,''),tool,input,decision,COALESCE(reason,''),COALESCE(result,''),is_error,created_at FROM audit_log WHERE decision='escalate' ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		var isErr int
+		if err := rows.Scan(&e.ID, &e.SessionID, &e.CustomerID, &e.Tool, &e.Input, &e.Decision, &e.Reason, &e.Result, &isErr, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		e.IsError = isErr != 0
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // RecordAudit appends an entry to the immutable audit log.
 func (s *Store) RecordAudit(sessionID, customerID, tool string, input json.RawMessage, decision, reason, result string, isErr bool) error {
 	_, err := s.db.Exec(`INSERT INTO audit_log(session_id,customer_id,tool,input,decision,reason,result,is_error,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,

@@ -184,8 +184,16 @@ asks for it when a request needs it and none is known.
 | `POST /api/chat` | `{session_id?, customer_id?, message}` → agent `Reply` |
 | `GET /api/session/{id}` | full transcript for a session |
 | `GET /tickets`, `GET /api/tickets` | the backlog (tickets + escalations), page and JSON |
+| `GET /admin`, `GET /api/admin` | internal review queue: actions the policy escalated for approval + human escalations |
 | `GET /status`, `GET /api/status` | customer-facing status (operational/degraded) |
 | `GET /api/health` | operational check: model, uptime, row counts |
+
+Pages share one embedded base layout (`internal/server/web/base.html`) plus a
+per-page content block (`page-*.html`) and a single stylesheet (`/app.css`), so
+Chat, Tickets, Admin and Status carry the same header, theme and page width. The
+`/admin` queue is the human-in-the-loop surface: it reads the escalate decisions
+the policy wrote to `audit_log` and the escalation `tickets` the agent filed, so
+an operator can see exactly what needs a person and why.
 
 ## Evaluation
 

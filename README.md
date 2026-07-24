@@ -76,9 +76,11 @@ All configuration is via environment variables:
 | --- | --- |
 | `GET /` | the embedded chat UI (HTML) |
 | `GET /tickets` | the support backlog page (HTML) |
+| `GET /admin` | internal review queue: actions awaiting approval and escalations (HTML) |
 | `GET /status` | customer-facing status page (HTML) |
 | `GET /api/session/{id}` | full transcript for a session |
 | `GET /api/tickets` | backlog data (JSON) |
+| `GET /api/admin` | review-queue data: escalated actions + human escalations (JSON) |
 | `GET /api/status` | operational/degraded signal (JSON) |
 | `GET /api/health` | operational check: model, uptime, row counts (JSON) |
 | `POST /api/chat` | send a message, get a reply |
@@ -214,6 +216,43 @@ curl -s localhost:8080/api/tickets
 | `created_at` | string | RFC 3339 timestamp. |
 
 `GET /tickets` renders this as an HTML page.
+
+---
+
+### `GET /api/admin`
+
+The internal review queue for a human operator. Two lists: destructive actions
+the policy escalated for approval (from the audit log), and conversations the
+agent handed off to a human (escalation tickets).
+
+```bash
+curl -s localhost:8080/api/admin
+```
+
+**Response** `200 OK`:
+
+```json
+{
+  "pending_actions": [
+    {
+      "id": 2,
+      "tool": "issue_refund",
+      "input": "{\"amount\":499,\"order_id\":\"ORD-5002\"}",
+      "decision": "escalate",
+      "reason": "refund of $499.00 exceeds the $200 auto-approval limit and needs manager approval",
+      "customer_id": "CUST-1001",
+      "session_id": "SESS-...",
+      "created_at": "2026-07-24T07:11:22Z"
+    }
+  ],
+  "escalations": [ { "id": "ESC-...", "kind": "escalation", "summary": "...", "priority": "high", "status": "open", "customer_id": "CUST-1001", "session_id": "SESS-...", "created_at": "..." } ]
+}
+```
+
+`pending_actions` are `audit_log` rows with `decision='escalate'`; `escalations`
+are `tickets` with `kind='escalation'`. `GET /admin` renders this as an HTML
+page. Both are internal surfaces — restrict them in nginx if the server is
+public (see the health-endpoint note below).
 
 ---
 

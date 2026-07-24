@@ -37,7 +37,7 @@ for the "how".
 
 | Requirement from the brief | Where it lives |
 | --- | --- |
-| Knowledge-base search | `search` tool (`internal/tools/kb.go`), KB seeded in SQLite |
+| Knowledge-base search | `search` tool (`internal/tools/search.go`), KB seeded in SQLite |
 | Account lookup by customer id | `account_lookup` tool; the agent asks for the id when missing |
 | Issue refunds / reset passwords / create tickets | action tools in `internal/tools/actions.go` |
 | Human-in-the-loop escalation | `internal/policy` decisions + `escalate_to_human` tool |
