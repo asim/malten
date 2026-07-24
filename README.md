@@ -43,6 +43,13 @@ order) or **CUST-1002** (Alan):
 - "The dashboard keeps crashing" → files a ticket
 - "I want to speak to a human" → escalated
 
+The chat UI is an **installable PWA**: a web app manifest and a service worker
+are served from the binary, so browsers offer "Install" / "Add to Home Screen"
+and the app opens in its own standalone window. The service worker caches the
+app shell (pages, stylesheet, icons) for offline launch but never caches
+`/api/*` — chat and data are always live. Bump `VERSION` in
+`internal/server/web/sw.js` to invalidate the cache on deploy.
+
 ## Using the real model
 
 With an Anthropic API key, Malten uses Claude instead of the stub — nothing else
