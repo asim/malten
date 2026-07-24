@@ -1,6 +1,6 @@
 # Malten
 
-A conversational customer-support agent for a SaaS product, written in Go.
+A support agent written in Go.
 
 ## Overview
 
