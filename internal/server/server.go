@@ -69,7 +69,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/status", s.handleStatusPage)
 	mux.HandleFunc("/api/admin", s.handleAdminAPI)
 	mux.HandleFunc("/admin", s.handleAdminPage)
-	mux.HandleFunc("/app.css", handleCSS)
+	// Static + PWA assets, each served from the embedded FS with an explicit
+	// content type. sw.js is served no-cache so a new worker is picked up on
+	// deploy; the manifest and icons make the app installable.
+	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
+	mux.Handle("/manifest.webmanifest", staticAsset("manifest.webmanifest", "application/manifest+json", "public, max-age=3600"))
+	mux.Handle("/sw.js", staticAsset("sw.js", "text/javascript; charset=utf-8", "no-cache"))
+	mux.Handle("/icon-192.png", staticAsset("icon-192.png", "image/png", "public, max-age=86400"))
+	mux.Handle("/icon-512.png", staticAsset("icon-512.png", "image/png", "public, max-age=86400"))
+	mux.Handle("/icon-maskable-512.png", staticAsset("icon-maskable-512.png", "image/png", "public, max-age=86400"))
 	mux.HandleFunc("/", s.handleIndex)
 	return mux
 }
@@ -262,16 +270,22 @@ func renderPage(w http.ResponseWriter, name string, data pageData) {
 	}
 }
 
-// handleCSS serves the shared stylesheet.
-func handleCSS(w http.ResponseWriter, r *http.Request) {
-	data, err := webFS.ReadFile("web/app.css")
-	if err != nil {
-		http.Error(w, "not found", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	_, _ = w.Write(data)
+// staticAsset serves a single embedded file from web/ with an explicit content
+// type and cache policy. Used for the stylesheet and the PWA assets (manifest,
+// service worker, icons).
+func staticAsset(file, contentType, cacheControl string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := webFS.ReadFile("web/" + file)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		if cacheControl != "" {
+			w.Header().Set("Cache-Control", cacheControl)
+		}
+		_, _ = w.Write(data)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
