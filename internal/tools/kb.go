@@ -10,15 +10,15 @@ import (
 	"github.com/asim/malten/internal/store"
 )
 
-// KBSearch implements kb_search(query, k): top-k chunks from the knowledge
-// base. It is read-only and therefore not destructive.
+// KBSearch implements search(query, k): top-k chunks from the knowledge base.
+// It is read-only and therefore not destructive.
 type KBSearch struct {
 	Store *store.Store
 }
 
 func (t *KBSearch) Def() llm.ToolDef {
 	return llm.ToolDef{
-		Name:        "kb_search",
+		Name:        "search",
 		Description: "Search the product knowledge base and return the top matching articles. Call this to answer how-to and policy questions before replying from memory.",
 		Properties: map[string]any{
 			"query": map[string]any{"type": "string", "description": "Natural language search query"},

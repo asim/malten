@@ -37,7 +37,7 @@ see [README.md](README.md).
         │ stub / │  │  └────┬─────┘
         │ claude │  │       │ allow
         └────────┘  ▼       ▼
-                 ┌──────────────┐    kb_search, account_lookup, issue_refund,
+                 ┌──────────────┐    search, account_lookup, issue_refund,
                  │    tools     │    reset_password, create_ticket, escalate
                  │  (registry)  │
                  └──────┬───────┘
@@ -123,7 +123,7 @@ The six capabilities:
 
 | Tool | Destructive | Notes |
 | --- | --- | --- |
-| `kb_search` | no | term-overlap search over the KB, top-k |
+| `search` | no | term-overlap search over the KB, top-k |
 | `account_lookup` | no | plan, usage, orders as JSON |
 | `issue_refund` | yes | validated: ownership, amount, approval limit |
 | `reset_password` | yes | validated: account exists, same customer |

@@ -132,7 +132,7 @@ Each `actions[]` entry:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `tool` | string | Tool name (`kb_search`, `account_lookup`, `issue_refund`, `reset_password`, `create_ticket`). |
+| `tool` | string | Tool name (`search`, `account_lookup`, `issue_refund`, `reset_password`, `create_ticket`). |
 | `input` | object | The arguments the model supplied. |
 | `decision` | string | Policy decision: `allow`, `deny`, `escalate`, or `n/a` (non-validated). |
 | `reason` | string | Why it was denied/escalated (present for `deny`/`escalate`). |
@@ -267,7 +267,7 @@ model and repeats, up to a step limit, then produces a final reply or escalates.
 customer → server → agent ⇄ llm (stub | claude)
                       │
                       ├─ policy.Validate  (destructive calls: allow/deny/escalate)
-                      ├─ tools            (kb_search, account_lookup, issue_refund,
+                      ├─ tools            (search, account_lookup, issue_refund,
                       │                     reset_password, create_ticket, escalate)
                       └─ store (SQLite)   (sessions, transcript, backlog, audit)
 ```
