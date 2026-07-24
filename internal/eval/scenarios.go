@@ -45,7 +45,7 @@ func Scenarios() []Scenario {
 			Name:            "knowledge question answered from KB",
 			CustomerID:      "",
 			Turns:           []string{"How do I export my data?"},
-			ExpectTools:     []string{"kb_search"},
+			ExpectTools:     []string{"search"},
 			ExpectEscalated: false,
 			ExpectContains:  []string{"export"},
 		},

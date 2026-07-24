@@ -114,16 +114,16 @@ func (s *Stub) Complete(ctx context.Context, req Request) (*Response, error) {
 
 	// Knowledge / how-to questions.
 	case looksLikeQuestion(intent) || containsAny(intent, "how do", "how can", "where is", "what is", "export", "cancel", "pricing", "plan", "rate limit", "api"):
-		if res, ran := done["kb_search"]; ran {
+		if res, ran := done["search"]; ran {
 			return say(answerFromKB(res)), nil
 		}
-		return emit("kb_search", map[string]any{"query": raw, "k": 3}), nil
+		return emit("search", map[string]any{"query": raw, "k": 3}), nil
 
 	default:
-		if _, ran := done["kb_search"]; !ran {
-			return emit("kb_search", map[string]any{"query": raw, "k": 3}), nil
+		if _, ran := done["search"]; !ran {
+			return emit("search", map[string]any{"query": raw, "k": 3}), nil
 		}
-		if res, ran := done["kb_search"]; ran {
+		if res, ran := done["search"]; ran {
 			return say(answerFromKB(res)), nil
 		}
 		return say("I'm not sure I can help with that directly, but I can look into it. Could you tell me a bit more?"), nil
@@ -353,7 +353,7 @@ func looksLikeQuestion(intent string) bool {
 	return false
 }
 
-// answerFromKB turns a kb_search result into a short friendly answer.
+// answerFromKB turns a search result into a short friendly answer.
 func answerFromKB(res string) string {
 	lines := strings.Split(res, "\n")
 	// The first result is "1. Title" followed by its content line.

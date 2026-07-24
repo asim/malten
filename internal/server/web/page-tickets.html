@@ -2,10 +2,6 @@
 <style>
   .pagehead { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
   .pagehead h1 { font-size: 20px; margin: 0; }
-  .pagehead .spacer { flex: 1; }
-  .refresh { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
-             padding: 6px 12px; font-size: 13px; cursor: pointer; }
-  .refresh:hover { border-color: var(--accent); }
   .summary { color: var(--muted); font-size: 13px; margin: 8px 0 12px; }
   .tablewrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -41,8 +37,6 @@
 <div class="wrap">
   <div class="pagehead">
     <h1>Tickets</h1>
-    <span class="spacer"></span>
-    <button class="refresh" id="refresh">Refresh</button>
   </div>
   <div class="summary" id="summary"></div>
   <div id="content"></div>
@@ -105,7 +99,6 @@
     }
   }
 
-  document.getElementById('refresh').addEventListener('click', load);
   load();
 </script>
 {{end}}

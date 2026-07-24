@@ -76,9 +76,11 @@ All configuration is via environment variables:
 | --- | --- |
 | `GET /` | the embedded chat UI (HTML) |
 | `GET /tickets` | the support backlog page (HTML) |
+| `GET /admin` | internal review queue: actions awaiting approval and escalations (HTML) |
 | `GET /status` | customer-facing status page (HTML) |
 | `GET /api/session/{id}` | full transcript for a session |
 | `GET /api/tickets` | backlog data (JSON) |
+| `GET /api/admin` | review-queue data: escalated actions + human escalations (JSON) |
 | `GET /api/status` | operational/degraded signal (JSON) |
 | `GET /api/health` | operational check: model, uptime, row counts (JSON) |
 | `POST /api/chat` | send a message, get a reply |
@@ -132,7 +134,7 @@ Each `actions[]` entry:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `tool` | string | Tool name (`kb_search`, `account_lookup`, `issue_refund`, `reset_password`, `create_ticket`). |
+| `tool` | string | Tool name (`search`, `account_lookup`, `issue_refund`, `reset_password`, `create_ticket`). |
 | `input` | object | The arguments the model supplied. |
 | `decision` | string | Policy decision: `allow`, `deny`, `escalate`, or `n/a` (non-validated). |
 | `reason` | string | Why it was denied/escalated (present for `deny`/`escalate`). |
@@ -217,6 +219,43 @@ curl -s localhost:8080/api/tickets
 
 ---
 
+### `GET /api/admin`
+
+The internal review queue for a human operator. Two lists: destructive actions
+the policy escalated for approval (from the audit log), and conversations the
+agent handed off to a human (escalation tickets).
+
+```bash
+curl -s localhost:8080/api/admin
+```
+
+**Response** `200 OK`:
+
+```json
+{
+  "pending_actions": [
+    {
+      "id": 2,
+      "tool": "issue_refund",
+      "input": "{\"amount\":499,\"order_id\":\"ORD-5002\"}",
+      "decision": "escalate",
+      "reason": "refund of $499.00 exceeds the $200 auto-approval limit and needs manager approval",
+      "customer_id": "CUST-1001",
+      "session_id": "SESS-...",
+      "created_at": "2026-07-24T07:11:22Z"
+    }
+  ],
+  "escalations": [ { "id": "ESC-...", "kind": "escalation", "summary": "...", "priority": "high", "status": "open", "customer_id": "CUST-1001", "session_id": "SESS-...", "created_at": "..." } ]
+}
+```
+
+`pending_actions` are `audit_log` rows with `decision='escalate'`; `escalations`
+are `tickets` with `kind='escalation'`. `GET /admin` renders this as an HTML
+page. Both are internal surfaces — restrict them in nginx if the server is
+public (see the health-endpoint note below).
+
+---
+
 ### `GET /api/status`  ·  `GET /status`
 
 Customer-facing status, backed by a lightweight database liveness check. No
@@ -267,7 +306,7 @@ model and repeats, up to a step limit, then produces a final reply or escalates.
 customer → server → agent ⇄ llm (stub | claude)
                       │
                       ├─ policy.Validate  (destructive calls: allow/deny/escalate)
-                      ├─ tools            (kb_search, account_lookup, issue_refund,
+                      ├─ tools            (search, account_lookup, issue_refund,
                       │                     reset_password, create_ticket, escalate)
                       └─ store (SQLite)   (sessions, transcript, backlog, audit)
 ```

@@ -37,7 +37,7 @@ for the "how".
 
 | Requirement from the brief | Where it lives |
 | --- | --- |
-| Knowledge-base search | `kb_search` tool (`internal/tools/kb.go`), KB seeded in SQLite |
+| Knowledge-base search | `search` tool (`internal/tools/search.go`), KB seeded in SQLite |
 | Account lookup by customer id | `account_lookup` tool; the agent asks for the id when missing |
 | Issue refunds / reset passwords / create tickets | action tools in `internal/tools/actions.go` |
 | Human-in-the-loop escalation | `internal/policy` decisions + `escalate_to_human` tool |
@@ -62,7 +62,7 @@ a message; the agent resolves the issue, takes an action, or escalates.
 The agent has access to:
 
 - **An LLM** (Claude or GPT-4 class). Calls cost money and have latency.
-- `kb_search(query, k)` — top-k chunks from the product knowledge base.
+- `search(query, k)` — top-k chunks from the product knowledge base.
 - `account_lookup(customer_id)` — subscription, recent orders, usage stats.
 - **Action tools** — `issue_refund(order_id, amount)`, `reset_password(customer_id)`,
   `create_ticket(summary, priority)`.

@@ -30,6 +30,7 @@ var pages = map[string]*template.Template{
 	"index":   mustPage("page-index.html"),
 	"tickets": mustPage("page-tickets.html"),
 	"status":  mustPage("page-status.html"),
+	"admin":   mustPage("page-admin.html"),
 }
 
 func mustPage(file string) *template.Template {
@@ -40,7 +41,7 @@ func mustPage(file string) *template.Template {
 type pageData struct {
 	Title        string
 	BodyClass    string // "chat" | "doc" — selects the layout mode
-	Active       string // "chat" | "tickets" | "status" — highlights the nav
+	Active       string // "chat" | "tickets" | "status" | "admin" — highlights the nav
 	ChatViewport bool   // opt into the mobile-keyboard viewport handling
 }
 
@@ -66,6 +67,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/status", s.handleStatusAPI)
 	mux.HandleFunc("/status", s.handleStatusPage)
+	mux.HandleFunc("/api/admin", s.handleAdminAPI)
+	mux.HandleFunc("/admin", s.handleAdminPage)
 	mux.HandleFunc("/app.css", handleCSS)
 	mux.HandleFunc("/", s.handleIndex)
 	return mux
@@ -200,6 +203,32 @@ func (s *Server) handleTickets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tickets": tickets})
 }
 
+// handleAdminAPI returns the review queue for a human operator: destructive
+// actions the policy escalated for approval, plus conversations handed off to a
+// human. This is the internal counterpart to the customer-facing pages.
+func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
+	pending, err := s.Store.ListEscalatedActions()
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	tickets, err := s.Store.ListTickets()
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	escalations := make([]store.Ticket, 0, len(tickets))
+	for _, t := range tickets {
+		if t.Kind == "escalation" {
+			escalations = append(escalations, t)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"pending_actions": pending,
+		"escalations":     escalations,
+	})
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -214,6 +243,10 @@ func (s *Server) handleTicketsPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatusPage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, "status", pageData{Title: "Malten — Status", BodyClass: "doc", Active: "status"})
+}
+
+func (s *Server) handleAdminPage(w http.ResponseWriter, r *http.Request) {
+	renderPage(w, "admin", pageData{Title: "Malten — Admin", BodyClass: "doc", Active: "admin"})
 }
 
 // renderPage executes a page through the shared base layout.
