@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover{{if .ChatViewport}}, interactive-widget=resizes-content{{end}}">
+<title>{{.Title}}</title>
+<link rel="stylesheet" href="/app.css">
+{{block "head" .}}{{end}}
+</head>
+<body class="{{.BodyClass}}">
+  <header class="topbar">
+    <div class="bar">
+      <a class="brand" href="/">Malten</a>
+      <nav>
+        <a href="/"{{if eq .Active "chat"}} class="active"{{end}}>Chat</a>
+        <a href="/tickets"{{if eq .Active "tickets"}} class="active"{{end}}>Tickets</a>
+        <a href="/status"{{if eq .Active "status"}} class="active"{{end}}>Status</a>
+      </nav>
+    </div>
+  </header>
+  {{block "content" .}}{{end}}
+  {{block "scripts" .}}{{end}}
+</body>
+</html>
