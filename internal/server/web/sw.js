@@ -3,7 +3,7 @@
 // traffic, which must always be live.
 //
 // Bump VERSION to invalidate the old cache on the next deploy.
-const VERSION = 'malten-v1';
+const VERSION = 'malten-v2';
 const SHELL = [
   '/', '/tickets', '/admin', '/status',
   '/app.css', '/manifest.webmanifest',
