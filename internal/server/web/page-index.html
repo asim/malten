@@ -1,39 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<title>Malten — Support Agent</title>
+{{define "head"}}
 <style>
-  :root {
-    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
-    --text: #e6e8ec; --muted: #9aa3b2; --accent: #6ea8fe; --user: #244163;
-    --agent: #1e222b; --err: #e06c75; --warn: #e5c07b; --ok: #98c379;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f4f5f7; --panel: #ffffff; --panel2: #f0f2f5; --border: #dfe3e8;
-      --text: #1b1f27; --muted: #667085; --accent: #2563eb; --user: #dbeafe;
-      --agent: #f0f2f5; --err: #c0392b; --warn: #b7791f; --ok: #2f855a;
-    }
-  }
-  * { box-sizing: border-box; }
-  /* Lock the page to the layout viewport; only #log scrolls. This stops mobile
-     browsers from scrolling the whole page (and shoving the header off-screen)
-     when the on-screen keyboard opens. */
-  html, body { height: 100%; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background: var(--bg); color: var(--text); display: flex;
-         position: fixed; inset: 0; overflow: hidden; overscroll-behavior: none; }
-  /* Height tracks the *visible* viewport (set from JS via VisualViewport), so the
-     keyboard shrinks the flexible message log while the header and input stay put. */
-  .app { display: flex; flex-direction: column; width: 100%; max-width: 820px; margin: 0 auto;
-         height: 100dvh; height: var(--app-h, 100dvh); }
-  header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
-  header h1 { font-size: 18px; margin: 0; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  header .spacer { flex: 1; }
-  header a { color: var(--accent); font-size: 13px; text-decoration: none; }
   .controls { padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .controls label { font-size: 13px; color: var(--muted); }
   /* 16px inputs stop iOS Safari from auto-zooming when the field gains focus. */
@@ -48,7 +14,6 @@
   .user .bubble { background: var(--user); }
   .agent .bubble { background: var(--agent); border: 1px solid var(--border); }
   .meta { font-size: 12px; color: var(--muted); margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap; }
-  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
   .badge.esc { color: var(--warn); border-color: var(--warn); }
   .badge.allow { color: var(--ok); border-color: var(--ok); }
   .badge.deny, .badge.err { color: var(--err); border-color: var(--err); }
@@ -59,25 +24,19 @@
          padding-bottom: calc(14px + env(safe-area-inset-bottom)); }  /* clear the iOS home bar */
   #input { flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--border); color: var(--text);
            border-radius: 10px; padding: 12px 14px; font-size: 16px; resize: none; font-family: inherit; }
-  button { background: var(--accent); color: white; border: 0; border-radius: 10px; padding: 0 18px; font-size: 15px;
-           cursor: pointer; font-weight: 600; flex-shrink: 0; }
-  button:disabled { opacity: 0.5; cursor: default; }
+  form button { background: var(--accent); color: white; border: 0; border-radius: 10px; padding: 0 18px; font-size: 15px;
+                cursor: pointer; font-weight: 600; flex-shrink: 0; }
+  form button:disabled { opacity: 0.5; cursor: default; }
   .typing { color: var(--muted); font-size: 13px; font-style: italic; }
   @media (max-width: 560px) {
-    header, .controls, #log, form { padding-left: 14px; padding-right: 14px; }
-    header .sub { display: none; }        /* keep the header on one line */
+    .controls, #log, form { padding-left: 14px; padding-right: 14px; }
     .msg { max-width: 92%; }
   }
 </style>
-</head>
-<body>
-<div class="app">
-  <header>
-    <h1>Malten</h1>
-    <span class="sub">conversational support agent</span>
-    <span class="spacer"></span>
-    <a href="/tickets">tickets →</a>
-  </header>
+{{end}}
+
+{{define "content"}}
+<main class="chat">
   <div class="controls">
     <label for="cust">Customer ID</label>
     <input id="cust" placeholder="CUST-1001" autocomplete="off">
@@ -88,7 +47,10 @@
     <textarea id="input" rows="1" placeholder="Ask about billing, refunds, login, or anything else…"></textarea>
     <button type="submit" id="send">Send</button>
   </form>
-</div>
+</main>
+{{end}}
+
+{{define "scripts"}}
 <script>
   const log = document.getElementById('log');
   const form = document.getElementById('form');
@@ -208,5 +170,4 @@
   loadHistory();
   input.focus();
 </script>
-</body>
-</html>
+{{end}}

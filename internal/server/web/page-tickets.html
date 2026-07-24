@@ -1,57 +1,32 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Malten — Tickets</title>
+{{define "head"}}
 <style>
-  :root {
-    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
-    --text: #e6e8ec; --muted: #9aa3b2; --accent: #6ea8fe;
-    --err: #e06c75; --warn: #e5c07b; --ok: #98c379;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f4f5f7; --panel: #ffffff; --panel2: #f0f2f5; --border: #dfe3e8;
-      --text: #1b1f27; --muted: #667085; --accent: #2563eb;
-      --err: #c0392b; --warn: #b7791f; --ok: #2f855a;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background: var(--bg); color: var(--text); min-height: 100vh; }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px 40px; }
-  header { display: flex; align-items: center; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); }
-  header h1 { font-size: 18px; margin: 0; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  header .spacer { flex: 1; }
-  header a { color: var(--accent); font-size: 13px; text-decoration: none; }
-  button { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
-           padding: 6px 12px; font-size: 13px; cursor: pointer; }
-  button:hover { border-color: var(--accent); }
-  .summary { color: var(--muted); font-size: 13px; margin: 16px 0 10px; }
+  .pagehead { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
+  .pagehead h1 { font-size: 20px; margin: 0; }
+  .pagehead .spacer { flex: 1; }
+  .refresh { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+             padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .refresh:hover { border-color: var(--accent); }
+  .summary { color: var(--muted); font-size: 13px; margin: 8px 0 12px; }
+  .tablewrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
   tr:hover td { background: var(--panel); }
-  td.summary-cell { max-width: 420px; }
-  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+  td.summary-cell { max-width: 380px; }
   .kind-escalation { color: var(--warn); border-color: var(--warn); }
   .kind-ticket { color: var(--accent); border-color: var(--accent); }
   .prio-urgent, .prio-high { color: var(--err); border-color: var(--err); }
-  .prio-normal { color: var(--muted); }
-  .prio-low { color: var(--muted); }
+  .prio-normal, .prio-low { color: var(--muted); }
   .status-open { color: var(--ok); border-color: var(--ok); }
   .status-closed { color: var(--muted); }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; }
   .error { color: var(--err); padding: 20px 0; }
 
   /* On phones, stack each row into a labelled card instead of a wide table. */
   @media (max-width: 640px) {
-    .wrap { padding: 0 14px 32px; }
+    .tablewrap { overflow-x: visible; }
     table, tbody, tr, td { display: block; }
-    thead { position: absolute; left: -9999px; }   /* visually hide the header row */
+    thead { position: absolute; left: -9999px; }
     tr { border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; padding: 4px 2px; background: var(--panel); }
     tr:hover td { background: transparent; }
     td { border: none; padding: 7px 12px; display: flex; gap: 10px; align-items: baseline; }
@@ -60,19 +35,21 @@
     td.summary-cell { max-width: none; }
   }
 </style>
-</head>
-<body>
+{{end}}
+
+{{define "content"}}
 <div class="wrap">
-  <header>
-    <h1>Malten</h1>
-    <span class="sub">support tickets</span>
+  <div class="pagehead">
+    <h1>Tickets</h1>
     <span class="spacer"></span>
-    <button id="refresh">Refresh</button>
-    <a href="/">← back</a>
-  </header>
+    <button class="refresh" id="refresh">Refresh</button>
+  </div>
   <div class="summary" id="summary"></div>
   <div id="content"></div>
 </div>
+{{end}}
+
+{{define "scripts"}}
 <script>
   const content = document.getElementById('content');
   const summaryEl = document.getElementById('summary');
@@ -108,12 +85,12 @@
       </tr>`).join('');
 
     content.innerHTML = `
-      <table>
+      <div class="tablewrap"><table>
         <thead>
           <tr><th>ID</th><th>Kind</th><th>Summary</th><th>Priority</th><th>Status</th><th>Customer</th><th>Session</th><th>Created</th></tr>
         </thead>
         <tbody>${rows}</tbody>
-      </table>`;
+      </table></div>`;
   }
 
   async function load() {
@@ -131,5 +108,4 @@
   document.getElementById('refresh').addEventListener('click', load);
   load();
 </script>
-</body>
-</html>
+{{end}}

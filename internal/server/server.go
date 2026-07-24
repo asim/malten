@@ -9,6 +9,7 @@ package server
 import (
 	"embed"
 	"encoding/json"
+	"html/template"
 	"log"
 	"net/http"
 	"strings"
@@ -21,6 +22,27 @@ import (
 
 //go:embed web/*
 var webFS embed.FS
+
+// pages holds the HTML pages, each composed from the shared base layout
+// (web/base.html) plus that page's content — so every page shares one header,
+// theme and page width. Parsed once at startup from the embedded FS.
+var pages = map[string]*template.Template{
+	"index":   mustPage("page-index.html"),
+	"tickets": mustPage("page-tickets.html"),
+	"status":  mustPage("page-status.html"),
+}
+
+func mustPage(file string) *template.Template {
+	return template.Must(template.ParseFS(webFS, "web/base.html", "web/"+file))
+}
+
+// pageData is the data passed to the base layout.
+type pageData struct {
+	Title        string
+	BodyClass    string // "chat" | "doc" — selects the layout mode
+	Active       string // "chat" | "tickets" | "status" — highlights the nav
+	ChatViewport bool   // opt into the mobile-keyboard viewport handling
+}
 
 // Server wires the agent and store to HTTP handlers.
 type Server struct {
@@ -44,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/status", s.handleStatusAPI)
 	mux.HandleFunc("/status", s.handleStatusPage)
+	mux.HandleFunc("/app.css", handleCSS)
 	mux.HandleFunc("/", s.handleIndex)
 	return mux
 }
@@ -177,30 +200,44 @@ func (s *Server) handleTickets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tickets": tickets})
 }
 
-func (s *Server) handleTicketsPage(w http.ResponseWriter, r *http.Request) {
-	servePage(w, "web/tickets.html")
-}
-
-func (s *Server) handleStatusPage(w http.ResponseWriter, r *http.Request) {
-	servePage(w, "web/status.html")
-}
-
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
-	servePage(w, "web/index.html")
+	renderPage(w, "index", pageData{Title: "Malten — Support", BodyClass: "chat", Active: "chat", ChatViewport: true})
 }
 
-// servePage writes an embedded HTML page.
-func servePage(w http.ResponseWriter, name string) {
-	data, err := webFS.ReadFile(name)
-	if err != nil {
+func (s *Server) handleTicketsPage(w http.ResponseWriter, r *http.Request) {
+	renderPage(w, "tickets", pageData{Title: "Malten — Tickets", BodyClass: "doc", Active: "tickets"})
+}
+
+func (s *Server) handleStatusPage(w http.ResponseWriter, r *http.Request) {
+	renderPage(w, "status", pageData{Title: "Malten — Status", BodyClass: "doc", Active: "status"})
+}
+
+// renderPage executes a page through the shared base layout.
+func renderPage(w http.ResponseWriter, name string, data pageData) {
+	t, ok := pages[name]
+	if !ok {
 		http.Error(w, "ui not found", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := t.ExecuteTemplate(w, "base.html", data); err != nil {
+		log.Printf("malten: render %s: %v", name, err)
+	}
+}
+
+// handleCSS serves the shared stylesheet.
+func handleCSS(w http.ResponseWriter, r *http.Request) {
+	data, err := webFS.ReadFile("web/app.css")
+	if err != nil {
+		http.Error(w, "not found", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
 	_, _ = w.Write(data)
 }
 
