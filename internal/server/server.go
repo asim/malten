@@ -258,6 +258,32 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var in struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Plan   string `json:"plan"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+			return
+		}
+		if in.ID == "" || (in.Status != "" && in.Status != "open" && in.Status != "closed") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id and a valid status are required"})
+			return
+		}
+		iss, err := s.Store.UpdateIssue(in.ID, in.Plan, in.Status)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if iss == nil {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, iss)
+		return
+	}
 	issues, err := s.Store.ListIssues()
 	if err != nil {
 		s.fail(w, r, err)

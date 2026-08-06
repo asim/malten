@@ -292,7 +292,20 @@ func (s *Store) CreateIssue(id, sessionID, title, plan string) (Issue, error) {
 
 // ListIssues returns the issues, newest first.
 func (s *Store) ListIssues() ([]Issue, error) {
-	rows, err := s.db.Query(`SELECT id,COALESCE(session_id,''),title,COALESCE(plan,''),status,created_at FROM issues ORDER BY created_at DESC`)
+	return s.queryIssues(`SELECT id,COALESCE(session_id,''),title,COALESCE(plan,''),status,created_at FROM issues ORDER BY created_at DESC`)
+}
+
+// OpenIssues returns up to limit open issues, newest first. limit <= 0 means all.
+func (s *Store) OpenIssues(limit int) ([]Issue, error) {
+	q := `SELECT id,COALESCE(session_id,''),title,COALESCE(plan,''),status,created_at FROM issues WHERE status='open' ORDER BY created_at DESC`
+	if limit > 0 {
+		return s.queryIssues(q+` LIMIT ?`, limit)
+	}
+	return s.queryIssues(q)
+}
+
+func (s *Store) queryIssues(q string, args ...any) ([]Issue, error) {
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -306,6 +319,42 @@ func (s *Store) ListIssues() ([]Issue, error) {
 		out = append(out, iss)
 	}
 	return out, rows.Err()
+}
+
+// GetIssue loads one issue by id. Returns (nil, nil) if unknown.
+func (s *Store) GetIssue(id string) (*Issue, error) {
+	var iss Issue
+	err := s.db.QueryRow(`SELECT id,COALESCE(session_id,''),title,COALESCE(plan,''),status,created_at FROM issues WHERE id=?`, id).
+		Scan(&iss.ID, &iss.SessionID, &iss.Title, &iss.Plan, &iss.Status, &iss.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &iss, nil
+}
+
+// UpdateIssue updates an issue's plan and/or status (empty strings leave a field
+// unchanged) and returns the updated issue, or (nil, nil) if the id is unknown.
+func (s *Store) UpdateIssue(id, plan, status string) (*Issue, error) {
+	var sets []string
+	var args []any
+	if plan != "" {
+		sets = append(sets, "plan=?")
+		args = append(args, plan)
+	}
+	if status != "" {
+		sets = append(sets, "status=?")
+		args = append(args, status)
+	}
+	if len(sets) > 0 {
+		args = append(args, id)
+		if _, err := s.db.Exec(`UPDATE issues SET `+strings.Join(sets, ",")+` WHERE id=?`, args...); err != nil {
+			return nil, err
+		}
+	}
+	return s.GetIssue(id)
 }
 
 // --- Audit ------------------------------------------------------------------

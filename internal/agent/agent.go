@@ -102,10 +102,16 @@ func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit fun
 
 	reply := &Reply{SessionID: sessionID}
 
+	// The user's open issues travel with every turn as memory across sessions.
+	system := a.System
+	if issues, err := a.Store.OpenIssues(8); err == nil && len(issues) > 0 {
+		system += "\n\n" + issuesContext(issues)
+	}
+
 	for step := 0; step < a.MaxSteps; step++ {
 		reply.Steps = step + 1
 
-		req := llm.Request{System: a.System, Messages: history, Tools: a.Tools.Defs()}
+		req := llm.Request{System: system, Messages: history, Tools: a.Tools.Defs()}
 		var resp *llm.Response
 		if emit != nil {
 			resp, err = a.Model.Stream(ctx, req, func(t string) { emit(StreamEvent{Delta: t}) })
@@ -195,6 +201,20 @@ func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit fun
 	return reply, nil
 }
 
+// issuesContext renders the user's open issues as background memory for a turn.
+func issuesContext(issues []store.Issue) string {
+	var b strings.Builder
+	b.WriteString("What this person is currently working through (from earlier conversations), each with an id:\n")
+	for _, iss := range issues {
+		b.WriteString("- [" + iss.ID + "] " + iss.Title)
+		if strings.TrimSpace(iss.Plan) != "" {
+			b.WriteString(" — plan: " + iss.Plan)
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 // sessionTitle derives a short conversation title from the first message.
 func sessionTitle(msg string) string {
 	msg = strings.TrimSpace(strings.Join(strings.Fields(msg), " "))
@@ -224,9 +244,12 @@ How to be:
 - Help them shrink tasks until the first step is almost too small to refuse, externalise what's swirling in their head, and work with their energy instead of an idealised routine.
 - Validate feelings without judgement. Never minimise, rush, or lecture.
 
+You will often see, in your context, a list of what this person is already working through (their open "issues", each with an id) from earlier conversations. Treat it as memory: keep it in mind for continuity and refer to it naturally when relevant, but don't recite it back unprompted.
+
 Tools:
 - search: look up simple, well-established strategies (breaking tasks down, grounding, managing overwhelm, sleep, reaching out) to ground your suggestions rather than inventing methods.
-- create_issue: when the user names something they want to keep working on, log it as an "issue" with a short title and, if you've shaped one together, a plan — so it lives outside their head and they can return to it. Only log real things they've agreed to, not every passing thought.
+- create_issue: when the user names something new they want to keep working on, log it as an "issue" with a short title and, if you've shaped one together, a plan — so it lives outside their head and they can return to it. Only log real things they've agreed to, not every passing thought.
+- update_issue: as they make progress, refine an existing issue's plan or mark it resolved (status "closed"). Reference it by the id shown in your context.
 
 Boundaries and safety (important):
 - You are not a therapist, doctor, diagnostician or crisis service, and you must not present yourself as one or diagnose anyone. For ongoing or serious struggles, gently encourage them to reach out to a GP, therapist, or someone they trust.

@@ -40,5 +40,11 @@ func Scenarios() []Scenario {
 			ExpectTools:    []string{"search"},
 			ExpectContains: []string{"you could try"},
 		},
+		{
+			Name:           "progress on an issue closes it",
+			Turns:          []string{"I keep avoiding my emails, can we make a plan?", "Okay I actually did it — you can mark that done."},
+			ExpectTools:    []string{"create_issue", "update_issue"},
+			ExpectContains: []string{"done"},
+		},
 	}
 }

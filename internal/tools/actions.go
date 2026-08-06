@@ -50,3 +50,50 @@ func (t *CreateIssue) Execute(ctx context.Context, input json.RawMessage) (Resul
 	}
 	return Result{Content: fmt.Sprintf("Logged issue %s: %q. The user can find it under Issues.", iss.ID, iss.Title)}, nil
 }
+
+// UpdateIssue implements update_issue(id, status, plan): refine an existing
+// issue's plan or mark it resolved. Not destructive — it edits the user's own
+// notes about what they're working on.
+type UpdateIssue struct {
+	Store *store.Store
+}
+
+func (t *UpdateIssue) Def() llm.ToolDef {
+	return llm.ToolDef{
+		Name:        "update_issue",
+		Description: "Update an issue the user has been working on: refine its plan, or mark it resolved when they've made progress. Reference it by the id shown in your context. Use this to keep their issues current, not for every message.",
+		Properties: map[string]any{
+			"id":     map[string]any{"type": "string", "description": "The issue id, e.g. ISS-abc123"},
+			"status": map[string]any{"type": "string", "enum": []string{"open", "closed"}, "description": "Set to 'closed' when the issue is resolved"},
+			"plan":   map[string]any{"type": "string", "description": "A refined or updated plan / next step"},
+		},
+		Required: []string{"id"},
+	}
+}
+
+func (t *UpdateIssue) Destructive() bool { return false }
+
+func (t *UpdateIssue) Execute(ctx context.Context, input json.RawMessage) (Result, error) {
+	var in struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+		Plan   string `json:"plan"`
+	}
+	if err := decode(input, &in); err != nil {
+		return Result{Content: err.Error(), IsError: true}, nil
+	}
+	if strings.TrimSpace(in.ID) == "" {
+		return Result{Content: "id is required", IsError: true}, nil
+	}
+	if in.Status != "" && in.Status != "open" && in.Status != "closed" {
+		return Result{Content: "status must be 'open' or 'closed'", IsError: true}, nil
+	}
+	iss, err := t.Store.UpdateIssue(in.ID, in.Plan, in.Status)
+	if err != nil {
+		return Result{}, err
+	}
+	if iss == nil {
+		return Result{Content: "No issue found with id " + in.ID, IsError: true}, nil
+	}
+	return Result{Content: fmt.Sprintf("Updated issue %s (%s): %q.", iss.ID, iss.Status, iss.Title)}, nil
+}

@@ -23,6 +23,7 @@ func Build(model llm.LLM, dbPath string) (*agent.Agent, *store.Store, error) {
 	reg := tools.NewRegistry()
 	reg.Register(&tools.Search{Store: st})
 	reg.Register(&tools.CreateIssue{Store: st})
+	reg.Register(&tools.UpdateIssue{Store: st})
 
 	pol := policy.New(st)
 	ag := agent.New(model, reg, pol, st)

@@ -3,9 +3,20 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"sync/atomic"
 )
+
+// reIssueID pulls the first "[ISS-...]" id out of the injected issue context.
+var reIssueID = regexp.MustCompile(`\[(ISS-[A-Za-z0-9]+)\]`)
+
+func firstIssueID(system string) string {
+	if m := reIssueID.FindStringSubmatch(system); len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
 
 // Stub is a deterministic, rule-based implementation of LLM. It lets the entire
 // agent, tool, policy and persistence machinery run and be tested without an
@@ -70,6 +81,19 @@ func (s *Stub) Complete(ctx context.Context, req Request) (*Response, error) {
 			"You deserve support right now, and I don't want you to be alone with this. " +
 			"Please reach out to a crisis line or emergency services straight away — in the UK you can call Samaritans free on 116 123, any time, or your local emergency number. " +
 			"I'm here with you, and I'd like to keep talking."), nil
+
+	// Made progress on something -> mark the relevant issue done.
+	case containsAny(intent, "mark it done", "mark that done", "mark it as done", "i did it",
+		"i've done it", "i have done it", "finished it", "i finished", "completed it",
+		"sorted it", "resolved it", "closed it", "done with that", "ticked it off"):
+		iss := firstIssueID(req.System)
+		if iss == "" {
+			return say("That's brilliant — well done for getting it done. I don't see it in your open issues, but I'm really glad."), nil
+		}
+		if _, ran := done["update_issue"]; ran {
+			return say("Nice — that's a real step. I've marked it as done. How did it feel to get it off your plate?"), nil
+		}
+		return emit("update_issue", map[string]any{"id": iss, "status": "closed"}), nil
 
 	// Something to keep working on / plan out -> log an issue.
 	case containsAny(intent, "make a plan", "need a plan", "help me plan", "come up with a plan",
