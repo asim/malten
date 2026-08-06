@@ -141,6 +141,10 @@ func (r *Response) Text() string {
 type LLM interface {
 	// Name identifies the backing implementation (e.g. "stub", "claude:...").
 	Name() string
-	// Complete runs one model turn.
+	// Complete runs one model turn and returns the whole response.
 	Complete(ctx context.Context, req Request) (*Response, error)
+	// Stream runs one model turn, invoking onText with each incremental piece of
+	// assistant text as it arrives, and returns the same final Response Complete
+	// would. Backends that cannot stream may deliver the text in one call.
+	Stream(ctx context.Context, req Request, onText func(string)) (*Response, error)
 }

@@ -52,7 +52,41 @@ func (c *Claude) Complete(ctx context.Context, req Request) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	return responseFrom(msg), nil
+}
 
+// Stream runs one turn with the streaming API, forwarding assistant text deltas
+// to onText as they arrive, and returns the accumulated final Response.
+func (c *Claude) Stream(ctx context.Context, req Request, onText func(string)) (*Response, error) {
+	params := anthropic.MessageNewParams{
+		Model:     c.model,
+		MaxTokens: c.maxTok,
+		Messages:  toParams(balanceToolResults(req.Messages)),
+		Tools:     toToolUnions(req.Tools),
+	}
+	if req.System != "" {
+		params.System = []anthropic.TextBlockParam{{Text: req.System}}
+	}
+
+	stream := c.client.Messages.NewStreaming(ctx, params)
+	var acc anthropic.Message
+	for stream.Next() {
+		event := stream.Current()
+		if err := acc.Accumulate(event); err != nil {
+			return nil, err
+		}
+		if t := event.Delta.Text; t != "" && onText != nil {
+			onText(t)
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return nil, err
+	}
+	return responseFrom(&acc), nil
+}
+
+// responseFrom maps a completed SDK message to our provider-agnostic Response.
+func responseFrom(msg *anthropic.Message) *Response {
 	out := &Response{}
 	switch msg.StopReason {
 	case anthropic.StopReasonToolUse:
@@ -68,7 +102,7 @@ func (c *Claude) Complete(ctx context.Context, req Request) (*Response, error) {
 			out.Content = append(out.Content, ToolUse(v.ID, v.Name, json.RawMessage(v.JSON.Input.Raw())))
 		}
 	}
-	return out, nil
+	return out
 }
 
 // balanceToolResults enforces the Messages API contract that every tool_use is

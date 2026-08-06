@@ -97,6 +97,27 @@ func (s *Stub) Complete(ctx context.Context, req Request) (*Response, error) {
 	}
 }
 
+// Stream runs the same deterministic turn as Complete, then delivers any final
+// text a word at a time so the streaming path is exercised without a network.
+func (s *Stub) Stream(ctx context.Context, req Request, onText func(string)) (*Response, error) {
+	resp, err := s.Complete(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if onText != nil {
+		for _, b := range resp.Content {
+			if b.Type == BlockText && b.Text != "" {
+				for _, chunk := range strings.SplitAfter(b.Text, " ") {
+					if chunk != "" {
+						onText(chunk)
+					}
+				}
+			}
+		}
+	}
+	return resp, nil
+}
+
 // --- history inspection helpers ---------------------------------------------
 
 func lastUserText(msgs []Message) string {

@@ -9,6 +9,7 @@ package server
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -59,6 +60,7 @@ func New(a *agent.Agent, s *store.Store) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/chat", s.handleChat)
+	mux.HandleFunc("/api/chat/stream", s.handleChatStream)
 	mux.HandleFunc("/api/session/", s.handleSession)
 	mux.HandleFunc("/api/issues", s.handleIssues)
 	mux.HandleFunc("/issues", s.handleIssuesPage)
@@ -112,25 +114,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve session: body, then cookie, then mint a new one.
-	sessionID := strings.TrimSpace(req.SessionID)
-	if sessionID == "" {
-		if c, err := r.Cookie("malten_session"); err == nil {
-			sessionID = c.Value
-		}
+	sessionID, err := s.resolveSession(w, r, req.SessionID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
 	}
-	if sessionID == "" {
-		if err := s.ensureSession(id.New("SESS"), &sessionID); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-	} else if ok, _ := s.Store.SessionExists(sessionID); !ok {
-		if err := s.Store.CreateSession(sessionID); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-	}
-	http.SetCookie(w, &http.Cookie{Name: "malten_session", Value: sessionID, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 
 	reply, err := s.Agent.Handle(r.Context(), sessionID, req.Message)
 	if err != nil {
@@ -138,6 +126,86 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, reply)
+}
+
+// handleChatStream is the streaming counterpart to handleChat: it emits
+// Server-Sent Events as the turn unfolds (assistant text deltas, tool status),
+// then a final "done" event carrying the full reply.
+func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req chatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if strings.TrimSpace(req.Message) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message is required"})
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		s.fail(w, r, fmt.Errorf("streaming unsupported"))
+		return
+	}
+
+	sessionID, err := s.resolveSession(w, r, req.SessionID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // let nginx flush immediately
+	w.WriteHeader(http.StatusOK)
+
+	send := func(v any) {
+		b, _ := json.Marshal(v)
+		fmt.Fprintf(w, "data: %s\n\n", b)
+		flusher.Flush()
+	}
+	send(map[string]any{"type": "session", "session_id": sessionID})
+
+	reply, err := s.Agent.HandleStream(r.Context(), sessionID, req.Message, func(ev agent.StreamEvent) {
+		if ev.Delta != "" {
+			send(map[string]any{"type": "delta", "text": ev.Delta})
+		}
+		if ev.Tool != "" {
+			send(map[string]any{"type": "status", "tool": ev.Tool})
+		}
+	})
+	if err != nil {
+		log.Printf("malten: stream %s: %v", sessionID, err)
+		send(map[string]any{"type": "error", "error": "Sorry, something went wrong. Please try again."})
+		return
+	}
+	send(map[string]any{"type": "done", "reply": reply})
+}
+
+// resolveSession resolves the session id from the request body, then a cookie,
+// then mints a new one; it sets the session cookie and returns the id.
+func (s *Server) resolveSession(w http.ResponseWriter, r *http.Request, bodySession string) (string, error) {
+	sessionID := strings.TrimSpace(bodySession)
+	if sessionID == "" {
+		if c, err := r.Cookie("malten_session"); err == nil {
+			sessionID = c.Value
+		}
+	}
+	if sessionID == "" {
+		if err := s.ensureSession(id.New("SESS"), &sessionID); err != nil {
+			return "", err
+		}
+	} else if ok, _ := s.Store.SessionExists(sessionID); !ok {
+		if err := s.Store.CreateSession(sessionID); err != nil {
+			return "", err
+		}
+	}
+	http.SetCookie(w, &http.Cookie{Name: "malten_session", Value: sessionID, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	return sessionID, nil
 }
 
 // ensureSession creates a session, retrying with a fresh id on the astronomically

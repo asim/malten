@@ -169,6 +169,23 @@
   input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
   input.addEventListener('focus', () => setTimeout(fitViewport, 250));
 
+  const statusLabel = tool =>
+    tool === 'search' ? 'Looking that up' :
+    tool === 'create_issue' ? 'Noting that down' : 'Working';
+
+  function debugMeta(wrap, reply) {
+    if (!DEBUG || !reply) return;
+    wrap.appendChild(el('meta', reply.steps + ' step' + (reply.steps === 1 ? '' : 's')));
+    if (reply.actions && reply.actions.length) {
+      const a = el('actions');
+      a.innerHTML = reply.actions.map(ac => {
+        const r = ac.reason ? ' — ' + escapeHtml(ac.reason) : (ac.result ? ' — ' + escapeHtml(ac.result) : '');
+        return '<div><code>' + escapeHtml(ac.tool) + '</code> ' + escapeHtml(ac.decision) + r + '</div>';
+      }).join('');
+      wrap.appendChild(a);
+    }
+  }
+
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const text = input.value.trim();
@@ -176,24 +193,50 @@
     addMessage('user', text);
     input.value = ''; input.style.height = 'auto';
     sendBtn.disabled = true;
-    const processing = el('msg agent');
-    processing.appendChild(el('processing', 'Processing<span class="dots"></span>'));
-    log.appendChild(processing); log.scrollTop = log.scrollHeight;
+
+    const wrap = el('msg agent');
+    const status = el('processing'); status.innerHTML = 'Processing<span class="dots"></span>';
+    const bubble = el('bubble md');
+    wrap.appendChild(status);
+    log.appendChild(wrap); log.scrollTop = log.scrollHeight;
+    const setStatus = label => { status.innerHTML = escapeHtml(label) + '<span class="dots"></span>'; };
+
+    let acc = '', bubbleShown = false, reply = null;
+    const showBubble = () => { if (!bubbleShown) { status.remove(); wrap.appendChild(bubble); bubbleShown = true; } };
+
+    function onEvent(ev) {
+      if (ev.type === 'session') { sessionId = ev.session_id; localStorage.setItem('malten_session', sessionId); }
+      else if (ev.type === 'status') { if (!bubbleShown) setStatus(statusLabel(ev.tool)); }
+      else if (ev.type === 'delta') { showBubble(); acc += ev.text; bubble.innerHTML = md(acc); log.scrollTop = log.scrollHeight; }
+      else if (ev.type === 'error') { showBubble(); acc = acc || ev.error; bubble.innerHTML = md(acc); }
+      else if (ev.type === 'done') { reply = ev.reply; if (!bubbleShown && reply && reply.text) { showBubble(); bubble.innerHTML = md(reply.text); } }
+    }
+
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch('/api/chat/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, message: text })
       });
-      const data = await res.json();
-      processing.remove();
-      if (data.error) { addMessage('agent', data.error); }
-      else {
-        sessionId = data.session_id; localStorage.setItem('malten_session', sessionId);
-        addMessage('agent', data.text, data);
+      if (!res.ok || !res.body) throw new Error('stream unavailable');
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const frame = buf.slice(0, i); buf = buf.slice(i + 2);
+          const line = frame.replace(/^data: ?/, '').trim();
+          if (!line) continue;
+          try { onEvent(JSON.parse(line)); } catch (_) { /* ignore malformed frame */ }
+        }
       }
+      if (!bubbleShown) { showBubble(); bubble.innerHTML = md(acc || '…'); }
+      debugMeta(wrap, reply);
     } catch (err) {
-      processing.remove();
-      addMessage('agent', 'Network error: ' + err.message);
+      if (!bubbleShown) { status.remove(); wrap.appendChild(bubble); bubbleShown = true; }
+      bubble.innerHTML = md(acc || ('Network error: ' + err.message));
     } finally {
       sendBtn.disabled = false; input.focus();
     }

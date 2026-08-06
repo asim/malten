@@ -59,9 +59,27 @@ type Reply struct {
 	Actions   []Action `json:"actions,omitempty"`
 }
 
-// Handle runs the agent loop for one user message within a session. The session
-// must already exist.
+// StreamEvent is emitted during HandleStream as the turn unfolds: either a piece
+// of incremental assistant text, or the name of a tool about to run.
+type StreamEvent struct {
+	Delta string // incremental assistant text
+	Tool  string // a tool that is starting to run
+}
+
+// Handle runs the agent loop for one user message within a session and returns
+// the final reply. The session must already exist.
 func (a *Agent) Handle(ctx context.Context, sessionID, userMessage string) (*Reply, error) {
+	return a.run(ctx, sessionID, userMessage, nil)
+}
+
+// HandleStream is like Handle but streams the turn: emit is called with
+// incremental assistant text and tool status as they happen. It still returns
+// the final reply once the turn completes.
+func (a *Agent) HandleStream(ctx context.Context, sessionID, userMessage string, emit func(StreamEvent)) (*Reply, error) {
+	return a.run(ctx, sessionID, userMessage, emit)
+}
+
+func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit func(StreamEvent)) (*Reply, error) {
 	if err := a.Store.TouchSession(sessionID); err != nil {
 		return nil, err
 	}
@@ -82,11 +100,13 @@ func (a *Agent) Handle(ctx context.Context, sessionID, userMessage string) (*Rep
 	for step := 0; step < a.MaxSteps; step++ {
 		reply.Steps = step + 1
 
-		resp, err := a.Model.Complete(ctx, llm.Request{
-			System:   a.System,
-			Messages: history,
-			Tools:    a.Tools.Defs(),
-		})
+		req := llm.Request{System: a.System, Messages: history, Tools: a.Tools.Defs()}
+		var resp *llm.Response
+		if emit != nil {
+			resp, err = a.Model.Stream(ctx, req, func(t string) { emit(StreamEvent{Delta: t}) })
+		} else {
+			resp, err = a.Model.Complete(ctx, req)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("model completion: %w", err)
 		}
@@ -120,6 +140,10 @@ func (a *Agent) Handle(ctx context.Context, sessionID, userMessage string) (*Rep
 				a.audit(sessionID, call, "n/a", "", res, true)
 				reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: "n/a", Result: res, IsError: true})
 				continue
+			}
+
+			if emit != nil {
+				emit(StreamEvent{Tool: call.Name})
 			}
 
 			decision := policy.Decision{Outcome: policy.Allow}
