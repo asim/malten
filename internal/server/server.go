@@ -27,10 +27,8 @@ var webFS embed.FS
 // (web/base.html) plus that page's content — so every page shares one header,
 // theme and page width. Parsed once at startup from the embedded FS.
 var pages = map[string]*template.Template{
-	"index":   mustPage("page-index.html"),
-	"tickets": mustPage("page-tickets.html"),
-	"status":  mustPage("page-status.html"),
-	"admin":   mustPage("page-admin.html"),
+	"index":  mustPage("page-index.html"),
+	"issues": mustPage("page-issues.html"),
 }
 
 func mustPage(file string) *template.Template {
@@ -41,7 +39,7 @@ func mustPage(file string) *template.Template {
 type pageData struct {
 	Title        string
 	BodyClass    string // "chat" | "doc" — selects the layout mode
-	Active       string // "chat" | "tickets" | "status" | "admin" — highlights the nav
+	Active       string // "chat" | "issues" — highlights the nav
 	ChatViewport bool   // opt into the mobile-keyboard viewport handling
 }
 
@@ -62,13 +60,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/chat", s.handleChat)
 	mux.HandleFunc("/api/session/", s.handleSession)
-	mux.HandleFunc("/api/tickets", s.handleTickets)
-	mux.HandleFunc("/tickets", s.handleTicketsPage)
+	mux.HandleFunc("/api/issues", s.handleIssues)
+	mux.HandleFunc("/issues", s.handleIssuesPage)
 	mux.HandleFunc("/api/health", s.handleHealth)
-	mux.HandleFunc("/api/status", s.handleStatusAPI)
-	mux.HandleFunc("/status", s.handleStatusPage)
-	mux.HandleFunc("/api/admin", s.handleAdminAPI)
-	mux.HandleFunc("/admin", s.handleAdminPage)
 	// Static + PWA assets, each served from the embedded FS with an explicit
 	// content type. sw.js is served no-cache so a new worker is picked up on
 	// deploy; the manifest and icons make the app installable.
@@ -93,31 +87,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if stats, err := s.Store.Stats(); err == nil {
 		resp["sessions"] = stats.Sessions
 		resp["messages"] = stats.Messages
-		resp["tickets"] = stats.Tickets
-		resp["escalations"] = stats.Escalations
+		resp["issues"] = stats.Issues
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleStatusAPI is the customer-facing status: an operational/degraded signal
-// backed by a lightweight database liveness check. No internal details.
-func (s *Server) handleStatusAPI(w http.ResponseWriter, r *http.Request) {
-	status, code := "operational", http.StatusOK
-	if err := s.Store.Ping(r.Context()); err != nil {
-		status, code = "degraded", http.StatusServiceUnavailable
-		log.Printf("malten: status ping failed: %v", err)
-	}
-	writeJSON(w, code, map[string]any{
-		"status":         status, // "operational" | "degraded"
-		"service":        "Malten support assistant",
-		"uptime_seconds": int(time.Since(s.started).Seconds()),
-	})
-}
-
 type chatRequest struct {
-	SessionID  string `json:"session_id"`
-	CustomerID string `json:"customer_id"`
-	Message    string `json:"message"`
+	SessionID string `json:"session_id"`
+	Message   string `json:"message"`
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -143,19 +120,19 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if sessionID == "" {
-		if err := s.ensureSession(id.New("SESS"), req.CustomerID, &sessionID); err != nil {
+		if err := s.ensureSession(id.New("SESS"), &sessionID); err != nil {
 			s.fail(w, r, err)
 			return
 		}
 	} else if ok, _ := s.Store.SessionExists(sessionID); !ok {
-		if err := s.Store.CreateSession(sessionID, req.CustomerID); err != nil {
+		if err := s.Store.CreateSession(sessionID); err != nil {
 			s.fail(w, r, err)
 			return
 		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: "malten_session", Value: sessionID, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 
-	reply, err := s.Agent.Handle(r.Context(), sessionID, strings.TrimSpace(req.CustomerID), req.Message)
+	reply, err := s.Agent.Handle(r.Context(), sessionID, req.Message)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -165,10 +142,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 // ensureSession creates a session, retrying with a fresh id on the astronomically
 // unlikely event of an id collision, and writes the id actually used to out.
-func (s *Server) ensureSession(candidate, customerID string, out *string) error {
+func (s *Server) ensureSession(candidate string, out *string) error {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		if err := s.Store.CreateSession(candidate, customerID); err == nil {
+		if err := s.Store.CreateSession(candidate); err == nil {
 			*out = candidate
 			return nil
 		} else {
@@ -202,39 +179,13 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"session_id": sessionID, "messages": msgs})
 }
 
-func (s *Server) handleTickets(w http.ResponseWriter, r *http.Request) {
-	tickets, err := s.Store.ListTickets()
+func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
+	issues, err := s.Store.ListIssues()
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tickets": tickets})
-}
-
-// handleAdminAPI returns the review queue for a human operator: destructive
-// actions the policy escalated for approval, plus conversations handed off to a
-// human. This is the internal counterpart to the customer-facing pages.
-func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
-	pending, err := s.Store.ListEscalatedActions()
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	tickets, err := s.Store.ListTickets()
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	escalations := make([]store.Ticket, 0, len(tickets))
-	for _, t := range tickets {
-		if t.Kind == "escalation" {
-			escalations = append(escalations, t)
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"pending_actions": pending,
-		"escalations":     escalations,
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"issues": issues})
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -242,19 +193,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	renderPage(w, "index", pageData{Title: "Malten — Support", BodyClass: "chat", Active: "chat", ChatViewport: true})
+	renderPage(w, "index", pageData{Title: "Malten", BodyClass: "chat", Active: "chat", ChatViewport: true})
 }
 
-func (s *Server) handleTicketsPage(w http.ResponseWriter, r *http.Request) {
-	renderPage(w, "tickets", pageData{Title: "Malten — Tickets", BodyClass: "doc", Active: "tickets"})
-}
-
-func (s *Server) handleStatusPage(w http.ResponseWriter, r *http.Request) {
-	renderPage(w, "status", pageData{Title: "Malten — Status", BodyClass: "doc", Active: "status"})
-}
-
-func (s *Server) handleAdminPage(w http.ResponseWriter, r *http.Request) {
-	renderPage(w, "admin", pageData{Title: "Malten — Admin", BodyClass: "doc", Active: "admin"})
+func (s *Server) handleIssuesPage(w http.ResponseWriter, r *http.Request) {
+	renderPage(w, "issues", pageData{Title: "Malten — Issues", BodyClass: "doc", Active: "issues"})
 }
 
 // renderPage executes a page through the shared base layout.

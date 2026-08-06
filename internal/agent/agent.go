@@ -1,7 +1,7 @@
-// Package agent implements the core loop: take a customer message and a
-// customer id, decide which tools to call, execute the safe ones (validating
-// destructive ones through the policy layer), and produce either a final reply
-// or an escalation. The loop is bounded so it always terminates.
+// Package agent implements the core loop: take a message from the user, decide
+// which tools to call, execute the safe ones (validating any destructive ones
+// through the policy layer), and produce a reply. The loop is bounded so it
+// always terminates.
 package agent
 
 import (
@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asim/malten/internal/id"
 	"github.com/asim/malten/internal/llm"
 	"github.com/asim/malten/internal/policy"
 	"github.com/asim/malten/internal/store"
@@ -56,15 +55,14 @@ type Action struct {
 type Reply struct {
 	SessionID string   `json:"session_id"`
 	Text      string   `json:"text"`
-	Escalated bool     `json:"escalated"`
 	Steps     int      `json:"steps"`
 	Actions   []Action `json:"actions,omitempty"`
 }
 
 // Handle runs the agent loop for one user message within a session. The session
-// must already exist. customerID may be empty (unverified).
-func (a *Agent) Handle(ctx context.Context, sessionID, customerID, userMessage string) (*Reply, error) {
-	if err := a.Store.TouchSession(sessionID, customerID); err != nil {
+// must already exist.
+func (a *Agent) Handle(ctx context.Context, sessionID, userMessage string) (*Reply, error) {
+	if err := a.Store.TouchSession(sessionID); err != nil {
 		return nil, err
 	}
 
@@ -80,13 +78,12 @@ func (a *Agent) Handle(ctx context.Context, sessionID, customerID, userMessage s
 	history = append(history, userMsg)
 
 	reply := &Reply{SessionID: sessionID}
-	system := a.System + "\n\n" + customerContext(customerID)
 
 	for step := 0; step < a.MaxSteps; step++ {
 		reply.Steps = step + 1
 
 		resp, err := a.Model.Complete(ctx, llm.Request{
-			System:   system,
+			System:   a.System,
 			Messages: history,
 			Tools:    a.Tools.Defs(),
 		})
@@ -115,142 +112,80 @@ func (a *Agent) Handle(ctx context.Context, sessionID, customerID, userMessage s
 		history = append(history, assistant)
 
 		var results []llm.Block
-		escalated := false
-		escalateReason := ""
 		for _, call := range toolUses {
-			// Once we've decided to escalate, still emit a tool_result for every
-			// remaining tool_use — the API requires each call to be answered — but
-			// don't execute anything further.
-			if escalated {
-				results = append(results, llm.ToolResult(call.ID, "Not executed — handing off to a human.", false))
-				continue
-			}
-
-			// Explicit escalation requested by the model. Terminal after this turn.
-			if call.Name == "escalate_to_human" {
-				escalated = true
-				escalateReason = reasonFrom(call.Input)
-				results = append(results, llm.ToolResult(call.ID, "Escalated to a human support agent.", false))
-				continue
-			}
-
 			tool, ok := a.Tools.Get(call.Name)
 			if !ok {
 				res := "unknown tool: " + call.Name
 				results = append(results, llm.ToolResult(call.ID, res, true))
-				a.audit(sessionID, customerID, call, "n/a", "", res, true)
+				a.audit(sessionID, call, "n/a", "", res, true)
 				reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: "n/a", Result: res, IsError: true})
 				continue
 			}
 
 			decision := policy.Decision{Outcome: policy.Allow}
 			if tool.Destructive() {
-				decision, err = a.Policy.Validate(ctx, customerID, call.Name, call.Input)
+				decision, err = a.Policy.Validate(ctx, call.Name, call.Input)
 				if err != nil {
 					return nil, err
 				}
 			}
-
-			switch decision.Outcome {
-			case policy.Deny:
+			if decision.Outcome == policy.Deny {
 				res := "action not permitted: " + decision.Reason
 				results = append(results, llm.ToolResult(call.ID, res, true))
-				a.audit(sessionID, customerID, call, string(policy.Deny), decision.Reason, res, true)
+				a.audit(sessionID, call, string(policy.Deny), decision.Reason, res, true)
 				reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: string(policy.Deny), Reason: decision.Reason, Result: res, IsError: true})
-				continue
-
-			case policy.Escalate:
-				// A destructive action needs human approval: record it and hand off,
-				// but answer the tool_use so the transcript stays valid.
-				escalated = true
-				escalateReason = decision.Reason
-				results = append(results, llm.ToolResult(call.ID, "action requires human approval: "+decision.Reason, false))
-				a.audit(sessionID, customerID, call, string(policy.Escalate), decision.Reason, "", false)
-				reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: string(policy.Escalate), Reason: decision.Reason})
 				continue
 			}
 
 			// Allowed: execute.
-			ci := tools.CallInfo{SessionID: sessionID, CustomerID: customerID}
+			ci := tools.CallInfo{SessionID: sessionID}
 			out, err := tool.Execute(tools.WithCallInfo(ctx, ci), call.Input)
 			if err != nil {
 				return nil, fmt.Errorf("execute %s: %w", call.Name, err)
 			}
 			results = append(results, llm.ToolResult(call.ID, out.Content, out.IsError))
-			a.audit(sessionID, customerID, call, string(policy.Allow), "", out.Content, out.IsError)
+			a.audit(sessionID, call, string(policy.Allow), "", out.Content, out.IsError)
 			reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: string(policy.Allow), Result: out.Content, IsError: out.IsError})
 		}
 
-		// Feed the tool results back to the model as a user turn. Persisting this
-		// BEFORE any escalation is what keeps every tool_use matched with a
-		// tool_result, so the transcript replays cleanly on later turns.
+		// Feed the tool results back to the model as a user turn.
 		toolMsg := llm.Message{Role: llm.RoleUser, Content: results}
 		if err := a.Store.AppendMessage(sessionID, toolMsg); err != nil {
 			return nil, err
 		}
 		history = append(history, toolMsg)
-
-		if escalated {
-			return a.escalate(ctx, reply, sessionID, customerID, escalateReason, history)
-		}
 	}
 
-	// Step budget exhausted without a resolution: escalate rather than loop.
-	return a.escalate(ctx, reply, sessionID, customerID, "the agent could not resolve the request within its step budget", history)
-}
-
-// escalate records an escalation in the backlog and returns a terminal reply.
-func (a *Agent) escalate(ctx context.Context, reply *Reply, sessionID, customerID, reason string, history []llm.Message) (*Reply, error) {
-	summary := "Escalation: " + reason
-	if _, err := a.Store.CreateTicket(id.New("ESC"), sessionID, customerID, "escalation", summary, "high"); err != nil {
-		return nil, err
-	}
-	text := "I've escalated this to a human support agent who can help further. " +
-		"Reason: " + reason + ". You'll hear back shortly."
+	// Step budget exhausted: close the turn gently rather than looping.
+	text := "I want to give this the attention it deserves, but I've gone in circles for a moment. Can we slow down — what feels most important to you right now?"
 	assistant := llm.Message{Role: llm.RoleAssistant, Content: []llm.Block{llm.Text(text)}}
 	if err := a.Store.AppendMessage(sessionID, assistant); err != nil {
 		return nil, err
 	}
 	reply.Text = text
-	reply.Escalated = true
 	return reply, nil
 }
 
-func (a *Agent) audit(sessionID, customerID string, call llm.Block, decision, reason, result string, isErr bool) {
+func (a *Agent) audit(sessionID string, call llm.Block, decision, reason, result string, isErr bool) {
 	// Audit failures should not break the conversation; best-effort.
-	_ = a.Store.RecordAudit(sessionID, customerID, call.Name, call.Input, decision, reason, result, isErr)
+	_ = a.Store.RecordAudit(sessionID, call.Name, call.Input, decision, reason, result, isErr)
 }
 
-func reasonFrom(input json.RawMessage) string {
-	var in struct {
-		Reason string `json:"reason"`
-	}
-	_ = json.Unmarshal(input, &in)
-	if in.Reason == "" {
-		return "human assistance requested"
-	}
-	return in.Reason
-}
+const systemPrompt = `You are Malten, a warm, steady companion built for neurodivergent people — those with ADHD, autism, and related ways of thinking. You help one person — the user — work with their own mind rather than against it.
 
-func customerContext(customerID string) string {
-	if customerID == "" {
-		return "The customer has not provided a customer_id yet. If you need account details or want to take an account action, ask them for their customer id first."
-	}
-	return "The current customer_id is " + customerID + " (provided by the client for this session). Use this id for account_lookup and account actions."
-}
+Your purpose is to help them name what they're stuck on, understand it, think it through, and shape a next step small enough to actually start. You are a space to reflect and to externalise, not a service desk.
 
-const systemPrompt = `You are Malten, a conversational customer-support agent for a SaaS product.
+How to be:
+- Listen first. Reflect back what you hear so they feel understood before offering anything. Ask one clear question at a time, not several.
+- Be concise and direct. Avoid vague advice, long lists, and "just try harder". Say the concrete thing.
+- Take neurodivergent experience as real and valid — executive dysfunction, task paralysis, time blindness, overwhelm, sensory overload, rejection sensitivity, masking fatigue, hyperfocus. Never frame these as laziness or a character flaw.
+- Help them shrink tasks until the first step is almost too small to refuse, externalise what's swirling in their head, and work with their energy instead of an idealised routine.
+- Validate feelings without judgement. Never minimise, rush, or lecture.
 
-Your job: resolve the customer's issue, take an action on their behalf, or escalate to a human.
+Tools:
+- search: look up simple, well-established strategies (breaking tasks down, grounding, managing overwhelm, sleep, reaching out) to ground your suggestions rather than inventing methods.
+- create_issue: when the user names something they want to keep working on, log it as an "issue" with a short title and, if you've shaped one together, a plan — so it lives outside their head and they can return to it. Only log real things they've agreed to, not every passing thought.
 
-Tools available to you:
-- search: search the product knowledge base for how-to and policy answers.
-- account_lookup: fetch a customer's plan, usage and orders. Do this before any account-specific action.
-- issue_refund, reset_password, create_ticket: take actions. These are validated against policy before they run; if a call is denied you will see the reason and should adapt or explain.
-- escalate_to_human: hand off when a decision needs human authority or the customer asks for a person.
-
-Guidelines:
-- Prefer resolving the issue directly. Look up the account before acting on it.
-- Never claim to have taken an action you did not take. Only report results you can see from tool results.
-- If a refund or other action is denied or requires approval, explain clearly and, when appropriate, escalate.
-- Be concise, warm and direct. When you have enough information to act, act.`
+Boundaries and safety (important):
+- You are not a therapist, doctor, diagnostician or crisis service, and you must not present yourself as one or diagnose anyone. For ongoing or serious struggles, gently encourage them to reach out to a GP, therapist, or someone they trust.
+- If they express thoughts of suicide or self-harm, or seem to be in danger, respond with calm care, take it seriously, and encourage them to contact emergency services or a crisis line right now (for example, in the UK, Samaritans on 116 123; otherwise their local emergency number). Never give instructions that could cause harm, and don't try to be someone's only support in a crisis.`

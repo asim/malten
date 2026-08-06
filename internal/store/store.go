@@ -1,6 +1,6 @@
 // Package store is the SQLite persistence layer. It owns sessions, the full
-// message transcript, the seeded "product" data (accounts, orders, knowledge
-// base), the support backlog (tickets/escalations) and the audit log.
+// message transcript, a small self-help knowledge base, the issues you're
+// working through, and an audit log of tool calls.
 //
 // It uses the pure-Go modernc.org/sqlite driver so the whole application builds
 // and ships as a single static binary with no cgo.
@@ -30,48 +30,24 @@ type Store struct {
 
 // Stats is a snapshot of row counts, used for startup diagnostics and health.
 type Stats struct {
-	Sessions    int `json:"sessions"`
-	Messages    int `json:"messages"`
-	Tickets     int `json:"tickets"`
-	Escalations int `json:"escalations"`
+	Sessions int `json:"sessions"`
+	Messages int `json:"messages"`
+	Issues   int `json:"issues"`
 }
 
-// Account is a customer record returned by account_lookup.
-type Account struct {
-	CustomerID    string  `json:"customer_id"`
-	Name          string  `json:"name"`
-	Email         string  `json:"email"`
-	Plan          string  `json:"plan"`
-	Status        string  `json:"status"`
-	Seats         int     `json:"seats"`
-	APICallsMonth int     `json:"api_calls_month"`
-	Orders        []Order `json:"orders"`
-}
-
-// Order is a single purchase.
-type Order struct {
-	OrderID     string  `json:"order_id"`
-	CustomerID  string  `json:"customer_id,omitempty"`
-	Description string  `json:"description"`
-	Amount      float64 `json:"amount"`
-	Status      string  `json:"status"`
-	Refunded    bool    `json:"refunded"`
-}
-
-// Ticket is a backlog item (support ticket or human escalation).
-type Ticket struct {
-	ID         string    `json:"id"`
-	SessionID  string    `json:"session_id"`
-	CustomerID string    `json:"customer_id"`
-	Kind       string    `json:"kind"`
-	Summary    string    `json:"summary"`
-	Priority   string    `json:"priority"`
-	Status     string    `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
+// Issue is something the user is working through. The agent logs it, optionally
+// with a plan, so it can be revisited.
+type Issue struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	Title     string    `json:"title"`
+	Plan      string    `json:"plan"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Open opens (creating if needed) a SQLite database at path, applies the schema
-// and seeds demo data if the database is empty. Use ":memory:" for tests.
+// and seeds the self-help library if it is empty. Use ":memory:" for tests.
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -108,8 +84,7 @@ func (s *Store) Stats() (Stats, error) {
 	}{
 		{`SELECT COUNT(*) FROM sessions`, &st.Sessions},
 		{`SELECT COUNT(*) FROM messages`, &st.Messages},
-		{`SELECT COUNT(*) FROM tickets`, &st.Tickets},
-		{`SELECT COUNT(*) FROM tickets WHERE kind='escalation'`, &st.Escalations},
+		{`SELECT COUNT(*) FROM issues`, &st.Issues},
 	} {
 		if err := s.db.QueryRow(q.sql).Scan(q.dst); err != nil {
 			return st, err
@@ -120,43 +95,24 @@ func (s *Store) Stats() (Stats, error) {
 
 func now() time.Time { return time.Now().UTC() }
 
-// seed inserts demo product data on first run (idempotent via INSERT OR IGNORE).
+// seed inserts the self-help library on first run. The content is deliberately
+// general, non-clinical, well-established technique — not medical advice.
 func (s *Store) seed() error {
 	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM accounts`).Scan(&count); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM kb`).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
 		return nil
 	}
-	accts := []Account{
-		{CustomerID: "CUST-1001", Name: "Ada Lovelace", Email: "ada@example.com", Plan: "Pro", Status: "active", Seats: 5, APICallsMonth: 42000},
-		{CustomerID: "CUST-1002", Name: "Alan Turing", Email: "alan@example.com", Plan: "Free", Status: "active", Seats: 1, APICallsMonth: 800},
-	}
-	for _, a := range accts {
-		if _, err := s.db.Exec(`INSERT INTO accounts(customer_id,name,email,plan,status,seats,api_calls_month) VALUES(?,?,?,?,?,?,?)`,
-			a.CustomerID, a.Name, a.Email, a.Plan, a.Status, a.Seats, a.APICallsMonth); err != nil {
-			return err
-		}
-	}
-	orders := []Order{
-		{OrderID: "ORD-5001", CustomerID: "CUST-1001", Description: "Pro monthly subscription", Amount: 49.00, Status: "completed"},
-		{OrderID: "ORD-5002", CustomerID: "CUST-1001", Description: "Annual plan upgrade", Amount: 499.00, Status: "completed"},
-		{OrderID: "ORD-5003", CustomerID: "CUST-1002", Description: "Add-on seat", Amount: 19.00, Status: "completed"},
-	}
-	for _, o := range orders {
-		if _, err := s.db.Exec(`INSERT INTO orders(order_id,customer_id,description,amount,status) VALUES(?,?,?,?,?)`,
-			o.OrderID, o.CustomerID, o.Description, o.Amount, o.Status); err != nil {
-			return err
-		}
-	}
 	kb := []struct{ title, content string }{
-		{"Exporting your data", "You can export your data from Settings -> Data -> Export. Exports are generated as CSV and emailed to you within 15 minutes."},
-		{"Resetting your password", "Use the 'Forgot password' link on the login page, or ask support to send a reset link to the email on file."},
-		{"Billing, charges and refunds", "Refunds for orders under $200 are processed automatically. Larger refunds require manager approval before they are issued."},
-		{"Plans and pricing", "We offer Free, Pro ($49/mo) and Enterprise plans. You can upgrade or downgrade at any time from the billing page."},
-		{"API rate limits", "Pro plans include 100k API calls per month. Exceeding the limit returns HTTP 429; contact us to raise your quota."},
-		{"Cancelling your subscription", "You can cancel from Settings -> Billing -> Cancel. Access continues until the end of the current billing period."},
+		{"Starting when your brain won't", "Task initiation is genuinely hard for a lot of neurodivergent people — it isn't laziness. Shrink the task until the first step is almost too small to refuse: open the doc, write one bad sentence, put on your shoes. Starting is the hard part; momentum comes after action, not before it."},
+		{"When everything feels like too much", "Overwhelm narrows everything into one grey wall. Get it out of your head and onto paper or the screen: dump every open loop as a list, then circle just one. You don't have to do the list — you only have to pick the next single thing. Rest counts as progress too."},
+		{"Body doubling", "Doing a task alongside someone else — in the room, on a call, or even a video of someone working — can make it far easier to start and stay with. The other person isn't helping with the task; their presence just makes the task possible. It's a legitimate tool, not a crutch."},
+		{"Grounding when you're overloaded", "For sensory or emotional overload, reduce input first: dim the light, leave the loud room, put on headphones. Then name five things you can see, four you can feel, three you can hear, two you can smell, one you can taste. It brings you back into the present without demanding words."},
+		{"Rejection sensitivity", "That sudden, physical wave of shame after a slight or a mistake is real, and it passes faster than it feels like it will. Name it — 'this is rejection sensitivity, not the truth about me' — and wait before acting on it. Feelings are information, not instructions."},
+		{"Sleep, energy and time", "Difficult feelings and executive function are almost always worse on poor sleep. Aim for roughly regular sleep and wake times and some daylight in the morning, and plan around your real energy rather than an idealised routine. Time blindness is common — external timers and alarms are fair game."},
+		{"Reaching out for support", "Talking to another person helps more than we expect. For ongoing struggles, a GP or therapist can offer real, lasting support. If you ever feel unsafe or think about harming yourself, please contact emergency services or a crisis line straight away — in the UK you can call Samaritans free on 116 123, any time."},
 	}
 	for _, k := range kb {
 		if _, err := s.db.Exec(`INSERT INTO kb(title,content) VALUES(?,?)`, k.title, k.content); err != nil {
@@ -168,11 +124,10 @@ func (s *Store) seed() error {
 
 // --- Sessions ---------------------------------------------------------------
 
-// CreateSession inserts a new session with the given id and optional customer.
-func (s *Store) CreateSession(id, customerID string) error {
+// CreateSession inserts a new session with the given id.
+func (s *Store) CreateSession(id string) error {
 	t := now()
-	_, err := s.db.Exec(`INSERT INTO sessions(id,customer_id,created_at,updated_at) VALUES(?,?,?,?)`,
-		id, nullable(customerID), t, t)
+	_, err := s.db.Exec(`INSERT INTO sessions(id,created_at,updated_at) VALUES(?,?,?)`, id, t, t)
 	return err
 }
 
@@ -183,12 +138,8 @@ func (s *Store) SessionExists(id string) (bool, error) {
 	return n > 0, err
 }
 
-// TouchSession updates updated_at and, if provided, the customer id.
-func (s *Store) TouchSession(id, customerID string) error {
-	if customerID != "" {
-		_, err := s.db.Exec(`UPDATE sessions SET updated_at=?, customer_id=? WHERE id=?`, now(), customerID, id)
-		return err
-	}
+// TouchSession updates updated_at.
+func (s *Store) TouchSession(id string) error {
 	_, err := s.db.Exec(`UPDATE sessions SET updated_at=? WHERE id=?`, now(), id)
 	return err
 }
@@ -228,67 +179,9 @@ func (s *Store) LoadMessages(sessionID string) ([]llm.Message, error) {
 	return out, rows.Err()
 }
 
-// --- Accounts & orders ------------------------------------------------------
-
-// GetAccount loads an account and its orders. Returns (nil, nil) if unknown.
-func (s *Store) GetAccount(customerID string) (*Account, error) {
-	var a Account
-	err := s.db.QueryRow(`SELECT customer_id,name,email,plan,status,seats,api_calls_month FROM accounts WHERE customer_id=?`, customerID).
-		Scan(&a.CustomerID, &a.Name, &a.Email, &a.Plan, &a.Status, &a.Seats, &a.APICallsMonth)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	rows, err := s.db.Query(`SELECT order_id,description,amount,status,refunded FROM orders WHERE customer_id=? ORDER BY order_id`, customerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var o Order
-		var refunded int
-		if err := rows.Scan(&o.OrderID, &o.Description, &o.Amount, &o.Status, &refunded); err != nil {
-			return nil, err
-		}
-		o.Refunded = refunded != 0
-		a.Orders = append(a.Orders, o)
-	}
-	return &a, rows.Err()
-}
-
-// GetOrder loads a single order by id. Returns (nil, nil) if unknown.
-func (s *Store) GetOrder(orderID string) (*Order, error) {
-	var o Order
-	var refunded int
-	err := s.db.QueryRow(`SELECT order_id,customer_id,description,amount,status,refunded FROM orders WHERE order_id=?`, orderID).
-		Scan(&o.OrderID, &o.CustomerID, &o.Description, &o.Amount, &o.Status, &refunded)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	o.Refunded = refunded != 0
-	return &o, nil
-}
-
-// MarkRefunded records a refund against an order.
-func (s *Store) MarkRefunded(orderID string, amount float64) error {
-	_, err := s.db.Exec(`UPDATE orders SET refunded=1, refund_amount=?, status='refunded' WHERE order_id=?`, amount, orderID)
-	return err
-}
-
-// SetPasswordReset stamps a password reset time on an account.
-func (s *Store) SetPasswordReset(customerID string) error {
-	_, err := s.db.Exec(`UPDATE accounts SET password_reset_at=? WHERE customer_id=?`, now(), customerID)
-	return err
-}
-
 // --- Knowledge base ---------------------------------------------------------
 
-// SearchKB returns up to k knowledge-base chunks matching query terms. It is a
+// SearchKB returns up to k self-help chunks matching query terms. It is a
 // simple term-overlap search over title and content, ranked by match count.
 func (s *Store) SearchKB(query string, k int) ([]struct{ Title, Content string }, error) {
 	if k <= 0 {
@@ -351,80 +244,43 @@ func (s *Store) SearchKB(query string, k int) ([]struct{ Title, Content string }
 	return out, nil
 }
 
-// --- Tickets ----------------------------------------------------------------
+// --- Issues -----------------------------------------------------------------
 
-// CreateTicket inserts a backlog item and returns it.
-func (s *Store) CreateTicket(id, sessionID, customerID, kind, summary, priority string) (Ticket, error) {
-	t := Ticket{
-		ID: id, SessionID: sessionID, CustomerID: customerID, Kind: kind,
-		Summary: summary, Priority: priority, Status: "open", CreatedAt: now(),
+// CreateIssue inserts an issue and returns it.
+func (s *Store) CreateIssue(id, sessionID, title, plan string) (Issue, error) {
+	iss := Issue{
+		ID: id, SessionID: sessionID, Title: title, Plan: plan,
+		Status: "open", CreatedAt: now(),
 	}
-	_, err := s.db.Exec(`INSERT INTO tickets(id,session_id,customer_id,kind,summary,priority,status,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-		t.ID, nullable(t.SessionID), nullable(t.CustomerID), t.Kind, t.Summary, t.Priority, t.Status, t.CreatedAt)
-	return t, err
+	_, err := s.db.Exec(`INSERT INTO issues(id,session_id,title,plan,status,created_at) VALUES(?,?,?,?,?,?)`,
+		iss.ID, nullable(iss.SessionID), iss.Title, nullable(iss.Plan), iss.Status, iss.CreatedAt)
+	return iss, err
 }
 
-// ListTickets returns the backlog, newest first.
-func (s *Store) ListTickets() ([]Ticket, error) {
-	rows, err := s.db.Query(`SELECT id,COALESCE(session_id,''),COALESCE(customer_id,''),kind,summary,priority,status,created_at FROM tickets ORDER BY created_at DESC`)
+// ListIssues returns the issues, newest first.
+func (s *Store) ListIssues() ([]Issue, error) {
+	rows, err := s.db.Query(`SELECT id,COALESCE(session_id,''),title,COALESCE(plan,''),status,created_at FROM issues ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Ticket
+	var out []Issue
 	for rows.Next() {
-		var t Ticket
-		if err := rows.Scan(&t.ID, &t.SessionID, &t.CustomerID, &t.Kind, &t.Summary, &t.Priority, &t.Status, &t.CreatedAt); err != nil {
+		var iss Issue
+		if err := rows.Scan(&iss.ID, &iss.SessionID, &iss.Title, &iss.Plan, &iss.Status, &iss.CreatedAt); err != nil {
 			return nil, err
 		}
-		out = append(out, t)
+		out = append(out, iss)
 	}
 	return out, rows.Err()
 }
 
 // --- Audit ------------------------------------------------------------------
 
-// AuditEntry is one row from the immutable audit log: a tool call, the policy
-// decision made about it, and its outcome.
-type AuditEntry struct {
-	ID         int64     `json:"id"`
-	SessionID  string    `json:"session_id"`
-	CustomerID string    `json:"customer_id"`
-	Tool       string    `json:"tool"`
-	Input      string    `json:"input"`
-	Decision   string    `json:"decision"`
-	Reason     string    `json:"reason"`
-	Result     string    `json:"result"`
-	IsError    bool      `json:"is_error"`
-	CreatedAt  time.Time `json:"created_at"`
-}
-
-// ListEscalatedActions returns audit entries where the policy escalated a
-// destructive action for human approval (decision='escalate'), newest first.
-// These are the "needs approval" items surfaced on the admin page.
-func (s *Store) ListEscalatedActions() ([]AuditEntry, error) {
-	rows, err := s.db.Query(`SELECT id,COALESCE(session_id,''),COALESCE(customer_id,''),tool,input,decision,COALESCE(reason,''),COALESCE(result,''),is_error,created_at FROM audit_log WHERE decision='escalate' ORDER BY created_at DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []AuditEntry
-	for rows.Next() {
-		var e AuditEntry
-		var isErr int
-		if err := rows.Scan(&e.ID, &e.SessionID, &e.CustomerID, &e.Tool, &e.Input, &e.Decision, &e.Reason, &e.Result, &isErr, &e.CreatedAt); err != nil {
-			return nil, err
-		}
-		e.IsError = isErr != 0
-		out = append(out, e)
-	}
-	return out, rows.Err()
-}
-
 // RecordAudit appends an entry to the immutable audit log.
-func (s *Store) RecordAudit(sessionID, customerID, tool string, input json.RawMessage, decision, reason, result string, isErr bool) error {
-	_, err := s.db.Exec(`INSERT INTO audit_log(session_id,customer_id,tool,input,decision,reason,result,is_error,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-		nullable(sessionID), nullable(customerID), tool, string(input), decision, reason, result, boolInt(isErr), now())
+func (s *Store) RecordAudit(sessionID, tool string, input json.RawMessage, decision, reason, result string, isErr bool) error {
+	_, err := s.db.Exec(`INSERT INTO audit_log(session_id,tool,input,decision,reason,result,is_error,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		nullable(sessionID), tool, string(input), decision, reason, result, boolInt(isErr), now())
 	return err
 }
 

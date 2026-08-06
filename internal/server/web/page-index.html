@@ -1,52 +1,62 @@
 {{define "head"}}
 <style>
-  .controls { padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .controls label { font-size: 13px; color: var(--muted); }
-  /* 16px inputs stop iOS Safari from auto-zooming when the field gains focus. */
-  .controls input { background: var(--panel2); border: 1px solid var(--border); color: var(--text);
-                    border-radius: 8px; padding: 6px 10px; font-size: 16px; width: 140px; }
-  .controls .hint { font-size: 12px; color: var(--muted); }
-  #log { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-  .msg { display: flex; flex-direction: column; max-width: 88%; }
+  #log { flex: 1; overflow-y: auto; padding: 22px 20px; display: flex; flex-direction: column; gap: 16px; }
+  .msg { display: flex; flex-direction: column; max-width: 90%; }
   .msg.user { align-self: flex-end; align-items: flex-end; }
   .msg.agent { align-self: flex-start; align-items: flex-start; }
-  .bubble { padding: 10px 14px; border-radius: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
-  .user .bubble { background: var(--user); }
-  .agent .bubble { background: var(--agent); border: 1px solid var(--border); }
-  .meta { font-size: 12px; color: var(--muted); margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap; }
-  .badge.esc { color: var(--warn); border-color: var(--warn); }
-  .badge.allow { color: var(--ok); border-color: var(--ok); }
-  .badge.deny, .badge.err { color: var(--err); border-color: var(--err); }
+  .bubble { padding: 11px 15px; border-radius: 16px; line-height: 1.5; word-wrap: break-word; overflow-wrap: anywhere; }
+  .user .bubble { background: var(--user-bg); color: var(--user-fg); border-bottom-right-radius: 5px; white-space: pre-wrap; }
+  .agent .bubble { background: var(--agent-bg); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
+
+  /* Markdown inside an agent bubble. */
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 10px; }
+  .md h1, .md h2, .md h3 { margin: 14px 0 8px; line-height: 1.3; }
+  .md h1 { font-size: 1.25em; } .md h2 { font-size: 1.15em; } .md h3 { font-size: 1.05em; }
+  .md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+  .md li { margin: 3px 0; }
+  .md a { color: var(--fg); text-underline-offset: 2px; }
+  .md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em;
+             background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+  .md pre { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; }
+  .md pre code { background: none; border: 0; padding: 0; }
+
+  .meta { font-size: 12px; color: var(--muted); margin-top: 5px; }
   .actions { margin-top: 6px; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--border);
              border-radius: 10px; padding: 8px 10px; width: 100%; }
-  .actions code { color: var(--text); }
-  form { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border);
-         padding-bottom: calc(14px + env(safe-area-inset-bottom)); }  /* clear the iOS home bar */
-  #input { flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--border); color: var(--text);
-           border-radius: 10px; padding: 12px 14px; font-size: 16px; resize: none; font-family: inherit; }
-  form button { background: var(--accent); color: white; border: 0; border-radius: 10px; padding: 0 18px; font-size: 15px;
+  .actions code { color: var(--fg); }
+  .processing { color: var(--muted); font-size: 14px; }
+  .processing .dots::after { content: ''; animation: dots 1.4s steps(4, end) infinite; }
+  @keyframes dots { 0% { content: ''; } 25% { content: '\00B7'; } 50% { content: '\00B7\00B7'; } 75% { content: '\00B7\00B7\00B7'; } }
+
+  form { display: flex; gap: 8px; padding: 14px 20px 6px; border-top: 1px solid var(--border); }
+  #input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--border); color: var(--fg);
+           border-radius: 12px; padding: 12px 14px; font-size: 16px; resize: none; font-family: inherit; line-height: 1.4; }
+  #input:focus { outline: none; border-color: var(--fg); }
+  form button { background: var(--fg); color: var(--bg); border: 0; border-radius: 12px; padding: 0 18px; font-size: 15px;
                 cursor: pointer; font-weight: 600; flex-shrink: 0; }
-  form button:disabled { opacity: 0.5; cursor: default; }
-  .typing { color: var(--muted); font-size: 13px; font-style: italic; }
+  form button:disabled { opacity: 0.4; cursor: default; }
+  .disclaimer { color: var(--muted); font-size: 11.5px; line-height: 1.4; text-align: center;
+                padding: 0 20px 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   @media (max-width: 560px) {
-    .controls, #log, form { padding-left: 14px; padding-right: 14px; }
-    .msg { max-width: 92%; }
+    #log, form, .disclaimer { padding-left: 14px; padding-right: 14px; }
+    .msg { max-width: 94%; }
   }
 </style>
 {{end}}
 
 {{define "content"}}
 <main class="chat">
-  <div class="controls">
-    <label for="cust">Customer ID</label>
-    <input id="cust" placeholder="CUST-1001" autocomplete="off">
-    <span class="hint">try CUST-1001 (Ada) or CUST-1002 (Alan)</span>
-  </div>
   <div id="log"></div>
   <form id="form">
-    <textarea id="input" rows="1" placeholder="Ask about billing, refunds, login, or anything else…"></textarea>
+    <textarea id="input" rows="1" placeholder="What's on your mind? Start anywhere — a task you're stuck on, a feeling, a mess in your head…"></textarea>
     <button type="submit" id="send">Send</button>
   </form>
+  <div class="disclaimer">
+    Malten is a supportive companion, not medical advice or a substitute for professional care.
+    If you're in crisis, contact emergency services or a crisis line (in the UK, Samaritans on 116&nbsp;123).
+  </div>
 </main>
 {{end}}
 
@@ -55,57 +65,81 @@
   const log = document.getElementById('log');
   const form = document.getElementById('form');
   const input = document.getElementById('input');
-  const cust = document.getElementById('cust');
   const sendBtn = document.getElementById('send');
   let sessionId = localStorage.getItem('malten_session') || '';
-  cust.value = localStorage.getItem('malten_customer') || '';
 
-  // Debug view exposes the internal tool calls and policy decisions. It is OFF
-  // for customers. Turn it on with ?debug=1 (persists), off with ?debug=0.
   const dbgParam = new URLSearchParams(location.search).get('debug');
   if (dbgParam === '1') localStorage.setItem('malten_debug', '1');
   if (dbgParam === '0') localStorage.removeItem('malten_debug');
   const DEBUG = localStorage.getItem('malten_debug') === '1';
 
-  // Track the visible viewport so the on-screen keyboard shrinks the (flexible)
-  // message log rather than pushing the header and input around.
+  // Keep the visible viewport in sync so the on-screen keyboard shrinks the
+  // (flexible) message log rather than pushing the header and input around.
   const vv = window.visualViewport;
   function fitViewport() {
     const h = vv ? vv.height : window.innerHeight;
     document.documentElement.style.setProperty('--app-h', h + 'px');
     log.scrollTop = log.scrollHeight;
   }
-  if (vv) {
-    vv.addEventListener('resize', fitViewport);
-    vv.addEventListener('scroll', fitViewport);
-  }
+  if (vv) { vv.addEventListener('resize', fitViewport); vv.addEventListener('scroll', fitViewport); }
   window.addEventListener('orientationchange', () => setTimeout(fitViewport, 200));
   fitViewport();
 
   function el(cls, html) { const d = document.createElement('div'); d.className = cls; if (html !== undefined) d.innerHTML = html; return d; }
-  function esc(s) { return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  function escapeHtml(s) { return (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+  // --- tiny, safe markdown renderer -----------------------------------------
+  // Sentinels are Unicode private-use chars so they never collide with real text.
+  const C0 = String.fromCharCode(0xE000), C1 = String.fromCharCode(0xE001), FZ = String.fromCharCode(0xE002);
+  const fenceLine = new RegExp('^' + FZ + '(\\d+)' + FZ + '$');
+  const codeSpan = new RegExp(C0 + '(\\d+)' + C1, 'g');
+
+  function inline(s) {
+    const codes = [];
+    s = s.replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return C0 + (codes.length - 1) + C1; });
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) =>
+      /^(https?:\/\/|\/|#|mailto:)/i.test(u) ? '<a href="' + u + '" target="_blank" rel="noopener noreferrer">' + t + '</a>' : m);
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    s = s.replace(codeSpan, (m, i) => '<code>' + codes[+i] + '</code>');
+    return s;
+  }
+  function md(src) {
+    src = (src || '').replace(/\r\n/g, '\n');
+    const fences = [];
+    src = src.replace(/```[^\n]*\n([\s\S]*?)```/g, (m, code) => { fences.push(code.replace(/\n$/, '')); return FZ + (fences.length - 1) + FZ; });
+    src = escapeHtml(src);
+    const lines = src.split('\n');
+    let out = '', para = [], list = null; // list: {type, items:[]}
+    const flushPara = () => { if (para.length) { out += '<p>' + para.map(inline).join('<br>') + '</p>'; para = []; } };
+    const flushList = () => { if (list) { out += '<' + list.type + '>' + list.items.map(t => '<li>' + inline(t) + '</li>').join('') + '</' + list.type + '>'; list = null; } };
+    for (const line of lines) {
+      let m;
+      if ((m = line.match(fenceLine))) { flushPara(); flushList(); out += '<pre><code>' + escapeHtml(fences[+m[1]]) + '</code></pre>'; continue; }
+      if (line.trim() === '') { flushPara(); flushList(); continue; }
+      if ((m = line.match(/^(#{1,3})\s+(.*)$/))) { flushPara(); flushList(); const n = m[1].length; out += '<h' + n + '>' + inline(m[2]) + '</h' + n + '>'; continue; }
+      if ((m = line.match(/^[-*+]\s+(.*)$/))) { flushPara(); if (!list || list.type !== 'ul') { flushList(); list = { type: 'ul', items: [] }; } list.items.push(m[1]); continue; }
+      if ((m = line.match(/^\d+\.\s+(.*)$/))) { flushPara(); if (!list || list.type !== 'ol') { flushList(); list = { type: 'ol', items: [] }; } list.items.push(m[1]); continue; }
+      flushList(); para.push(line);
+    }
+    flushPara(); flushList();
+    return out;
+  }
 
   function addMessage(role, text, reply) {
     const wrap = el('msg ' + role);
-    wrap.appendChild(el('bubble', esc(text)));
-    if (reply && reply.escalated && !DEBUG) {
-      // Customer-facing: a gentle note only — no steps, no tool internals.
-      const meta = el('meta');
-      meta.innerHTML = `<span class="badge esc">a human will follow up</span>`;
-      wrap.appendChild(meta);
+    if (role === 'agent') {
+      const b = el('bubble md'); b.innerHTML = md(text); wrap.appendChild(b);
+    } else {
+      const b = el('bubble'); b.textContent = text; wrap.appendChild(b);
     }
     if (reply && DEBUG) {
-      // Debug-only: the full trace of steps, tool calls and decisions.
-      const meta = el('meta');
-      meta.innerHTML = `<span>${reply.steps} step${reply.steps===1?'':'s'}</span>`;
-      if (reply.escalated) meta.innerHTML += ` <span class="badge esc">escalated</span>`;
-      wrap.appendChild(meta);
+      wrap.appendChild(el('meta', reply.steps + ' step' + (reply.steps === 1 ? '' : 's')));
       if (reply.actions && reply.actions.length) {
         const a = el('actions');
         a.innerHTML = reply.actions.map(ac => {
-          const cls = ac.decision === 'allow' ? 'allow' : (ac.decision === 'escalate' ? 'esc' : 'deny');
-          const r = ac.reason ? ` — ${esc(ac.reason)}` : (ac.result ? ` — ${esc(ac.result)}` : '');
-          return `<div><code>${esc(ac.tool)}</code> <span class="badge ${cls}">${ac.decision}</span>${r}</div>`;
+          const r = ac.reason ? ' — ' + escapeHtml(ac.reason) : (ac.result ? ' — ' + escapeHtml(ac.result) : '');
+          return '<div><code>' + escapeHtml(ac.tool) + '</code> ' + escapeHtml(ac.decision) + r + '</div>';
         }).join('');
         wrap.appendChild(a);
       }
@@ -115,12 +149,10 @@
     return wrap;
   }
 
-  // Concatenate the visible text of a stored message (skips tool_use/tool_result).
   function textOf(content) {
     return (content || []).filter(b => b.type === 'text' && b.text && b.text.trim()).map(b => b.text).join('');
   }
 
-  // On load, rebuild the conversation from the server so a refresh keeps history.
   async function loadHistory() {
     if (!sessionId) return;
     try {
@@ -135,32 +167,32 @@
 
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; });
   input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
-  // Re-fit once the keyboard has finished animating in.
   input.addEventListener('focus', () => setTimeout(fitViewport, 250));
 
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
-    localStorage.setItem('malten_customer', cust.value.trim());
     addMessage('user', text);
     input.value = ''; input.style.height = 'auto';
     sendBtn.disabled = true;
-    const typing = el('msg agent'); typing.appendChild(el('typing', 'Malten is thinking…')); log.appendChild(typing); log.scrollTop = log.scrollHeight;
+    const processing = el('msg agent');
+    processing.appendChild(el('processing', 'Processing<span class="dots"></span>'));
+    log.appendChild(processing); log.scrollTop = log.scrollHeight;
     try {
       const res = await fetch('/api/chat', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ session_id: sessionId, customer_id: cust.value.trim(), message: text })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, message: text })
       });
       const data = await res.json();
-      typing.remove();
+      processing.remove();
       if (data.error) { addMessage('agent', data.error); }
       else {
         sessionId = data.session_id; localStorage.setItem('malten_session', sessionId);
         addMessage('agent', data.text, data);
       }
     } catch (err) {
-      typing.remove();
+      processing.remove();
       addMessage('agent', 'Network error: ' + err.message);
     } finally {
       sendBtn.disabled = false; input.focus();

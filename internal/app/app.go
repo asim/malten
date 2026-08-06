@@ -21,13 +21,8 @@ func Build(model llm.LLM, dbPath string) (*agent.Agent, *store.Store, error) {
 	}
 
 	reg := tools.NewRegistry()
-	// Read-only tools first, then actions, then escalation.
 	reg.Register(&tools.Search{Store: st})
-	reg.Register(&tools.AccountLookup{Store: st})
-	reg.Register(&tools.IssueRefund{Store: st})
-	reg.Register(&tools.ResetPassword{Store: st})
-	reg.Register(&tools.CreateTicket{Store: st})
-	reg.Register(&tools.Escalate{})
+	reg.Register(&tools.CreateIssue{Store: st})
 
 	pol := policy.New(st)
 	ag := agent.New(model, reg, pol, st)

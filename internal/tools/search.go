@@ -19,7 +19,7 @@ type Search struct {
 func (t *Search) Def() llm.ToolDef {
 	return llm.ToolDef{
 		Name:        "search",
-		Description: "Search the product knowledge base and return the top matching articles. Call this to answer how-to and policy questions before replying from memory.",
+		Description: "Search a small library of simple, well-established self-help techniques (grounding, breathing, planning, sleep, reaching out) and return the best matches. Prefer grounding suggestions in these over inventing methods.",
 		Properties: map[string]any{
 			"query": map[string]any{"type": "string", "description": "Natural language search query"},
 			"k":     map[string]any{"type": "integer", "description": "Number of results to return (default 3)"},

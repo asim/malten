@@ -37,8 +37,8 @@ func main() {
 	// Startup diagnostics: report the persisted store so restart-related issues
 	// (e.g. an unexpected/empty database) are easy to spot in the logs.
 	if stats, err := st.Stats(); err == nil {
-		log.Printf("malten: store %s — %d sessions, %d messages, %d tickets (%d escalations)",
-			st.Path(), stats.Sessions, stats.Messages, stats.Tickets, stats.Escalations)
+		log.Printf("malten: store %s — %d sessions, %d messages, %d issues",
+			st.Path(), stats.Sessions, stats.Messages, stats.Issues)
 	}
 
 	srv := server.New(ag, st)

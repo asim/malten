@@ -1,11 +1,10 @@
-// Package tools defines the capabilities the support agent can invoke and a
-// registry that makes the set extensible. Each tool declares its schema, says
-// whether it is "destructive" (i.e. must pass policy validation before it
-// runs), and knows how to execute itself against the backing store.
+// Package tools defines the capabilities the agent can invoke and a registry
+// that makes the set extensible. Each tool declares its schema, says whether it
+// is "destructive" (i.e. must pass policy validation before it runs), and knows
+// how to execute itself against the backing store.
 //
-// The knowledge-base search, account lookup, refund, password reset, ticket
-// creation and human-escalation capabilities from the spec are each a Tool.
-// Adding a new capability is a matter of implementing Tool and registering it.
+// Adding a new capability is a matter of implementing Tool and registering it
+// in internal/app.
 package tools
 
 import (

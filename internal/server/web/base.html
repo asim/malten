@@ -6,8 +6,8 @@
 <title>{{.Title}}</title>
 <link rel="stylesheet" href="/app.css">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0c0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <link rel="icon" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -21,9 +21,7 @@
       <a class="brand" href="/">Malten</a>
       <nav>
         <a href="/"{{if eq .Active "chat"}} class="active"{{end}}>Chat</a>
-        <a href="/tickets"{{if eq .Active "tickets"}} class="active"{{end}}>Tickets</a>
-        <a href="/admin"{{if eq .Active "admin"}} class="active"{{end}}>Admin</a>
-        <a href="/status"{{if eq .Active "status"}} class="active"{{end}}>Status</a>
+        <a href="/issues"{{if eq .Active "issues"}} class="active"{{end}}>Issues</a>
       </nav>
     </div>
   </header>

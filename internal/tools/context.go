@@ -2,12 +2,11 @@ package tools
 
 import "context"
 
-// CallInfo carries per-request context (which session and customer the tool is
-// acting on) into tool execution without widening the Tool interface. The
-// agent attaches it before executing a tool; tools that need it read it back.
+// CallInfo carries per-request context (which session the tool is acting on)
+// into tool execution without widening the Tool interface. The agent attaches
+// it before executing a tool; tools that need it read it back.
 type CallInfo struct {
-	SessionID  string
-	CustomerID string
+	SessionID string
 }
 
 type ctxKey struct{}
