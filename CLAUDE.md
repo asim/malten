@@ -9,8 +9,8 @@ Go and shipping as a single binary with an embedded chat UI and a SQLite
 database. A customer sends a message; the agent resolves it, takes an action, or
 escalates to a human.
 
-Start with [SPEC.md](SPEC.md) (scope), then [ARCHITECTURE.md](ARCHITECTURE.md)
-(how it fits together), then [README.md](README.md) (run/extend).
+See [ARCHITECTURE.md](ARCHITECTURE.md) (how it fits together) and
+[README.md](README.md) (run/extend).
 
 ## Repository map
 

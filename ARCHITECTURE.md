@@ -4,8 +4,7 @@ Malten is a conversational customer-support agent for a SaaS product. A customer
 sends a message; the agent resolves the issue, takes an action, or escalates to
 a human. This document explains how it is put together and why.
 
-For scope and requirements see [SPEC.md](SPEC.md); for how to run and extend it
-see [README.md](README.md).
+For how to run and extend it see [README.md](README.md).
 
 ## Design goals
 
