@@ -41,7 +41,7 @@ func (c *Claude) Complete(ctx context.Context, req Request) (*Response, error) {
 	params := anthropic.MessageNewParams{
 		Model:     c.model,
 		MaxTokens: c.maxTok,
-		Messages:  toParams(req.Messages),
+		Messages:  toParams(balanceToolResults(req.Messages)),
 		Tools:     toToolUnions(req.Tools),
 	}
 	if req.System != "" {
@@ -69,6 +69,61 @@ func (c *Claude) Complete(ctx context.Context, req Request) (*Response, error) {
 		}
 	}
 	return out, nil
+}
+
+// balanceToolResults enforces the Messages API contract that every tool_use is
+// answered by a tool_result in the next message. Historical transcripts written
+// before the escalation-persistence fix can contain orphaned tool_use blocks;
+// rather than let the whole session fail with a 400, synthesize placeholder
+// results (merging into the following user turn, or inserting one) so the
+// conversation still replays.
+func balanceToolResults(msgs []Message) []Message {
+	out := make([]Message, 0, len(msgs)+2)
+	for i := 0; i < len(msgs); i++ {
+		m := msgs[i]
+		out = append(out, m)
+
+		var ids []string
+		for _, b := range m.Content {
+			if b.Type == BlockToolUse {
+				ids = append(ids, b.ID)
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+
+		answered := map[string]bool{}
+		nextIsResults := i+1 < len(msgs) && msgs[i+1].Role == RoleUser
+		if nextIsResults {
+			for _, b := range msgs[i+1].Content {
+				if b.Type == BlockToolResult {
+					answered[b.ToolUseID] = true
+				}
+			}
+		}
+
+		var missing []Block
+		for _, id := range ids {
+			if !answered[id] {
+				missing = append(missing, ToolResult(id, "(no result recorded)", false))
+			}
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		if nextIsResults {
+			// Merge the synthesized results into the existing next user turn.
+			merged := msgs[i+1]
+			merged.Content = append(append([]Block{}, missing...), merged.Content...)
+			out = append(out, merged)
+			i++ // consumed msgs[i+1]
+		} else {
+			// The next message is not a user turn (or there is none): insert one.
+			out = append(out, Message{Role: RoleUser, Content: missing})
+		}
+	}
+	return out
 }
 
 // toParams converts our transcript to SDK message params, preserving tool_use

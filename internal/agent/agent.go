@@ -115,10 +115,23 @@ func (a *Agent) Handle(ctx context.Context, sessionID, customerID, userMessage s
 		history = append(history, assistant)
 
 		var results []llm.Block
+		escalated := false
+		escalateReason := ""
 		for _, call := range toolUses {
-			// Explicit escalation requested by the model. Terminal.
+			// Once we've decided to escalate, still emit a tool_result for every
+			// remaining tool_use — the API requires each call to be answered — but
+			// don't execute anything further.
+			if escalated {
+				results = append(results, llm.ToolResult(call.ID, "Not executed — handing off to a human.", false))
+				continue
+			}
+
+			// Explicit escalation requested by the model. Terminal after this turn.
 			if call.Name == "escalate_to_human" {
-				return a.escalate(ctx, reply, sessionID, customerID, reasonFrom(call.Input), history)
+				escalated = true
+				escalateReason = reasonFrom(call.Input)
+				results = append(results, llm.ToolResult(call.ID, "Escalated to a human support agent.", false))
+				continue
 			}
 
 			tool, ok := a.Tools.Get(call.Name)
@@ -147,9 +160,14 @@ func (a *Agent) Handle(ctx context.Context, sessionID, customerID, userMessage s
 				continue
 
 			case policy.Escalate:
-				reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: string(policy.Escalate), Reason: decision.Reason})
+				// A destructive action needs human approval: record it and hand off,
+				// but answer the tool_use so the transcript stays valid.
+				escalated = true
+				escalateReason = decision.Reason
+				results = append(results, llm.ToolResult(call.ID, "action requires human approval: "+decision.Reason, false))
 				a.audit(sessionID, customerID, call, string(policy.Escalate), decision.Reason, "", false)
-				return a.escalate(ctx, reply, sessionID, customerID, decision.Reason, history)
+				reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: string(policy.Escalate), Reason: decision.Reason})
+				continue
 			}
 
 			// Allowed: execute.
@@ -163,12 +181,18 @@ func (a *Agent) Handle(ctx context.Context, sessionID, customerID, userMessage s
 			reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: string(policy.Allow), Result: out.Content, IsError: out.IsError})
 		}
 
-		// Feed the tool results back to the model as a user turn.
+		// Feed the tool results back to the model as a user turn. Persisting this
+		// BEFORE any escalation is what keeps every tool_use matched with a
+		// tool_result, so the transcript replays cleanly on later turns.
 		toolMsg := llm.Message{Role: llm.RoleUser, Content: results}
 		if err := a.Store.AppendMessage(sessionID, toolMsg); err != nil {
 			return nil, err
 		}
 		history = append(history, toolMsg)
+
+		if escalated {
+			return a.escalate(ctx, reply, sessionID, customerID, escalateReason, history)
+		}
 	}
 
 	// Step budget exhausted without a resolution: escalate rather than loop.
