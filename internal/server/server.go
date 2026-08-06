@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/chat", s.handleChat)
 	mux.HandleFunc("/api/chat/stream", s.handleChatStream)
 	mux.HandleFunc("/api/session/", s.handleSession)
+	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("/api/issues", s.handleIssues)
 	mux.HandleFunc("/issues", s.handleIssuesPage)
 	mux.HandleFunc("/api/health", s.handleHealth)
@@ -245,6 +246,15 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"session_id": sessionID, "messages": msgs})
+}
+
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	sessions, err := s.Store.ListSessions()
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
 }
 
 func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {

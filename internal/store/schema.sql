@@ -4,6 +4,7 @@
 -- accepted from the client) so history can be tracked without accounts.
 CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY,
+    title      TEXT,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
 );

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/asim/malten/internal/llm"
 	"github.com/asim/malten/internal/policy"
@@ -87,6 +88,10 @@ func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit fun
 	history, err := a.Store.LoadMessages(sessionID)
 	if err != nil {
 		return nil, err
+	}
+	// The first message names the conversation for the sidebar.
+	if len(history) == 0 {
+		_ = a.Store.SetSessionTitle(sessionID, sessionTitle(userMessage))
 	}
 
 	userMsg := llm.UserText(userMessage)
@@ -188,6 +193,19 @@ func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit fun
 	}
 	reply.Text = text
 	return reply, nil
+}
+
+// sessionTitle derives a short conversation title from the first message.
+func sessionTitle(msg string) string {
+	msg = strings.TrimSpace(strings.Join(strings.Fields(msg), " "))
+	const max = 60
+	if len(msg) > max {
+		msg = strings.TrimSpace(msg[:max]) + "…"
+	}
+	if msg == "" {
+		msg = "New conversation"
+	}
+	return msg
 }
 
 func (a *Agent) audit(sessionID string, call llm.Block, decision, reason, result string, isErr bool) {

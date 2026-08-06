@@ -124,6 +124,13 @@ func (s *Store) seed() error {
 
 // --- Sessions ---------------------------------------------------------------
 
+// SessionSummary is a row in the conversations list.
+type SessionSummary struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // CreateSession inserts a new session with the given id.
 func (s *Store) CreateSession(id string) error {
 	t := now()
@@ -142,6 +149,32 @@ func (s *Store) SessionExists(id string) (bool, error) {
 func (s *Store) TouchSession(id string) error {
 	_, err := s.db.Exec(`UPDATE sessions SET updated_at=? WHERE id=?`, now(), id)
 	return err
+}
+
+// SetSessionTitle sets a session's title, but only if it has none yet — so the
+// first message names the conversation and later ones don't rename it.
+func (s *Store) SetSessionTitle(id, title string) error {
+	_, err := s.db.Exec(`UPDATE sessions SET title=? WHERE id=? AND title IS NULL`, title, id)
+	return err
+}
+
+// ListSessions returns titled sessions (i.e. those with at least one message),
+// newest activity first.
+func (s *Store) ListSessions() ([]SessionSummary, error) {
+	rows, err := s.db.Query(`SELECT id,COALESCE(title,''),updated_at FROM sessions WHERE title IS NOT NULL ORDER BY updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SessionSummary
+	for rows.Next() {
+		var ss SessionSummary
+		if err := rows.Scan(&ss.ID, &ss.Title, &ss.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ss)
+	}
+	return out, rows.Err()
 }
 
 // --- Messages ---------------------------------------------------------------
