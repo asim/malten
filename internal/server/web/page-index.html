@@ -123,11 +123,6 @@
   document.getElementById('backdrop').addEventListener('click', () => shell.classList.remove('open'));
   document.getElementById('newchat').addEventListener('click', () => newChat());
 
-  function genId() {
-    const a = new Uint8Array(8); crypto.getRandomValues(a);
-    return 'SESS-' + Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
-  }
-
   // Keep the visible viewport in sync so the on-screen keyboard shrinks the
   // (flexible) message log rather than pushing the header and input around.
   const vv = window.visualViewport;
@@ -204,59 +199,44 @@
     return wrap;
   }
 
-  function textOf(content) {
-    return (content || []).filter(b => b.type === 'text' && b.text && b.text.trim()).map(b => b.text).join('');
+  // --- client-side conversations (nothing is stored on the server) ----------
+  let convos = Malten.getConvos();
+  let current = convos.find(c => c.id === Malten.getCurrent()) || null;
+
+  const deriveTitle = t => { t = t.trim().replace(/\s+/g, ' '); return t.length > 60 ? t.slice(0, 60) + '…' : t; };
+
+  function renderConvo() {
+    log.innerHTML = '';
+    ctitleEl.textContent = current ? current.title : '';
+    if (current) for (const m of current.messages) addMessage(m.role, m.text);
   }
 
-  async function loadHistory() {
-    if (!sessionId) return;
-    try {
-      const res = await fetch('/api/session/' + encodeURIComponent(sessionId));
-      const data = await res.json();
-      for (const m of (data.messages || [])) {
-        const t = textOf(m.content);
-        if (t) addMessage(m.role === 'user' ? 'user' : 'agent', t);
-      }
-    } catch (err) { /* if history can't load, just start fresh */ }
+  function renderSidebar() {
+    const sorted = convos.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    convsEl.innerHTML = '';
+    if (!sorted.length) { convsEl.innerHTML = '<div class="empty">No conversations yet.</div>'; return; }
+    for (const c of sorted) {
+      const b = document.createElement('button');
+      b.className = 'conv' + (current && c.id === current.id ? ' active' : '');
+      b.textContent = c.title || 'Conversation';
+      b.title = b.textContent;
+      b.addEventListener('click', () => switchTo(c.id));
+      convsEl.appendChild(b);
+    }
   }
 
-  // --- conversations sidebar ------------------------------------------------
-  async function loadSessions() {
-    try {
-      const res = await fetch('/api/sessions');
-      const data = await res.json();
-      const list = data.sessions || [];
-      convsEl.innerHTML = '';
-      if (!list.length) { convsEl.innerHTML = '<div class="empty">No conversations yet.</div>'; return; }
-      for (const s of list) {
-        const b = document.createElement('button');
-        b.className = 'conv' + (s.id === sessionId ? ' active' : '');
-        b.textContent = s.title || 'Conversation';
-        b.title = b.textContent;
-        b.addEventListener('click', () => switchTo(s.id, b.textContent));
-        convsEl.appendChild(b);
-      }
-      const active = list.find(s => s.id === sessionId);
-      if (active) ctitleEl.textContent = active.title;
-    } catch (_) { /* leave the list as-is */ }
-  }
-
-  async function switchTo(id, title) {
+  function switchTo(id) {
     shell.classList.remove('open');
-    if (id === sessionId) return;
-    sessionId = id; localStorage.setItem('malten_session', id);
-    log.innerHTML = ''; ctitleEl.textContent = title || '';
-    await loadHistory();
-    loadSessions();
-    input.focus();
+    if (current && id === current.id) return;
+    current = convos.find(c => c.id === id) || null;
+    Malten.setCurrent(current ? current.id : '');
+    renderConvo(); renderSidebar(); input.focus();
   }
 
   function newChat() {
     shell.classList.remove('open');
-    sessionId = genId(); localStorage.setItem('malten_session', sessionId);
-    log.innerHTML = ''; ctitleEl.textContent = '';
-    loadSessions();
-    input.focus();
+    current = null; Malten.setCurrent('');
+    renderConvo(); renderSidebar(); input.focus();
   }
 
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; });
@@ -284,6 +264,12 @@
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
+
+    // Start a conversation on first message. Capture the prior transcript to
+    // send up, since the stateless server keeps no history of its own.
+    if (!current) { current = { id: Malten.newConvoId(), title: deriveTitle(text), updatedAt: Date.now(), messages: [] }; convos.push(current); Malten.setCurrent(current.id); }
+    const prior = current.messages.map(m => ({ role: m.role === 'agent' ? 'assistant' : 'user', text: m.text }));
+
     addMessage('user', text);
     input.value = ''; input.style.height = 'auto';
     sendBtn.disabled = true;
@@ -299,8 +285,7 @@
     const showBubble = () => { if (!bubbleShown) { status.remove(); wrap.appendChild(bubble); bubbleShown = true; } };
 
     function onEvent(ev) {
-      if (ev.type === 'session') { sessionId = ev.session_id; localStorage.setItem('malten_session', sessionId); }
-      else if (ev.type === 'status') { if (!bubbleShown) setStatus(statusLabel(ev.tool)); }
+      if (ev.type === 'status') { if (!bubbleShown) setStatus(statusLabel(ev.tool)); }
       else if (ev.type === 'delta') { showBubble(); acc += ev.text; bubble.innerHTML = md(acc); log.scrollTop = log.scrollHeight; }
       else if (ev.type === 'error') { showBubble(); acc = acc || ev.error; bubble.innerHTML = md(acc); }
       else if (ev.type === 'done') { reply = ev.reply; if (!bubbleShown && reply && reply.text) { showBubble(); bubble.innerHTML = md(reply.text); } }
@@ -309,7 +294,7 @@
     try {
       const res = await fetch('/api/chat/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, message: text })
+        body: JSON.stringify({ messages: prior, issues: Malten.openIssues(), message: text })
       });
       if (!res.ok || !res.body) throw new Error('stream unavailable');
       const reader = res.body.getReader(), dec = new TextDecoder();
@@ -326,9 +311,17 @@
           try { onEvent(JSON.parse(line)); } catch (_) { /* ignore malformed frame */ }
         }
       }
-      if (!bubbleShown) { showBubble(); bubble.innerHTML = md(acc || '…'); }
+      const answer = acc || (reply && reply.text) || '…';
+      if (!bubbleShown) { showBubble(); bubble.innerHTML = md(answer); }
       debugMeta(wrap, reply);
-      loadSessions(); // reflect a new/renamed conversation in the sidebar
+
+      // Persist the exchange and any issue changes locally.
+      current.messages.push({ role: 'user', text }, { role: 'agent', text: answer });
+      current.updatedAt = Date.now();
+      if (!current.title) current.title = deriveTitle(text);
+      Malten.setConvos(convos);
+      if (reply) Malten.mergeIssueChanges(reply.issue_changes);
+      renderSidebar();
     } catch (err) {
       if (!bubbleShown) { status.remove(); wrap.appendChild(bubble); bubbleShown = true; }
       bubble.innerHTML = md(acc || ('Network error: ' + err.message));
@@ -337,8 +330,8 @@
     }
   });
 
-  loadSessions();
-  loadHistory();
+  renderSidebar();
+  renderConvo();
   input.focus();
 </script>
 {{end}}

@@ -7,14 +7,23 @@ carries engineering invariants, not product docs.
 
 Malten is a conversational support companion for **neurodivergent people**
 (ADHD, autism and related), written in Go and shipping as a single binary with
-an embedded chat UI and a SQLite database. Someone sends a message; the agent
-helps them name what they're stuck on, think it through, and shape a small next
-step — logging things worth revisiting as "issues". It is not a therapist,
-diagnostician or crisis service, and must never present itself as one; crisis
-messages are met with care and a signpost to real help.
+an embedded chat UI. Someone sends a message; the agent helps them name what
+they're stuck on, think it through, and shape a small next step — logging things
+worth revisiting as "issues". It is not a therapist, diagnostician or crisis
+service, and must never present itself as one; crisis messages are met with care
+and a signpost to real help.
 
 The moat is the **context around the model** (neurodivergent-aware framing, the
-knowledge base, the issues/plans structure, session memory) — not the raw LLM.
+knowledge base, the issues/plans structure, cross-conversation memory) — not the
+raw LLM.
+
+**The server is stateless and anonymous.** It stores nothing about users: no
+accounts, no sessions, no conversations, no issues on disk. Conversations and
+issues live in the **browser** (`web/app.js`, localStorage) and travel up with
+each request as context; the server assembles a prompt, calls the model, streams
+a reply (plus any issue changes for the client to save), and forgets. This is a
+deliberate privacy choice — there is no user data server-side to leak or
+encrypt. Real accounts (and cross-device sync) are a later, opt-in story.
 
 ## Repository map
 
@@ -25,10 +34,12 @@ internal/agent    the bounded agent loop + system prompt
 internal/llm      LLM interface + Stub (deterministic) and Claude backends
 internal/tools    Tool interface, Registry, and the capabilities (search, create_issue)
 internal/policy   validation boundary for destructive actions (fail-closed)
-internal/store    SQLite persistence + schema.sql + self-help seed
-internal/server   HTTP handlers + embedded web UI
+internal/store    in-memory, read-only knowledge base (KB) — no user data
+internal/tools    Tool interface + issuebook.go (request-scoped, in-memory issues)
+internal/server   stateless HTTP handlers + embedded web UI
+internal/server/web  UI, incl. app.js — the client-side store (localStorage)
 internal/app      single wiring point (Build) used by server and eval
-internal/eval     evaluation harness, scenarios, metrics
+internal/eval     evaluation harness (emulates a client), scenarios, metrics
 internal/id       short random ids
 ```
 
@@ -58,19 +69,21 @@ end-to-end contract and asserts **zero safety violations**.
   (Deny). There are no destructive tools today — keep the seam anyway.
 - **The agent loop must terminate.** Keep the `MaxSteps` bound; on exhaustion it
   closes the turn gently rather than looping.
-- **The transcript is the memory.** Persist assistant tool-call turns and their
-  results as content blocks so multi-turn context replays. Every `tool_use` must
-  be answered by a `tool_result` in the next message, or the Anthropic API 400s.
+- **The server stores nothing about users.** History and issues arrive per
+  request (`agent.Turn`) and issue changes are returned for the client to save;
+  the agent keeps no state. Don't add server-side persistence of user content —
+  that's the whole privacy model. Within a single turn, every `tool_use` must
+  still be answered by a `tool_result` in the next message, or the Anthropic API
+  400s.
 - **The LLM interface stays narrow and provider-agnostic.** Stub and Claude both
-  satisfy `llm.LLM`; anything the agent needs goes through `Complete`.
+  satisfy `llm.LLM` (`Complete` and `Stream`); anything the agent needs goes
+  through it.
 - **Extensibility is the point.** A new capability is a `Tool` implementation, a
   `Register` call in `internal/app`, and (if destructive) a `policy.Validate`
-  case. Prefer that over special-casing the agent.
+  case. Prefer that over special-casing the agent. Tools that "remember" write
+  to the request-scoped `tools.IssueBook`, never to disk.
 - **Single binary.** Keep SQLite pure-Go (`modernc.org/sqlite`, no cgo) and the
   UI embedded (`//go:embed`). No cgo, no external asset/CDN dependencies.
-- **Restart safety.** The binary restarts on deploy while the SQLite data
-  persists. Anything unique/monotonic across the data's lifetime must derive
-  from the store or randomness (`internal/id`), never a process-memory counter.
 
 ## Model usage
 
@@ -89,6 +102,11 @@ end-to-end contract and asserts **zero safety violations**.
 ## Known limitations / future work
 
 - KB retrieval is term-overlap, not embeddings.
-- No streaming responses or conversation sidebar yet (planned).
-- No accounts or subscriptions yet (subscriptions planned).
+- Client-held data is per-device (localStorage); no cross-device sync. Clearing
+  browser data clears everything. Cross-device would need accounts.
+- No accounts yet — intentional, for anonymity. Real accounts + subscriptions
+  are a later, opt-in story.
+- Content still transits the model provider's API in the clear (unavoidable
+  while an LLM reads the text); "we don't store it" is the honest claim, not
+  "no machine sees it".
 - License is AGPL-3.0.

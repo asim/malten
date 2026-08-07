@@ -1,6 +1,6 @@
-// Package app wires the pieces (store, tool registry, policy, agent) together.
-// Both the HTTP server (cmd/malten) and the evaluation harness build their
-// agent through Build so they exercise an identical configuration.
+// Package app wires the pieces (knowledge base, tool registry, policy, agent)
+// together. Both the HTTP server (cmd/malten) and the evaluation harness build
+// their agent through Build so they exercise an identical configuration.
 package app
 
 import (
@@ -11,9 +11,8 @@ import (
 	"github.com/asim/malten/internal/tools"
 )
 
-// Build opens the store at dbPath (use ":memory:" for ephemeral use), registers
-// the full tool set and returns a ready agent. Adding a capability is a single
-// Register call here.
+// Build opens the in-memory knowledge base, registers the tool set and returns a
+// ready (stateless) agent. Adding a capability is a single Register call here.
 func Build(model llm.LLM, dbPath string) (*agent.Agent, *store.Store, error) {
 	st, err := store.Open(dbPath)
 	if err != nil {
@@ -22,10 +21,10 @@ func Build(model llm.LLM, dbPath string) (*agent.Agent, *store.Store, error) {
 
 	reg := tools.NewRegistry()
 	reg.Register(&tools.Search{Store: st})
-	reg.Register(&tools.CreateIssue{Store: st})
-	reg.Register(&tools.UpdateIssue{Store: st})
+	reg.Register(&tools.CreateIssue{})
+	reg.Register(&tools.UpdateIssue{})
 
 	pol := policy.New(st)
-	ag := agent.New(model, reg, pol, st)
+	ag := agent.New(model, reg, pol)
 	return ag, st, nil
 }

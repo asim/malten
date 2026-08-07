@@ -4,12 +4,12 @@
 // Configuration (environment variables):
 //
 //	MALTEN_ADDR    listen address (default :8080)
-//	MALTEN_DB      SQLite file path (default malten.db)
 //	MALTEN_LLM     "stub" (default) or "claude"
 //	MALTEN_MODEL   Claude model id (default claude-opus-4-8) when MALTEN_LLM=claude
 //	ANTHROPIC_API_KEY  used by the claude backend
 //
-// With no API key the stub backend runs so the app is fully usable offline.
+// The server is stateless: it stores nothing about users on disk. With no API
+// key the stub backend runs so the app is fully usable offline.
 package main
 
 import (
@@ -24,25 +24,21 @@ import (
 
 func main() {
 	addr := env("MALTEN_ADDR", ":8080")
-	dbPath := env("MALTEN_DB", "malten.db")
 
 	model := chooseModel()
 
-	ag, st, err := app.Build(model, dbPath)
+	ag, st, err := app.Build(model, "")
 	if err != nil {
 		log.Fatalf("build: %v", err)
 	}
 	defer st.Close()
 
-	// Startup diagnostics: report the persisted store so restart-related issues
-	// (e.g. an unexpected/empty database) are easy to spot in the logs.
-	if stats, err := st.Stats(); err == nil {
-		log.Printf("malten: store %s — %d sessions, %d messages, %d issues",
-			st.Path(), stats.Sessions, stats.Messages, stats.Issues)
+	if n, err := st.KBCount(); err == nil {
+		log.Printf("malten: stateless server — in-memory KB with %d articles, no user data on disk", n)
 	}
 
 	srv := server.New(ag, st)
-	log.Printf("malten listening on %s (model=%s, db=%s)", addr, model.Name(), dbPath)
+	log.Printf("malten listening on %s (model=%s)", addr, model.Name())
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 		log.Fatal(err)
 	}

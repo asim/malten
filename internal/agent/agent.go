@@ -1,7 +1,12 @@
-// Package agent implements the core loop: take a message from the user, decide
+// Package agent implements the core loop: take the user's message plus the
+// context the client sends up (prior messages and their open issues), decide
 // which tools to call, execute the safe ones (validating any destructive ones
 // through the policy layer), and produce a reply. The loop is bounded so it
 // always terminates.
+//
+// The agent is stateless: it persists nothing. History and issues are supplied
+// per request and the resulting issue changes are handed back for the client to
+// store. See internal/store for why the server keeps no user data.
 package agent
 
 import (
@@ -20,26 +25,32 @@ import (
 // always terminates even if the model keeps requesting tools.
 const DefaultMaxSteps = 8
 
-// Agent orchestrates the model, tools, policy and store.
+// Agent orchestrates the model, tools and policy. It holds no user state.
 type Agent struct {
 	Model    llm.LLM
 	Tools    *tools.Registry
 	Policy   *policy.Validator
-	Store    *store.Store
 	MaxSteps int
 	System   string
 }
 
 // New builds an Agent with default settings.
-func New(model llm.LLM, reg *tools.Registry, pol *policy.Validator, st *store.Store) *Agent {
+func New(model llm.LLM, reg *tools.Registry, pol *policy.Validator) *Agent {
 	return &Agent{
 		Model:    model,
 		Tools:    reg,
 		Policy:   pol,
-		Store:    st,
 		MaxSteps: DefaultMaxSteps,
 		System:   systemPrompt,
 	}
+}
+
+// Turn is the client-supplied context for one exchange: the prior transcript,
+// the user's open issues (their memory), and the new message.
+type Turn struct {
+	Messages []llm.Message
+	Issues   []store.Issue
+	Message  string
 }
 
 // Action records a single tool execution for the response and observability.
@@ -54,10 +65,12 @@ type Action struct {
 
 // Reply is the outcome of handling one user message.
 type Reply struct {
-	SessionID string   `json:"session_id"`
-	Text      string   `json:"text"`
-	Steps     int      `json:"steps"`
-	Actions   []Action `json:"actions,omitempty"`
+	Text string `json:"text"`
+	// IssueChanges are the issues the agent created or updated this turn, for
+	// the client to merge into its local store.
+	IssueChanges []store.Issue `json:"issue_changes,omitempty"`
+	Steps        int           `json:"steps"`
+	Actions      []Action      `json:"actions,omitempty"`
 }
 
 // StreamEvent is emitted during HandleStream as the turn unfolds: either a piece
@@ -67,52 +80,36 @@ type StreamEvent struct {
 	Tool  string // a tool that is starting to run
 }
 
-// Handle runs the agent loop for one user message within a session and returns
-// the final reply. The session must already exist.
-func (a *Agent) Handle(ctx context.Context, sessionID, userMessage string) (*Reply, error) {
-	return a.run(ctx, sessionID, userMessage, nil)
+// Handle runs the agent loop for one turn and returns the final reply.
+func (a *Agent) Handle(ctx context.Context, turn Turn) (*Reply, error) {
+	return a.run(ctx, turn, nil)
 }
 
 // HandleStream is like Handle but streams the turn: emit is called with
-// incremental assistant text and tool status as they happen. It still returns
-// the final reply once the turn completes.
-func (a *Agent) HandleStream(ctx context.Context, sessionID, userMessage string, emit func(StreamEvent)) (*Reply, error) {
-	return a.run(ctx, sessionID, userMessage, emit)
+// incremental assistant text and tool status as they happen.
+func (a *Agent) HandleStream(ctx context.Context, turn Turn, emit func(StreamEvent)) (*Reply, error) {
+	return a.run(ctx, turn, emit)
 }
 
-func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit func(StreamEvent)) (*Reply, error) {
-	if err := a.Store.TouchSession(sessionID); err != nil {
-		return nil, err
-	}
-
-	history, err := a.Store.LoadMessages(sessionID)
-	if err != nil {
-		return nil, err
-	}
-	// The first message names the conversation for the sidebar.
-	if len(history) == 0 {
-		_ = a.Store.SetSessionTitle(sessionID, sessionTitle(userMessage))
-	}
-
-	userMsg := llm.UserText(userMessage)
-	if err := a.Store.AppendMessage(sessionID, userMsg); err != nil {
-		return nil, err
-	}
-	history = append(history, userMsg)
-
-	reply := &Reply{SessionID: sessionID}
-
-	// The user's open issues travel with every turn as memory across sessions.
+func (a *Agent) run(ctx context.Context, turn Turn, emit func(StreamEvent)) (*Reply, error) {
+	// The user's open issues travel with the turn as memory across sessions.
 	system := a.System
-	if issues, err := a.Store.OpenIssues(8); err == nil && len(issues) > 0 {
-		system += "\n\n" + issuesContext(issues)
+	if len(turn.Issues) > 0 {
+		system += "\n\n" + issuesContext(turn.Issues)
 	}
+
+	history := append([]llm.Message{}, turn.Messages...)
+	history = append(history, llm.UserText(turn.Message))
+
+	book := tools.NewIssueBook(turn.Issues)
+	reply := &Reply{}
 
 	for step := 0; step < a.MaxSteps; step++ {
 		reply.Steps = step + 1
 
 		req := llm.Request{System: system, Messages: history, Tools: a.Tools.Defs()}
 		var resp *llm.Response
+		var err error
 		if emit != nil {
 			resp, err = a.Model.Stream(ctx, req, func(t string) { emit(StreamEvent{Delta: t}) })
 		} else {
@@ -124,23 +121,12 @@ func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit fun
 
 		toolUses := resp.ToolUses()
 		if len(toolUses) == 0 {
-			// Final answer.
-			text := resp.Text()
-			assistant := llm.Message{Role: llm.RoleAssistant, Content: []llm.Block{llm.Text(text)}}
-			if err := a.Store.AppendMessage(sessionID, assistant); err != nil {
-				return nil, err
-			}
-			reply.Text = text
+			reply.Text = resp.Text()
+			reply.IssueChanges = book.Changes()
 			return reply, nil
 		}
 
-		// Persist the assistant turn (which carries the tool_use blocks) before
-		// executing tools, so the transcript is complete and replayable.
-		assistant := llm.Message{Role: llm.RoleAssistant, Content: resp.Content}
-		if err := a.Store.AppendMessage(sessionID, assistant); err != nil {
-			return nil, err
-		}
-		history = append(history, assistant)
+		history = append(history, llm.Message{Role: llm.RoleAssistant, Content: resp.Content})
 
 		var results []llm.Block
 		for _, call := range toolUses {
@@ -148,7 +134,6 @@ func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit fun
 			if !ok {
 				res := "unknown tool: " + call.Name
 				results = append(results, llm.ToolResult(call.ID, res, true))
-				a.audit(sessionID, call, "n/a", "", res, true)
 				reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: "n/a", Result: res, IsError: true})
 				continue
 			}
@@ -167,45 +152,35 @@ func (a *Agent) run(ctx context.Context, sessionID, userMessage string, emit fun
 			if decision.Outcome == policy.Deny {
 				res := "action not permitted: " + decision.Reason
 				results = append(results, llm.ToolResult(call.ID, res, true))
-				a.audit(sessionID, call, string(policy.Deny), decision.Reason, res, true)
 				reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: string(policy.Deny), Reason: decision.Reason, Result: res, IsError: true})
 				continue
 			}
 
-			// Allowed: execute.
-			ci := tools.CallInfo{SessionID: sessionID}
-			out, err := tool.Execute(tools.WithCallInfo(ctx, ci), call.Input)
+			out, err := tool.Execute(tools.WithCallInfo(ctx, tools.CallInfo{Issues: book}), call.Input)
 			if err != nil {
 				return nil, fmt.Errorf("execute %s: %w", call.Name, err)
 			}
 			results = append(results, llm.ToolResult(call.ID, out.Content, out.IsError))
-			a.audit(sessionID, call, string(policy.Allow), "", out.Content, out.IsError)
 			reply.Actions = append(reply.Actions, Action{Tool: call.Name, Input: call.Input, Decision: string(policy.Allow), Result: out.Content, IsError: out.IsError})
 		}
 
-		// Feed the tool results back to the model as a user turn.
-		toolMsg := llm.Message{Role: llm.RoleUser, Content: results}
-		if err := a.Store.AppendMessage(sessionID, toolMsg); err != nil {
-			return nil, err
-		}
-		history = append(history, toolMsg)
+		history = append(history, llm.Message{Role: llm.RoleUser, Content: results})
 	}
 
 	// Step budget exhausted: close the turn gently rather than looping.
-	text := "I want to give this the attention it deserves, but I've gone in circles for a moment. Can we slow down — what feels most important to you right now?"
-	assistant := llm.Message{Role: llm.RoleAssistant, Content: []llm.Block{llm.Text(text)}}
-	if err := a.Store.AppendMessage(sessionID, assistant); err != nil {
-		return nil, err
-	}
-	reply.Text = text
+	reply.Text = "I want to give this the attention it deserves, but I've gone in circles for a moment. Can we slow down — what feels most important to you right now?"
+	reply.IssueChanges = book.Changes()
 	return reply, nil
 }
 
 // issuesContext renders the user's open issues as background memory for a turn.
 func issuesContext(issues []store.Issue) string {
 	var b strings.Builder
-	b.WriteString("What this person is currently working through (from earlier conversations), each with an id:\n")
+	b.WriteString("What this person is currently working through (they raised these in earlier conversations), each with an id:\n")
 	for _, iss := range issues {
+		if iss.Status == "closed" {
+			continue
+		}
 		b.WriteString("- [" + iss.ID + "] " + iss.Title)
 		if strings.TrimSpace(iss.Plan) != "" {
 			b.WriteString(" — plan: " + iss.Plan)
@@ -213,24 +188,6 @@ func issuesContext(issues []store.Issue) string {
 		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
-}
-
-// sessionTitle derives a short conversation title from the first message.
-func sessionTitle(msg string) string {
-	msg = strings.TrimSpace(strings.Join(strings.Fields(msg), " "))
-	const max = 60
-	if len(msg) > max {
-		msg = strings.TrimSpace(msg[:max]) + "…"
-	}
-	if msg == "" {
-		msg = "New conversation"
-	}
-	return msg
-}
-
-func (a *Agent) audit(sessionID string, call llm.Block, decision, reason, result string, isErr bool) {
-	// Audit failures should not break the conversation; best-effort.
-	_ = a.Store.RecordAudit(sessionID, call.Name, call.Input, decision, reason, result, isErr)
 }
 
 const systemPrompt = `You are Malten, a warm, steady companion built for neurodivergent people — those with ADHD, autism, and related ways of thinking. You help one person — the user — work with their own mind rather than against it.

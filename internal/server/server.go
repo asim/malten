@@ -1,9 +1,10 @@
 // Package server exposes the agent over HTTP and serves the embedded chat UI.
 //
-// Session handling is deliberately lightweight (no accounts/login): the client
-// may supply a session_id, or the server mints one on first contact and returns
-// it. History is keyed by that id in the store. A cookie is also set as a
-// convenience so a browser reload keeps its session.
+// The server is stateless and anonymous: it keeps no accounts, no sessions and
+// no user content. Each request carries the context it needs — the prior
+// messages and the user's open issues — and the server assembles a prompt,
+// calls the model, streams a reply (plus any issue changes for the client to
+// save), and forgets. All durable state lives in the browser.
 package server
 
 import (
@@ -17,7 +18,7 @@ import (
 	"time"
 
 	"github.com/asim/malten/internal/agent"
-	"github.com/asim/malten/internal/id"
+	"github.com/asim/malten/internal/llm"
 	"github.com/asim/malten/internal/store"
 )
 
@@ -25,8 +26,7 @@ import (
 var webFS embed.FS
 
 // pages holds the HTML pages, each composed from the shared base layout
-// (web/base.html) plus that page's content — so every page shares one header,
-// theme and page width. Parsed once at startup from the embedded FS.
+// (web/base.html) plus that page's content. Parsed once at startup.
 var pages = map[string]*template.Template{
 	"index":  mustPage("page-index.html"),
 	"issues": mustPage("page-issues.html"),
@@ -44,7 +44,7 @@ type pageData struct {
 	ChatViewport bool   // opt into the mobile-keyboard viewport handling
 }
 
-// Server wires the agent and store to HTTP handlers.
+// Server wires the agent and knowledge base to HTTP handlers.
 type Server struct {
 	Agent   *agent.Agent
 	Store   *store.Store
@@ -61,15 +61,13 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/chat", s.handleChat)
 	mux.HandleFunc("/api/chat/stream", s.handleChatStream)
-	mux.HandleFunc("/api/session/", s.handleSession)
-	mux.HandleFunc("/api/sessions", s.handleSessions)
-	mux.HandleFunc("/api/issues", s.handleIssues)
-	mux.HandleFunc("/issues", s.handleIssuesPage)
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/issues", s.handleIssuesPage)
 	// Static + PWA assets, each served from the embedded FS with an explicit
 	// content type. sw.js is served no-cache so a new worker is picked up on
 	// deploy; the manifest and icons make the app installable.
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
+	mux.Handle("/app.js", staticAsset("app.js", "text/javascript; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/manifest.webmanifest", staticAsset("manifest.webmanifest", "application/manifest+json", "public, max-age=3600"))
 	mux.Handle("/sw.js", staticAsset("sw.js", "text/javascript; charset=utf-8", "no-cache"))
 	mux.Handle("/icon-192.png", staticAsset("icon-192.png", "image/png", "public, max-age=86400"))
@@ -79,49 +77,72 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// handleHealth is the operational check: model, uptime and row counts. Handy
-// for spotting whether the persisted store looks as expected after a restart.
+// handleHealth is the operational check: model, uptime and knowledge-base size.
+// It reports nothing about users because the server holds nothing about them.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"status":         "ok",
 		"model":          s.Agent.Model.Name(),
 		"uptime_seconds": int(time.Since(s.started).Seconds()),
 	}
-	if stats, err := s.Store.Stats(); err == nil {
-		resp["sessions"] = stats.Sessions
-		resp["messages"] = stats.Messages
-		resp["issues"] = stats.Issues
+	if n, err := s.Store.KBCount(); err == nil {
+		resp["kb_articles"] = n
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
-type chatRequest struct {
-	SessionID string `json:"session_id"`
-	Message   string `json:"message"`
+// clientMessage is one prior turn as the client stores it (plain text).
+type clientMessage struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
 }
 
-func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
+// chatRequest is the full context the client sends up for one exchange.
+type chatRequest struct {
+	Messages []clientMessage `json:"messages"`
+	Issues   []store.Issue   `json:"issues"`
+	Message  string          `json:"message"`
+}
+
+// turn converts a request into an agent.Turn.
+func turn(req chatRequest) agent.Turn {
+	var msgs []llm.Message
+	for _, m := range req.Messages {
+		if strings.TrimSpace(m.Text) == "" {
+			continue
+		}
+		role := llm.RoleAssistant
+		if m.Role == "user" {
+			role = llm.RoleUser
+		}
+		msgs = append(msgs, llm.Message{Role: role, Content: []llm.Block{llm.Text(m.Text)}})
+	}
+	return agent.Turn{Messages: msgs, Issues: req.Issues, Message: strings.TrimSpace(req.Message)}
+}
+
+func decodeChat(w http.ResponseWriter, r *http.Request) (chatRequest, bool) {
+	var req chatRequest
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+		return req, false
 	}
-	var req chatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-		return
+		return req, false
 	}
 	if strings.TrimSpace(req.Message) == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message is required"})
+		return req, false
+	}
+	return req, true
+}
+
+func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeChat(w, r)
+	if !ok {
 		return
 	}
-
-	sessionID, err := s.resolveSession(w, r, req.SessionID)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-
-	reply, err := s.Agent.Handle(r.Context(), sessionID, req.Message)
+	reply, err := s.Agent.Handle(r.Context(), turn(req))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -129,32 +150,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, reply)
 }
 
-// handleChatStream is the streaming counterpart to handleChat: it emits
-// Server-Sent Events as the turn unfolds (assistant text deltas, tool status),
-// then a final "done" event carrying the full reply.
+// handleChatStream is the streaming counterpart: it emits Server-Sent Events as
+// the turn unfolds (assistant text deltas, tool status), then a final "done"
+// event carrying the full reply (including any issue changes to save).
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req chatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-		return
-	}
-	if strings.TrimSpace(req.Message) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message is required"})
+	req, ok := decodeChat(w, r)
+	if !ok {
 		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		s.fail(w, r, fmt.Errorf("streaming unsupported"))
-		return
-	}
-
-	sessionID, err := s.resolveSession(w, r, req.SessionID)
-	if err != nil {
-		s.fail(w, r, err)
 		return
 	}
 
@@ -169,9 +175,8 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "data: %s\n\n", b)
 		flusher.Flush()
 	}
-	send(map[string]any{"type": "session", "session_id": sessionID})
 
-	reply, err := s.Agent.HandleStream(r.Context(), sessionID, req.Message, func(ev agent.StreamEvent) {
+	reply, err := s.Agent.HandleStream(r.Context(), turn(req), func(ev agent.StreamEvent) {
 		if ev.Delta != "" {
 			send(map[string]any{"type": "delta", "text": ev.Delta})
 		}
@@ -180,116 +185,20 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 	if err != nil {
-		log.Printf("malten: stream %s: %v", sessionID, err)
+		log.Printf("malten: stream: %v", err)
 		send(map[string]any{"type": "error", "error": "Sorry, something went wrong. Please try again."})
 		return
 	}
 	send(map[string]any{"type": "done", "reply": reply})
 }
 
-// resolveSession resolves the session id from the request body, then a cookie,
-// then mints a new one; it sets the session cookie and returns the id.
-func (s *Server) resolveSession(w http.ResponseWriter, r *http.Request, bodySession string) (string, error) {
-	sessionID := strings.TrimSpace(bodySession)
-	if sessionID == "" {
-		if c, err := r.Cookie("malten_session"); err == nil {
-			sessionID = c.Value
-		}
-	}
-	if sessionID == "" {
-		if err := s.ensureSession(id.New("SESS"), &sessionID); err != nil {
-			return "", err
-		}
-	} else if ok, _ := s.Store.SessionExists(sessionID); !ok {
-		if err := s.Store.CreateSession(sessionID); err != nil {
-			return "", err
-		}
-	}
-	http.SetCookie(w, &http.Cookie{Name: "malten_session", Value: sessionID, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
-	return sessionID, nil
-}
-
-// ensureSession creates a session, retrying with a fresh id on the astronomically
-// unlikely event of an id collision, and writes the id actually used to out.
-func (s *Server) ensureSession(candidate string, out *string) error {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if err := s.Store.CreateSession(candidate); err == nil {
-			*out = candidate
-			return nil
-		} else {
-			lastErr = err
-		}
-		candidate = id.New("SESS")
-	}
-	return lastErr
-}
-
 // fail logs the real error server-side and returns a generic message to the
-// client so internal details (e.g. SQL errors) are never shown to users.
+// client so internal details are never shown to users.
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	log.Printf("malten: %s %s: %v", r.Method, r.URL.Path, err)
 	writeJSON(w, http.StatusInternalServerError, map[string]string{
 		"error": "Sorry, something went wrong on our end. Please try again.",
 	})
-}
-
-func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	sessionID := strings.TrimPrefix(r.URL.Path, "/api/session/")
-	if sessionID == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-	msgs, err := s.Store.LoadMessages(sessionID)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"session_id": sessionID, "messages": msgs})
-}
-
-func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	sessions, err := s.Store.ListSessions()
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
-}
-
-func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		var in struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-			Plan   string `json:"plan"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-			return
-		}
-		if in.ID == "" || (in.Status != "" && in.Status != "open" && in.Status != "closed") {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id and a valid status are required"})
-			return
-		}
-		iss, err := s.Store.UpdateIssue(in.ID, in.Plan, in.Status)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		if iss == nil {
-			http.NotFound(w, r)
-			return
-		}
-		writeJSON(w, http.StatusOK, iss)
-		return
-	}
-	issues, err := s.Store.ListIssues()
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"issues": issues})
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -318,8 +227,7 @@ func renderPage(w http.ResponseWriter, name string, data pageData) {
 }
 
 // staticAsset serves a single embedded file from web/ with an explicit content
-// type and cache policy. Used for the stylesheet and the PWA assets (manifest,
-// service worker, icons).
+// type and cache policy.
 func staticAsset(file, contentType, cacheControl string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, err := webFS.ReadFile("web/" + file)

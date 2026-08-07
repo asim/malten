@@ -1,62 +1,56 @@
-// Package store is the SQLite persistence layer. It owns sessions, the full
-// message transcript, a small self-help knowledge base, the issues you're
-// working through, and an audit log of tool calls.
+// Package store holds the only thing the server keeps: a small, read-only
+// self-help knowledge base, seeded at startup into an in-memory SQLite database.
 //
-// It uses the pure-Go modernc.org/sqlite driver so the whole application builds
-// and ships as a single static binary with no cgo.
+// Malten deliberately persists nothing about users. Conversations, issues and
+// the "what I'm working through" memory all live on the client and travel up
+// with each request; the server assembles a prompt, calls the model, streams a
+// reply, and forgets. There is no user data on disk to leak, scope or encrypt.
+//
+// The pure-Go modernc.org/sqlite driver keeps the whole app a single static
+// binary with no cgo.
 package store
 
 import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/asim/malten/internal/llm"
 	_ "modernc.org/sqlite"
 )
 
 //go:embed schema.sql
 var schema string
 
-// Store wraps a SQLite database.
+// Store wraps an in-memory SQLite database holding the knowledge base.
 type Store struct {
-	db   *sql.DB
-	path string
+	db *sql.DB
 }
 
-// Stats is a snapshot of row counts, used for startup diagnostics and health.
-type Stats struct {
-	Sessions int `json:"sessions"`
-	Messages int `json:"messages"`
-	Issues   int `json:"issues"`
-}
-
-// Issue is something the user is working through. The agent logs it, optionally
-// with a plan, so it can be revisited.
+// Issue is something the user is working through. It is a data-transfer type:
+// the client owns the canonical copy, sends open issues up as memory, and the
+// server returns any changes the agent made this turn. Nothing is stored here.
 type Issue struct {
 	ID        string    `json:"id"`
-	SessionID string    `json:"session_id"`
 	Title     string    `json:"title"`
 	Plan      string    `json:"plan"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Open opens (creating if needed) a SQLite database at path, applies the schema
-// and seeds the self-help library if it is empty. Use ":memory:" for tests.
-func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+// Open opens an in-memory database, applies the schema and seeds the self-help
+// library. The path argument is accepted for compatibility but a shared
+// in-memory database is always used — the server never writes to disk.
+func Open(_ string) (*Store, error) {
+	// A shared-cache in-memory database kept alive by a single connection.
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared")
 	if err != nil {
 		return nil, err
 	}
-	// SQLite tolerates a single writer; cap connections to avoid "database is
-	// locked" under concurrent HTTP requests.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, path: path}
+	s := &Store{db: db}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
@@ -69,31 +63,15 @@ func Open(path string) (*Store, error) {
 // Close closes the underlying database.
 func (s *Store) Close() error { return s.db.Close() }
 
-// Path returns the database path this store was opened with.
-func (s *Store) Path() string { return s.path }
-
 // Ping verifies the database is reachable.
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
-// Stats returns current row counts.
-func (s *Store) Stats() (Stats, error) {
-	var st Stats
-	for _, q := range []struct {
-		sql string
-		dst *int
-	}{
-		{`SELECT COUNT(*) FROM sessions`, &st.Sessions},
-		{`SELECT COUNT(*) FROM messages`, &st.Messages},
-		{`SELECT COUNT(*) FROM issues`, &st.Issues},
-	} {
-		if err := s.db.QueryRow(q.sql).Scan(q.dst); err != nil {
-			return st, err
-		}
-	}
-	return st, nil
+// KBCount returns the number of knowledge-base articles.
+func (s *Store) KBCount() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM kb`).Scan(&n)
+	return n, err
 }
-
-func now() time.Time { return time.Now().UTC() }
 
 // seed inserts the self-help library on first run. The content is deliberately
 // general, non-clinical, well-established technique — not medical advice.
@@ -121,98 +99,6 @@ func (s *Store) seed() error {
 	}
 	return nil
 }
-
-// --- Sessions ---------------------------------------------------------------
-
-// SessionSummary is a row in the conversations list.
-type SessionSummary struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// CreateSession inserts a new session with the given id.
-func (s *Store) CreateSession(id string) error {
-	t := now()
-	_, err := s.db.Exec(`INSERT INTO sessions(id,created_at,updated_at) VALUES(?,?,?)`, id, t, t)
-	return err
-}
-
-// SessionExists reports whether a session id is known.
-func (s *Store) SessionExists(id string) (bool, error) {
-	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=?`, id).Scan(&n)
-	return n > 0, err
-}
-
-// TouchSession updates updated_at.
-func (s *Store) TouchSession(id string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET updated_at=? WHERE id=?`, now(), id)
-	return err
-}
-
-// SetSessionTitle sets a session's title, but only if it has none yet — so the
-// first message names the conversation and later ones don't rename it.
-func (s *Store) SetSessionTitle(id, title string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET title=? WHERE id=? AND title IS NULL`, title, id)
-	return err
-}
-
-// ListSessions returns titled sessions (i.e. those with at least one message),
-// newest activity first.
-func (s *Store) ListSessions() ([]SessionSummary, error) {
-	rows, err := s.db.Query(`SELECT id,COALESCE(title,''),updated_at FROM sessions WHERE title IS NOT NULL ORDER BY updated_at DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []SessionSummary
-	for rows.Next() {
-		var ss SessionSummary
-		if err := rows.Scan(&ss.ID, &ss.Title, &ss.UpdatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, ss)
-	}
-	return out, rows.Err()
-}
-
-// --- Messages ---------------------------------------------------------------
-
-// AppendMessage persists one message of the transcript.
-func (s *Store) AppendMessage(sessionID string, m llm.Message) error {
-	content, err := json.Marshal(m.Content)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.Exec(`INSERT INTO messages(session_id,role,content,created_at) VALUES(?,?,?,?)`,
-		sessionID, string(m.Role), string(content), now())
-	return err
-}
-
-// LoadMessages returns the full transcript for a session in order.
-func (s *Store) LoadMessages(sessionID string) ([]llm.Message, error) {
-	rows, err := s.db.Query(`SELECT role,content FROM messages WHERE session_id=? ORDER BY id`, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []llm.Message
-	for rows.Next() {
-		var role, content string
-		if err := rows.Scan(&role, &content); err != nil {
-			return nil, err
-		}
-		var blocks []llm.Block
-		if err := json.Unmarshal([]byte(content), &blocks); err != nil {
-			return nil, err
-		}
-		out = append(out, llm.Message{Role: llm.Role(role), Content: blocks})
-	}
-	return out, rows.Err()
-}
-
-// --- Knowledge base ---------------------------------------------------------
 
 // SearchKB returns up to k self-help chunks matching query terms. It is a
 // simple term-overlap search over title and content, ranked by match count.
@@ -277,116 +163,10 @@ func (s *Store) SearchKB(query string, k int) ([]struct{ Title, Content string }
 	return out, nil
 }
 
-// --- Issues -----------------------------------------------------------------
-
-// CreateIssue inserts an issue and returns it.
-func (s *Store) CreateIssue(id, sessionID, title, plan string) (Issue, error) {
-	iss := Issue{
-		ID: id, SessionID: sessionID, Title: title, Plan: plan,
-		Status: "open", CreatedAt: now(),
-	}
-	_, err := s.db.Exec(`INSERT INTO issues(id,session_id,title,plan,status,created_at) VALUES(?,?,?,?,?,?)`,
-		iss.ID, nullable(iss.SessionID), iss.Title, nullable(iss.Plan), iss.Status, iss.CreatedAt)
-	return iss, err
-}
-
-// ListIssues returns the issues, newest first.
-func (s *Store) ListIssues() ([]Issue, error) {
-	return s.queryIssues(`SELECT id,COALESCE(session_id,''),title,COALESCE(plan,''),status,created_at FROM issues ORDER BY created_at DESC`)
-}
-
-// OpenIssues returns up to limit open issues, newest first. limit <= 0 means all.
-func (s *Store) OpenIssues(limit int) ([]Issue, error) {
-	q := `SELECT id,COALESCE(session_id,''),title,COALESCE(plan,''),status,created_at FROM issues WHERE status='open' ORDER BY created_at DESC`
-	if limit > 0 {
-		return s.queryIssues(q+` LIMIT ?`, limit)
-	}
-	return s.queryIssues(q)
-}
-
-func (s *Store) queryIssues(q string, args ...any) ([]Issue, error) {
-	rows, err := s.db.Query(q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Issue
-	for rows.Next() {
-		var iss Issue
-		if err := rows.Scan(&iss.ID, &iss.SessionID, &iss.Title, &iss.Plan, &iss.Status, &iss.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, iss)
-	}
-	return out, rows.Err()
-}
-
-// GetIssue loads one issue by id. Returns (nil, nil) if unknown.
-func (s *Store) GetIssue(id string) (*Issue, error) {
-	var iss Issue
-	err := s.db.QueryRow(`SELECT id,COALESCE(session_id,''),title,COALESCE(plan,''),status,created_at FROM issues WHERE id=?`, id).
-		Scan(&iss.ID, &iss.SessionID, &iss.Title, &iss.Plan, &iss.Status, &iss.CreatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &iss, nil
-}
-
-// UpdateIssue updates an issue's plan and/or status (empty strings leave a field
-// unchanged) and returns the updated issue, or (nil, nil) if the id is unknown.
-func (s *Store) UpdateIssue(id, plan, status string) (*Issue, error) {
-	var sets []string
-	var args []any
-	if plan != "" {
-		sets = append(sets, "plan=?")
-		args = append(args, plan)
-	}
-	if status != "" {
-		sets = append(sets, "status=?")
-		args = append(args, status)
-	}
-	if len(sets) > 0 {
-		args = append(args, id)
-		if _, err := s.db.Exec(`UPDATE issues SET `+strings.Join(sets, ",")+` WHERE id=?`, args...); err != nil {
-			return nil, err
-		}
-	}
-	return s.GetIssue(id)
-}
-
-// --- Audit ------------------------------------------------------------------
-
-// RecordAudit appends an entry to the immutable audit log.
-func (s *Store) RecordAudit(sessionID, tool string, input json.RawMessage, decision, reason, result string, isErr bool) error {
-	_, err := s.db.Exec(`INSERT INTO audit_log(session_id,tool,input,decision,reason,result,is_error,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-		nullable(sessionID), tool, string(input), decision, reason, result, boolInt(isErr), now())
-	return err
-}
-
-// --- helpers ----------------------------------------------------------------
-
-func nullable(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
 func tokenize(s string) []string {
 	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
 		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
 	})
-	// Drop very short/common words to reduce noise.
 	stop := map[string]bool{"the": true, "a": true, "an": true, "to": true, "my": true, "i": true, "how": true, "do": true, "can": true, "of": true, "is": true, "for": true, "you": true}
 	var out []string
 	for _, f := range fields {

@@ -28,6 +28,7 @@
 
 {{define "scripts"}}
 <script>
+  // Issues live in this browser only — read and written via the local store.
   const content = document.getElementById('content');
   function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
   function when(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); }
@@ -48,8 +49,9 @@
       </div>`;
   }
 
-  function render(issues) {
-    if (!issues || issues.length === 0) {
+  function render() {
+    const issues = Malten.getIssues();
+    if (!issues.length) {
       content.innerHTML = '<div class="empty">No issues yet.<br>They appear here when you and Malten decide something is worth coming back to.</div>';
       return;
     }
@@ -63,27 +65,13 @@
     }
   }
 
-  async function setStatus(id, status) {
-    try {
-      await fetch('/api/issues', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status })
-      });
-      load();
-    } catch (_) { /* leave as-is */ }
+  function setStatus(id, status) {
+    const issues = Malten.getIssues();
+    const it = issues.find(i => i.id === id);
+    if (it) { it.status = status; Malten.setIssues(issues); }
+    render();
   }
 
-  async function load() {
-    content.innerHTML = '<div class="error">Loading…</div>';
-    try {
-      const res = await fetch('/api/issues');
-      const data = await res.json();
-      if (data.error) { content.innerHTML = `<div class="error">${esc(data.error)}</div>`; return; }
-      render(data.issues || []);
-    } catch (err) {
-      content.innerHTML = `<div class="error">Couldn't load your issues.</div>`;
-    }
-  }
-  load();
+  render();
 </script>
 {{end}}

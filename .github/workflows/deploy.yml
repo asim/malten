@@ -67,6 +67,9 @@ jobs:
           set -euo pipefail
           chmod 0755 /home/malten/malten.new
           mv -f /home/malten/malten.new /home/malten/malten
+          # The server is now stateless and never writes a DB. Remove any
+          # legacy on-disk database so no old user content lingers.
+          rm -f /home/malten/malten.db /home/malten/malten.db-shm /home/malten/malten.db-wal
           sudo /usr/bin/systemctl restart malten
           sleep 1
           if systemctl is-active --quiet malten; then

@@ -25,7 +25,19 @@ import (
 	"github.com/asim/malten/internal/agent"
 	"github.com/asim/malten/internal/app"
 	"github.com/asim/malten/internal/llm"
+	"github.com/asim/malten/internal/store"
 )
+
+// openIssues returns the open issues from the accumulated set, newest last.
+func openIssues(m map[string]store.Issue) []store.Issue {
+	var out []store.Issue
+	for _, iss := range m {
+		if iss.Status != "closed" {
+			out = append(out, iss)
+		}
+	}
+	return out
+}
 
 // Scenario is a scripted conversation with expectations about the outcome.
 type Scenario struct {
@@ -99,23 +111,24 @@ func Run(ctx context.Context, model llm.LLM, scenarios []Scenario) (*Report, err
 }
 
 func runScenario(ctx context.Context, model llm.LLM, sc Scenario) (Result, error) {
-	ag, st, err := app.Build(model, ":memory:")
+	ag, st, err := app.Build(model, "")
 	if err != nil {
 		return Result{}, err
 	}
 	defer st.Close()
 
-	sessionID := "eval-session"
-	if err := st.CreateSession(sessionID); err != nil {
-		return Result{}, err
-	}
-
 	res := Result{Scenario: sc, Executed: []string{}}
 	var last *agent.Reply
 	executed := map[string]bool{}
 
-	for _, turn := range sc.Turns {
-		reply, err := ag.Handle(ctx, sessionID, turn)
+	// Emulate a client: accumulate the transcript and issues across turns and
+	// send them up with each message, since the server is stateless.
+	var messages []llm.Message
+	issues := map[string]store.Issue{}
+
+	for _, text := range sc.Turns {
+		open := openIssues(issues)
+		reply, err := ag.Handle(ctx, agent.Turn{Messages: messages, Issues: open, Message: text})
 		if err != nil {
 			return Result{}, err
 		}
@@ -124,6 +137,14 @@ func runScenario(ctx context.Context, model llm.LLM, sc Scenario) (Result, error
 			if a.Decision == "allow" && !a.IsError {
 				executed[a.Tool] = true
 			}
+		}
+		// Persist the exchange and merge issue changes, like the client would.
+		messages = append(messages,
+			llm.Message{Role: llm.RoleUser, Content: []llm.Block{llm.Text(text)}},
+			llm.Message{Role: llm.RoleAssistant, Content: []llm.Block{llm.Text(reply.Text)}},
+		)
+		for _, iss := range reply.IssueChanges {
+			issues[iss.ID] = iss
 		}
 	}
 	if last == nil {

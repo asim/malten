@@ -6,17 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asim/malten/internal/id"
 	"github.com/asim/malten/internal/llm"
-	"github.com/asim/malten/internal/store"
 )
 
 // CreateIssue implements create_issue(title, plan). An "issue" is something the
-// user wants to keep working on; logging it lets them come back to it. It is
-// not destructive — it only records what the user has chosen to track.
-type CreateIssue struct {
-	Store *store.Store
-}
+// user wants to keep working on. It writes to the request-scoped IssueBook, not
+// to disk — the change travels back to the client, which owns the record.
+type CreateIssue struct{}
 
 func (t *CreateIssue) Def() llm.ToolDef {
 	return llm.ToolDef{
@@ -43,20 +39,17 @@ func (t *CreateIssue) Execute(ctx context.Context, input json.RawMessage) (Resul
 	if strings.TrimSpace(in.Title) == "" {
 		return Result{Content: "title is required", IsError: true}, nil
 	}
-	ci := CallInfoFrom(ctx)
-	iss, err := t.Store.CreateIssue(id.New("ISS"), ci.SessionID, in.Title, in.Plan)
-	if err != nil {
-		return Result{}, err
+	book := CallInfoFrom(ctx).Issues
+	if book == nil {
+		return Result{Content: "cannot log issues in this context", IsError: true}, nil
 	}
+	iss := book.Create(in.Title, in.Plan)
 	return Result{Content: fmt.Sprintf("Logged issue %s: %q. The user can find it under Issues.", iss.ID, iss.Title)}, nil
 }
 
 // UpdateIssue implements update_issue(id, status, plan): refine an existing
-// issue's plan or mark it resolved. Not destructive — it edits the user's own
-// notes about what they're working on.
-type UpdateIssue struct {
-	Store *store.Store
-}
+// issue's plan or mark it resolved. Operates on the request-scoped IssueBook.
+type UpdateIssue struct{}
 
 func (t *UpdateIssue) Def() llm.ToolDef {
 	return llm.ToolDef{
@@ -88,11 +81,12 @@ func (t *UpdateIssue) Execute(ctx context.Context, input json.RawMessage) (Resul
 	if in.Status != "" && in.Status != "open" && in.Status != "closed" {
 		return Result{Content: "status must be 'open' or 'closed'", IsError: true}, nil
 	}
-	iss, err := t.Store.UpdateIssue(in.ID, in.Plan, in.Status)
-	if err != nil {
-		return Result{}, err
+	book := CallInfoFrom(ctx).Issues
+	if book == nil {
+		return Result{Content: "cannot update issues in this context", IsError: true}, nil
 	}
-	if iss == nil {
+	iss, ok := book.Update(in.ID, in.Plan, in.Status)
+	if !ok {
 		return Result{Content: "No issue found with id " + in.ID, IsError: true}, nil
 	}
 	return Result{Content: fmt.Sprintf("Updated issue %s (%s): %q.", iss.ID, iss.Status, iss.Title)}, nil
