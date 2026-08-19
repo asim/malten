@@ -39,11 +39,47 @@
   const hintEl = document.getElementById('hint');
   function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 
+  // Minimal, dependency-free markdown → HTML for chat replies. Input is escaped
+  // first, so the regexes only ever produce our own safe tags.
+  function mdInline(s) {
+    s = s.replace(/`([^`]+)`/g, (_, c) => '<code>' + c + '</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
+  }
+  function mdToHtml(src) {
+    const lines = esc(src).split('\n');
+    let html = '', list = null;
+    const closeList = () => { if (list) { html += '</' + list + '>'; list = null; } };
+    for (const line of lines) {
+      let m;
+      if ((m = line.match(/^\s*[-*]\s+(.*)$/))) {
+        if (list !== 'ul') { closeList(); html += '<ul>'; list = 'ul'; }
+        html += '<li>' + mdInline(m[1]) + '</li>';
+      } else if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) {
+        if (list !== 'ol') { closeList(); html += '<ol>'; list = 'ol'; }
+        html += '<li>' + mdInline(m[1]) + '</li>';
+      } else if ((m = line.match(/^\s*#{1,6}\s+(.*)$/))) {
+        closeList(); html += '<div class="mdh">' + mdInline(m[1]) + '</div>';
+      } else if (line.trim() === '') {
+        closeList();
+      } else {
+        closeList(); html += '<div>' + mdInline(line) + '</div>';
+      }
+    }
+    closeList();
+    return html;
+  }
+
   // OS Maps API (EPSG:3857) serves zoom 7–20; starting lower shows only 404s.
   const map = L.map('map', { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 20 }).setView([54.5, -2.5], 7);
   map.attributionControl.setPrefix(false);
   // Keep the (required) OS credit clear of the controls and chat on the right.
   map.attributionControl.setPosition('bottomleft');
+  // It shows as a compact one-line chip; tap it (not its links) to expand/collapse.
+  const attribEl = map.attributionControl.getContainer();
+  if (attribEl) attribEl.addEventListener('click', e => { if (e.target.tagName !== 'A') attribEl.classList.toggle('expanded'); });
 
   const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [16, 16], iconAnchor: [8, 16] });
   const meIcon = L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
@@ -429,11 +465,14 @@
 
   function openChat() {
     chat.hidden = false;
-    chatText.focus();
+    document.body.classList.add('chatting');
     if (!chatLog.childElementCount) addMsg('malten', 'Ask me what’s nearby, how to get somewhere, or what’s worth doing around here right now.');
+    chatLog.scrollTop = chatLog.scrollHeight;
+    chatText.focus();
   }
-  askBtn.onclick = () => { if (chat.hidden) openChat(); else chat.hidden = true; };
-  document.getElementById('chatClose').onclick = () => { chat.hidden = true; };
+  function closeChat() { chat.hidden = true; document.body.classList.remove('chatting'); }
+  askBtn.onclick = () => { if (chat.hidden) openChat(); else closeChat(); };
+  document.getElementById('chatClose').onclick = closeChat;
 
   function addMsg(who, text) {
     const el = document.createElement('div');
@@ -465,6 +504,8 @@
     asking = true;
     const bubble = addMsg('malten', '…');
     bubble.classList.add('streaming', 'toolonly');
+    let answer = '';
+    const pin = () => { chatLog.scrollTop = chatLog.scrollHeight; };
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 90000); // never lock the chat on a hung stream
     try {
@@ -492,14 +533,17 @@
           if (line === '' || line[0] === ':' || line === '[DONE]') continue; // skip blanks, comments, sentinel
           let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
           if (ev.Type === 'text') {
-            if (bubble.classList.contains('toolonly')) { bubble.classList.remove('toolonly'); bubble.textContent = ''; }
-            bubble.textContent += ev.Text;
-            chatLog.scrollTop = chatLog.scrollHeight;
+            if (bubble.classList.contains('toolonly')) { bubble.classList.remove('toolonly'); answer = ''; }
+            answer += ev.Text;
+            bubble.innerHTML = mdToHtml(answer);
+            pin();
           } else if (ev.Type === 'tool') {
-            if (bubble.classList.contains('toolonly')) bubble.textContent = toolPhrase(ev.Tool);
+            if (bubble.classList.contains('toolonly')) { bubble.textContent = toolPhrase(ev.Tool); pin(); }
           } else if (ev.Type === 'error') {
-            if (bubble.classList.contains('toolonly')) { bubble.classList.remove('toolonly'); bubble.textContent = ''; }
-            bubble.textContent += (bubble.textContent ? '\n' : '') + ev.Text;
+            bubble.classList.remove('toolonly');
+            answer = (answer ? answer + '\n' : '') + ev.Text;
+            bubble.textContent = answer;
+            pin();
           }
         }
       }
@@ -562,6 +606,20 @@
       if (ab) ab.onclick = () => { closeAround(); askAbout('What’s interesting to do near me right now? Give me a couple of concrete options and how to get to each.'); };
       clearTimeout(aroundTimer); aroundTimer = setTimeout(closeAround, 30000);
     } catch (_) {}
+  }
+
+  // Track the on-screen keyboard so the chat can sit above it (--kb). Without
+  // this the input hides behind the keyboard on phones.
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const onVV = () => {
+      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty('--kb', kb + 'px');
+      if (!chat.hidden) chatLog.scrollTop = chatLog.scrollHeight;
+    };
+    vv.addEventListener('resize', onVV);
+    vv.addEventListener('scroll', onVV);
+    onVV();
   }
 
   // --- wire it up ------------------------------------------------------------
