@@ -9,6 +9,7 @@
   <div id="map"></div>
   <div class="hint" id="hint">Tap the map to log a find</div>
   <div class="fabs">
+    <button class="fab" id="live" title="Live transport (London)">🚌</button>
     <button class="fab" id="locate" title="Find my location">◎</button>
   </div>
 </div>
@@ -187,6 +188,51 @@
       .catch(() => { map.setView(e.latlng, Math.max(16, map.getZoom())); });
   });
   map.on('locationerror', () => { hintEl.textContent = 'Location unavailable — tap the map to log a find'; });
+
+  // --- live transport overlay (TfL: London) ---------------------------------
+  const stopLayer = L.layerGroup().addTo(map);
+  const stopIcon = L.divIcon({ className: '', html: '<div class="stop"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
+  let live = false, loadTimer = null;
+  const liveBtn = document.getElementById('live');
+  liveBtn.onclick = () => {
+    live = !live; liveBtn.classList.toggle('accent', live);
+    if (live) loadStops(); else { stopLayer.clearLayers(); refreshUI(); }
+  };
+  map.on('moveend', () => { if (live) { clearTimeout(loadTimer); loadTimer = setTimeout(loadStops, 400); } });
+
+  async function loadStops() {
+    if (!live) return;
+    if (map.getZoom() < 14) { stopLayer.clearLayers(); hintEl.textContent = 'Zoom in to see live stops'; return; }
+    const c = map.getCenter();
+    try {
+      const res = await fetch('/api/stops?lat=' + c.lat + '&lng=' + c.lng + '&radius=500');
+      const d = await res.json();
+      stopLayer.clearLayers();
+      const stops = d.stops || [];
+      if (!stops.length) { hintEl.textContent = 'No live transport here — London only, for now'; return; }
+      hintEl.textContent = stops.length + ' stops nearby — tap one for live times';
+      stops.forEach(addStop);
+    } catch (_) { hintEl.textContent = 'Couldn’t load live transport'; }
+  }
+
+  function addStop(s) {
+    const m = L.marker([s.lat, s.lon], { icon: stopIcon }).addTo(stopLayer);
+    m.bindPopup('<div class="stopname">' + esc(s.name) + '</div>' +
+      '<div class="sub">' + esc(s.lines.join(' · ')) + '</div>' +
+      '<div class="sub" id="arr-' + esc(s.id) + '">…</div>', { minWidth: 210 });
+    m.on('popupopen', async () => {
+      const box = document.getElementById('arr-' + s.id);
+      if (!box) return;
+      box.textContent = 'loading live times…';
+      try {
+        const res = await fetch('/api/arrivals?id=' + encodeURIComponent(s.id));
+        const a = (await res.json()).arrivals || [];
+        box.innerHTML = a.length
+          ? a.map(x => '<div class="arr"><b>' + esc(x.line) + '</b> ' + esc(x.destination) + ' · ' + x.mins + ' min</div>').join('')
+          : 'no arrivals due right now';
+      } catch (_) { box.textContent = 'couldn’t load live times'; }
+    });
+  }
 
   // --- wire it up ------------------------------------------------------------
   document.getElementById('settings').onclick = askForKey;

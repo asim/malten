@@ -63,6 +63,8 @@ func resolveAdminToken() string {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/gridref", s.handleGridRef)
+	mux.HandleFunc("/api/stops", s.handleStops)
+	mux.HandleFunc("/api/arrivals", s.handleArrivals)
 	mux.HandleFunc("/api/interest", s.handleInterest)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
