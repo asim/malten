@@ -41,6 +41,13 @@ content**:
   `/api/gridref`) exposed as tools. It's enabled only when `ANTHROPIC_API_KEY` is
   set on the server; the question and location are used for the turn and forgotten.
 
+- **Place search & reverse geocoding** (`/api/search`, `/api/nearest`,
+  `internal/server/search.go`). Proxies the **OS Names** gazetteer with the
+  shared server OS key, so it's enabled exactly when the tile proxy is. OS Names
+  returns British National Grid only, so every result is projected back to WGS84
+  with `osgrid.ToWGS84` before it leaves the server. Also exposed to the agent
+  (`find_place`, `whats_here`).
+
 `/api/gridref` (WGS84 lat/lng → National Grid reference) is still a pure helper.
 The one opt-in exception to statelessness is the out-of-coverage **waitlist**
 (`/api/interest`, a local JSONL file); nothing else touches disk.
@@ -49,7 +56,7 @@ The one opt-in exception to statelessness is the out-of-coverage **waitlist**
 
 ```
 cmd/malten          server binary (embeds the UI + Leaflet)
-internal/osgrid     WGS84 -> OS National Grid reference (Helmert + Transverse Mercator), tested
+internal/osgrid     WGS84 <-> OS National Grid reference (Helmert + Transverse Mercator, both directions), tested
 internal/llm        dependency-free Anthropic Messages API client (HTTP+SSE, bounded tool loop), tested
 internal/nrail      National Rail: embedded station dataset (ODbL) + Darwin OpenLDBWS SOAP client, tested
 internal/bods       Bus Open Data Service SIRI-VM client (live bus positions in a bbox), tested
@@ -109,8 +116,11 @@ server (no network, no key).
   Scotland and Wales. `osgrid.FromWGS84` returns ok=false outside GB; handle it.
 - **Single binary, no external runtime deps.** Keep the UI and Leaflet embedded
   (`//go:embed`); no cgo, no CDN. Vendor new assets, don't link them remotely.
-- **Grid math is tested.** Any change to `internal/osgrid` must keep the Caister
-  worked-example test (and the region-letter tests) passing.
+- **Grid math is tested, both ways.** `internal/osgrid` converts WGS84↔BNG;
+  `FromWGS84` (forward) and `ToWGS84`/`enToAiry` (inverse) are both validated
+  against OS's Caister worked example, plus round-trips across GB and the
+  region-letter tests. Keep them passing. The inverse is what lets OS-sourced
+  BNG coordinates (OS Names) land on the WGS84 map.
 
 ## Known limitations / future work
 

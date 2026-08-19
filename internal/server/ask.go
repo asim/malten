@@ -40,6 +40,11 @@ func (s *Server) capabilities() string {
 		"- nearby_stops / arrivals: stop-level bus, tram and tube arrivals — London only (Transport for London).",
 		"- grid_ref: OS National Grid reference for a point.",
 	}
+	if s.searchEnabled() {
+		lines = append(lines,
+			"- find_place: look up any place/street/landmark in Great Britain by name (OS Names gazetteer) → coordinates + grid ref.",
+			"- whats_here: reverse-geocode a point to the nearest named place.")
+	}
 	if s.railEnabled() {
 		lines = append(lines, "- train_departures: live train departure boards for a station, all of Great Britain.")
 	}
@@ -216,6 +221,7 @@ func (s *Server) askTools(req askRequest) []llm.Tool {
 			},
 		},
 	}
+	tools = append(tools, s.searchTools(req)...)
 	tools = append(tools, s.railTools(req)...)
 	tools = append(tools, s.busTools(req)...)
 	return tools

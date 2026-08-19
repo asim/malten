@@ -96,6 +96,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/departures", s.handleDepartures)
 	mux.HandleFunc("/api/buses", s.handleBuses)
 	mux.HandleFunc("/api/tiles/", s.handleTiles)
+	mux.HandleFunc("/api/search", s.handleSearch)
+	mux.HandleFunc("/api/nearest", s.handleNearest)
 	mux.HandleFunc("/api/ask", s.handleAsk)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
@@ -152,6 +154,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"rail":           s.railEnabled(),
 		"buses":          s.busesEnabled(),
 		"tiles":          s.tilesEnabled(),
+		"search":         s.searchEnabled(),
 	})
 }
 

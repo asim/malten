@@ -2,6 +2,10 @@
 <div class="app">
   <div class="topbar">
     <span class="brand">Malten</span>
+    <div class="search" id="searchbox" hidden>
+      <input id="searchInput" type="search" placeholder="Search Great Britain…" autocomplete="off">
+      <div class="results" id="searchResults" hidden></div>
+    </div>
     <span class="spacer"></span>
     <span class="count" id="count"></span>
     <button class="keybtn" id="settings">Map key</button>
@@ -266,6 +270,50 @@
     });
   }
 
+  // --- place search (OS Names gazetteer) ------------------------------------
+  const searchInput = document.getElementById('searchInput');
+  const searchResults = document.getElementById('searchResults');
+  const searchBox = document.getElementById('searchbox');
+  let searchTimer = null, searchMarker = null;
+
+  function placeSub(p) {
+    return [p.type, p.county].filter(Boolean).join(' · ') + (p.grid_ref ? (p.type || p.county ? ' · ' : '') + p.grid_ref : '');
+  }
+  function renderResults(list) {
+    if (!list.length) { searchResults.hidden = true; searchResults.innerHTML = ''; return; }
+    searchResults.innerHTML = list.map((p, i) =>
+      '<div class="r" data-i="' + i + '"><div class="n">' + esc(p.name) + '</div><div class="t">' + esc(placeSub(p)) + '</div></div>').join('');
+    searchResults.hidden = false;
+    Array.from(searchResults.querySelectorAll('.r')).forEach(el => { el.onclick = () => selectPlace(list[+el.dataset.i]); });
+  }
+  function selectPlace(p) {
+    searchResults.hidden = true;
+    searchInput.value = p.name;
+    const ll = L.latLng(p.lat, p.lng);
+    map.setView(ll, Math.max(15, map.getZoom()));
+    if (searchMarker) map.removeLayer(searchMarker);
+    searchMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup(
+      '<div class="stopname">' + esc(p.name) + '</div><div class="sub">' + esc(placeSub(p)) + '</div>' +
+      '<div class="row"><span class="spacer"></span><button class="ghost" id="logHere">Log a find here</button></div>').openPopup();
+    searchMarker.on('popupopen', e => {
+      const b = e.popup.getElement().querySelector('#logHere');
+      if (b) b.onclick = () => { if (searchMarker) { map.removeLayer(searchMarker); searchMarker = null; } openLog(ll); };
+    });
+  }
+  searchInput.oninput = () => {
+    const q = searchInput.value.trim();
+    clearTimeout(searchTimer);
+    if (q.length < 2) { searchResults.hidden = true; return; }
+    searchTimer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+        renderResults((await res.json()).results || []);
+      } catch (_) { searchResults.hidden = true; }
+    }, 300);
+  };
+  searchInput.onkeydown = e => { if (e.key === 'Escape') { searchResults.hidden = true; searchInput.blur(); } };
+  document.addEventListener('click', e => { if (!searchBox.contains(e.target)) searchResults.hidden = true; });
+
   // --- live rail overlay (National Rail: Great Britain) ---------------------
   const railLayer = L.layerGroup().addTo(map);
   const railIcon = L.divIcon({ className: '', html: '<div class="station"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
@@ -367,6 +415,7 @@
     if (d.ask) askBtn.hidden = false;
     if (d.rail) document.getElementById('rail').hidden = false;
     if (d.buses) document.getElementById('buses').hidden = false;
+    if (d.search) document.getElementById('searchbox').hidden = false;
     if (!serverTiles && !Malten.getKey()) askForKey();
   }).catch(() => { if (!Malten.getKey()) askForKey(); });
 
