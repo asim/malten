@@ -336,5 +336,9 @@
   updateCount();
   setTiles();
   if (!Malten.getKey()) askForKey();
+
+  // Auto-locate on load so the map opens where you are (and the agent knows
+  // your location). The locationfound handler only recentres inside GB.
+  setTimeout(() => { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }, 400);
 </script>
 {{end}}
