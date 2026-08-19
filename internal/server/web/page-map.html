@@ -11,7 +11,8 @@
   <div class="fabs">
     <button class="fab" id="ask" title="Ask Malten" hidden>✦</button>
     <button class="fab" id="rail" title="Live rail (Great Britain)" hidden>🚆</button>
-    <button class="fab" id="live" title="Live buses & tube (London)">🚌</button>
+    <button class="fab" id="buses" title="Live buses (Great Britain)" hidden>🚍</button>
+    <button class="fab" id="live" title="Bus & tube arrivals (London)">🚌</button>
     <button class="fab" id="locate" title="Find my location">◎</button>
   </div>
   <div class="chat" id="chat" hidden>
@@ -294,6 +295,43 @@
     });
   }
 
+  // --- live bus overlay (BODS: Great Britain, vehicle positions) ------------
+  const busLayer = L.layerGroup().addTo(map);
+  let buses = false, busTimer = null, busPoll = null;
+  const busesBtn = document.getElementById('buses');
+  const BUS_ATTR = 'Bus data <a href="https://www.bus-data.dft.gov.uk/" target="_blank" rel="noopener">BODS</a>';
+  function busIcon(bearing) {
+    return L.divIcon({ className: '', html: '<div class="bus" style="transform:rotate(' + (bearing || 0) + 'deg)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+  }
+  busesBtn.onclick = () => {
+    buses = !buses; busesBtn.classList.toggle('accent', buses);
+    if (buses) {
+      map.attributionControl.addAttribution(BUS_ATTR); loadBuses();
+      busPoll = setInterval(loadBuses, 15000); // buses move — refresh their positions
+    } else {
+      map.attributionControl.removeAttribution(BUS_ATTR); clearInterval(busPoll); busLayer.clearLayers(); refreshUI();
+    }
+  };
+  map.on('moveend', () => { if (buses) { clearTimeout(busTimer); busTimer = setTimeout(loadBuses, 400); } });
+
+  async function loadBuses() {
+    if (!buses) return;
+    if (map.getZoom() < 12) { busLayer.clearLayers(); hintEl.textContent = 'Zoom in to see live buses'; return; }
+    const c = map.getCenter();
+    try {
+      const res = await fetch('/api/buses?lat=' + c.lat + '&lng=' + c.lng);
+      const list = (await res.json()).buses || [];
+      busLayer.clearLayers();
+      if (!list.length) { hintEl.textContent = 'No live buses reporting here right now'; return; }
+      hintEl.textContent = list.length + ' live buses nearby — tap one';
+      list.forEach(b => {
+        L.marker([b.lat, b.lng], { icon: busIcon(b.bearing) }).addTo(busLayer)
+          .bindPopup('<div class="stopname">' + esc(b.line || 'Bus') + (b.destination ? ' → ' + esc(b.destination) : '') + '</div>' +
+            (b.operator ? '<div class="sub">' + esc(b.operator) + '</div>' : ''), { minWidth: 180 });
+      });
+    } catch (_) { hintEl.textContent = 'Couldn’t load live buses'; }
+  }
+
   // --- Ask Malten (spatial agent) -------------------------------------------
   let myLoc = null;
   const askBtn = document.getElementById('ask');
@@ -306,6 +344,7 @@
   fetch('/api/health').then(r => r.json()).then(d => {
     if (d.ask) askBtn.hidden = false;
     if (d.rail) document.getElementById('rail').hidden = false;
+    if (d.buses) document.getElementById('buses').hidden = false;
   }).catch(() => {});
 
   askBtn.onclick = () => {

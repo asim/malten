@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asim/malten/internal/bods"
 	"github.com/asim/malten/internal/llm"
 	"github.com/asim/malten/internal/nrail"
 	"github.com/asim/malten/internal/osgrid"
@@ -32,6 +33,7 @@ type Server struct {
 	adminToken string
 	llm        *llm.Client   // "Ask Malten"; nil when ANTHROPIC_API_KEY is unset
 	darwin     *nrail.Darwin // live rail departures; nil when NRE_LDBWS_TOKEN is unset
+	bods       *bods.Client  // live buses; nil when BODS_API_KEY is unset
 }
 
 // New builds a Server. The waitlist is stored at MALTEN_DATA (default
@@ -52,6 +54,9 @@ func New() *Server {
 	}
 	if tok := strings.TrimSpace(os.Getenv("NRE_LDBWS_TOKEN")); tok != "" {
 		s.darwin = nrail.NewDarwin(tok)
+	}
+	if key := strings.TrimSpace(os.Getenv("BODS_API_KEY")); key != "" {
+		s.bods = bods.New(key)
 	}
 	return s
 }
@@ -82,6 +87,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/interest", s.handleInterest)
 	mux.HandleFunc("/api/stations", s.handleStations)
 	mux.HandleFunc("/api/departures", s.handleDepartures)
+	mux.HandleFunc("/api/buses", s.handleBuses)
 	mux.HandleFunc("/api/ask", s.handleAsk)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
@@ -136,6 +142,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime_seconds": int(time.Since(s.started).Seconds()),
 		"ask":            s.askEnabled(),
 		"rail":           s.railEnabled(),
+		"buses":          s.busesEnabled(),
 	})
 }
 

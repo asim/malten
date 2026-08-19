@@ -30,6 +30,9 @@ content**:
   keyless, from a vendored dataset) and `/api/departures` (live train boards via
   National Rail's Darwin OpenLDBWS SOAP service) add **nationwide rail**; the
   boards need a free `NRE_LDBWS_TOKEN` on the server (`internal/nrail`).
+  `/api/buses` adds **nationwide live buses** from the Bus Open Data Service's
+  SIRI-VM feed (vehicle positions in a bounding box; free `BODS_API_KEY`,
+  `internal/bods`) — SIRI-VM XML, not GTFS-RT protobuf, to stay dependency-free.
 - **Runs "Ask Malten", a spatial agent** (`/api/ask`, SSE). A small bounded
   tool-use loop over Anthropic's Messages API, with the live-data calls above (plus
   `/api/gridref`) exposed as tools. It's enabled only when `ANTHROPIC_API_KEY` is
@@ -46,7 +49,8 @@ cmd/malten          server binary (embeds the UI + Leaflet)
 internal/osgrid     WGS84 -> OS National Grid reference (Helmert + Transverse Mercator), tested
 internal/llm        dependency-free Anthropic Messages API client (HTTP+SSE, bounded tool loop), tested
 internal/nrail      National Rail: embedded station dataset (ODbL) + Darwin OpenLDBWS SOAP client, tested
-internal/server     stateless HTTP handlers + embedded web UI (gridref, tfl + rail proxies, ask agent, waitlist)
+internal/bods       Bus Open Data Service SIRI-VM client (live bus positions in a bbox), tested
+internal/server     stateless HTTP handlers + embedded web UI (gridref, tfl + rail + bus proxies, ask agent, waitlist)
 internal/server/web UI: page-map.html, app.js (client store), vendored leaflet.js/.css, PWA assets
 ```
 
@@ -68,8 +72,9 @@ The map needs a free **OS Data Hub** API key (osdatahub.os.uk), entered in the
 UI — nothing else. TfL live transport and nearby-station lookup work with no key.
 Optional server-side keys enable more: `ANTHROPIC_API_KEY` (and optionally
 `MALTEN_MODEL`, default `claude-opus-4-8`) turns on **Ask Malten**;
-`NRE_LDBWS_TOKEN` turns on **live rail departures**. The UI hides each feature
-when its key is absent (via `/api/health`). `go test ./...` must stay
+`NRE_LDBWS_TOKEN` turns on **live rail departures**; `BODS_API_KEY` turns on
+**nationwide live buses**. The UI hides each feature when its key is absent (via
+`/api/health`). `go test ./...` must stay
 green — the osgrid tests validate the projection against OS's own worked example
 (Caister) to ~0.2 m, and `internal/llm` tests the tool loop against a stub SSE
 server (no network, no key).
@@ -86,8 +91,9 @@ server (no network, no key).
 - **The Anthropic key stays the server's.** `ANTHROPIC_API_KEY` (for Ask Malten)
   is the one server-side secret; it never reaches the browser. Keep the LLM
   client dependency-free (`net/http` + SSE) — don't add the SDK.
-- **The rail token stays the server's.** `NRE_LDBWS_TOKEN` (Darwin OpenLDBWS)
-  is a server-side secret like the Anthropic key; never send it to the browser.
+- **Rail and bus keys stay the server's.** `NRE_LDBWS_TOKEN` (Darwin OpenLDBWS)
+  and `BODS_API_KEY` (Bus Open Data Service) are server-side secrets like the
+  Anthropic key; never send them to the browser.
 - **Attribute OS data.** OS licensing requires visible attribution ("Contains OS
   data © Crown copyright and database rights <year>"); keep it on the map. The
   vendored rail station dataset is ODbL — keep its attribution too.

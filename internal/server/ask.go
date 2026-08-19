@@ -23,17 +23,31 @@ const askSystem = `You are "Ask Malten", a spatial guide inside Malten — a map
 
 You help people understand where they are and how to move through it right now: nearby public transport, when the next bus or train is due, and the lie of the land.
 
-Live data:
-- National Rail stations and live train departures cover all of Great Britain (nearby_stations, train_departures).
-- Buses, trams and the tube cover London only, via Transport for London (nearby_stops, arrivals).
-
 Guidance:
 - Be concise and practical. Lead with the answer. Prefer short sentences and small lists.
 - When asked about getting somewhere or what's nearby, use the tools to fetch live data rather than guessing. Use the user's current location (provided below) as the default point of reference.
 - For trains, find the nearest station with nearby_stations, then read its board with train_departures. Give real times and destinations from the tool results — don't invent them.
-- If London bus/tube tools return nothing, the area is likely outside London; rail still works nationwide.
+- Only use the tools you have been given; don't promise data you can't fetch. If a London-only tool returns nothing, the area is likely outside London.
 - You can mention the OS National Grid reference for a spot when it's relevant.
 - Never claim to store anything about the user. You don't.`
+
+// capabilities describes, in the system prompt, exactly which live-data tools
+// are wired up for this turn — so the agent never advertises a feed the server
+// isn't configured for.
+func (s *Server) capabilities() string {
+	lines := []string{
+		"- nearby_stations: nearest National Rail stations, all of Great Britain.",
+		"- nearby_stops / arrivals: stop-level bus, tram and tube arrivals — London only (Transport for London).",
+		"- grid_ref: OS National Grid reference for a point.",
+	}
+	if s.railEnabled() {
+		lines = append(lines, "- train_departures: live train departure boards for a station, all of Great Britain.")
+	}
+	if s.busesEnabled() {
+		lines = append(lines, "- live_buses: live buses moving near a point (vehicle positions, not stop predictions), Great Britain.")
+	}
+	return "Live-data tools available to you right now:\n" + strings.Join(lines, "\n")
+}
 
 // askRequest is the browser's payload.
 type askRequest struct {
@@ -93,7 +107,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	} else {
 		ground.WriteString("The user's location is unknown; ask for it or a place name if you need one.")
 	}
-	system := askSystem + "\n\n" + ground.String()
+	system := askSystem + "\n\n" + s.capabilities() + "\n\n" + ground.String()
 
 	if err := s.llm.Run(r.Context(), system, req.Message, s.askTools(req), send); err != nil {
 		send(llm.Event{Type: "error", Text: "Something went wrong reaching the guide."})
@@ -202,5 +216,7 @@ func (s *Server) askTools(req askRequest) []llm.Tool {
 			},
 		},
 	}
-	return append(tools, s.railTools(req)...)
+	tools = append(tools, s.railTools(req)...)
+	tools = append(tools, s.busTools(req)...)
+	return tools
 }
