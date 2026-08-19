@@ -4,7 +4,7 @@
     <span class="brand">Malten</span>
     <span class="spacer"></span>
     <span class="count" id="count"></span>
-    <button class="iconbtn" id="settings" title="OS API key">⚙</button>
+    <button class="keybtn" id="settings">Map key</button>
   </div>
   <div id="map"></div>
   <div class="hint" id="hint">Tap the map to log a find</div>
@@ -29,15 +29,30 @@
   const meIcon = L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
 
   // --- OS map tiles (client fetches them directly with your key) ------------
-  let tiles = null;
+  let tiles = null, tileErrored = false;
   function setTiles() {
     if (tiles) { map.removeLayer(tiles); tiles = null; }
+    tileErrored = false;
     const key = Malten.getKey();
+    refreshUI();
     if (!key) return;
     tiles = L.tileLayer('https://api.os.uk/maps/raster/v1/zxy/' + OS_STYLE + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(key), {
       maxZoom: 20,
       attribution: 'Contains OS data &copy; Crown copyright and database rights 2026',
     }).addTo(map);
+    tiles.on('tileerror', () => {
+      if (!tileErrored) { tileErrored = true; hintEl.textContent = 'Map didn’t load — check your OS key (tap “Map key”)'; }
+    });
+    tiles.on('load', () => { if (tileErrored) { tileErrored = false; refreshUI(); } });
+  }
+
+  // Keep the key button and hint reflecting whether a key is set.
+  function refreshUI() {
+    const has = !!Malten.getKey();
+    const btn = document.getElementById('settings');
+    btn.textContent = has ? 'Map key' : 'Add map key';
+    btn.classList.toggle('accent', !has);
+    if (!tileErrored) hintEl.textContent = has ? 'Tap the map to log a find' : 'Add your OS key to load the map';
   }
 
   // --- a floating card helper -----------------------------------------------

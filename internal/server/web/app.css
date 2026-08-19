@@ -25,11 +25,12 @@ body {
 .brand { font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
 .topbar .spacer { flex: 1; }
 .count { font-size: 13px; color: var(--muted); }
-.iconbtn {
+.keybtn {
   background: none; border: 1px solid var(--border); color: var(--fg); border-radius: 9px;
-  width: 34px; height: 34px; font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer;
 }
-.iconbtn:hover { border-color: var(--fg); }
+.keybtn:hover { border-color: var(--fg); }
+.keybtn.accent { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 600; }
 
 #map { flex: 1; min-height: 0; background: var(--panel); }
 .leaflet-container { background: var(--panel); font: inherit; }
