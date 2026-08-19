@@ -90,11 +90,20 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	// Defeat response buffering in a reverse proxy (nginx and friends), which
+	// would otherwise hold the whole stream until the end — making the chat
+	// look like it's doing nothing.
+	w.Header().Set("X-Accel-Buffering", "no")
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming unsupported"})
 		return
 	}
+	// Open the stream right away so the browser starts reading and any proxy
+	// commits to streaming rather than buffering.
+	fmt.Fprint(w, ": open\n\n")
+	flusher.Flush()
+
 	send := func(ev llm.Event) {
 		b, _ := json.Marshal(ev)
 		fmt.Fprintf(w, "data: %s\n\n", b)
