@@ -449,6 +449,13 @@
   const chatText = document.getElementById('chatText');
   let asking = false;
 
+  // Auto-scroll that doesn't fight the user: only stick to the bottom while the
+  // user is already there. If they scroll up to read, stop yanking them down.
+  let stick = true;
+  function nearBottom() { return chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 48; }
+  function pin() { if (stick) chatLog.scrollTop = chatLog.scrollHeight; }
+  chatLog.addEventListener('scroll', () => { stick = nearBottom(); });
+
   let askAvail = false, railAvail = false, busesAvail = false;
   // Ask the server what it offers: shared tiles (no per-user key), the agent,
   // and the live feeds. Remember which live overlays exist so we can auto-start
@@ -470,8 +477,9 @@
     chat.hidden = false;
     document.body.classList.add('chatting');
     window.scrollTo(0, 0);
+    stick = true;
     if (!chatLog.childElementCount) addMsg('malten', 'Ask me what’s nearby, how to get somewhere, or what’s worth doing around here right now.');
-    chatLog.scrollTop = chatLog.scrollHeight;
+    pin();
     if (focus) chatText.focus();
   }
   function closeChat() { chat.hidden = true; document.body.classList.remove('chatting'); chatText.blur(); }
@@ -483,7 +491,7 @@
     el.className = 'msg ' + who;
     el.textContent = text;
     chatLog.appendChild(el);
-    chatLog.scrollTop = chatLog.scrollHeight;
+    pin();
     return el;
   }
 
@@ -503,13 +511,13 @@
 
   async function runAsk(q) {
     if (!q || asking) return;
+    stick = true; // a new question jumps to the bottom
     chatText.value = '';
     addMsg('me', q);
     asking = true;
     const bubble = addMsg('malten', '…');
     bubble.classList.add('streaming', 'toolonly');
     let answer = '';
-    const pin = () => { chatLog.scrollTop = chatLog.scrollHeight; };
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 90000); // never lock the chat on a hung stream
     try {
@@ -620,7 +628,7 @@
     const onVV = () => {
       const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       document.documentElement.style.setProperty('--kb', kb + 'px');
-      if (!chat.hidden) chatLog.scrollTop = chatLog.scrollHeight;
+      if (!chat.hidden) pin();
     };
     vv.addEventListener('resize', onVV);
     vv.addEventListener('scroll', onVV);
