@@ -463,15 +463,19 @@
     if (myLoc) goLive(myLoc); // location already known before health returned
   }).catch(() => { if (!Malten.getKey()) askForKey(); });
 
-  function openChat() {
+  // focus=true opens the keyboard for typing; the "Around you" card opens the
+  // chat WITHOUT focus, so a canned question doesn't pop the keyboard (which on
+  // iOS scrolls the whole layout and strands the reply off-screen).
+  function openChat(focus) {
     chat.hidden = false;
     document.body.classList.add('chatting');
+    window.scrollTo(0, 0);
     if (!chatLog.childElementCount) addMsg('malten', 'Ask me what’s nearby, how to get somewhere, or what’s worth doing around here right now.');
     chatLog.scrollTop = chatLog.scrollHeight;
-    chatText.focus();
+    if (focus) chatText.focus();
   }
-  function closeChat() { chat.hidden = true; document.body.classList.remove('chatting'); }
-  askBtn.onclick = () => { if (chat.hidden) openChat(); else closeChat(); };
+  function closeChat() { chat.hidden = true; document.body.classList.remove('chatting'); chatText.blur(); }
+  askBtn.onclick = () => { if (chat.hidden) openChat(true); else closeChat(); };
   document.getElementById('chatClose').onclick = closeChat;
 
   function addMsg(who, text) {
@@ -560,7 +564,8 @@
   }
 
   // Open the agent and ask a question in one go (used by the "Around you" card).
-  function askAbout(q) { openChat(); runAsk(q); }
+  // No focus → no keyboard: the reply streams in view instead of being pushed up.
+  function askAbout(q) { openChat(false); runAsk(q); }
 
   // --- go live: on the first fix, start the moving overlays and greet you with
   // a live snapshot of what's around you right now. --------------------------
