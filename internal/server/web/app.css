@@ -144,11 +144,15 @@ button:disabled { opacity: 0.4; cursor: default; }
 .around-actions { margin-top: 11px; }
 .around-actions .primary { padding: 8px 14px; font-size: 14px; }
 
-/* The ambient agent's nudge, shown inside the "Around you" card. No chat box. */
+/* The ambient agent's nudge, shown inside the "Around you" card. No chat box —
+   just a suggestion and its two next steps: reject, or done → next. */
 .around-idea {
   margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--border);
   font-size: 14px; line-height: 1.5; color: var(--muted);
 }
 .around-idea.ready { color: var(--fg); }
-@keyframes blink { 50% { opacity: 0.35; } }
+.around-idea .idea-text { }
+.around-idea .idea-actions { display: flex; gap: 8px; margin-top: 10px; }
+.around-idea .idea-actions .ghost { flex: 1; padding: 8px 10px; font-size: 13px; border-radius: 9px; }
+@keyframes blink { 50% { opacity: 0.4; } }
 .around-idea:not(.ready) { animation: blink 1.2s ease-in-out infinite; }

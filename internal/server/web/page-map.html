@@ -425,6 +425,8 @@
     else { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }
   };
 
+  let ideaHistory = [], currentIdea = '';
+
   function goLive(latlng) {
     if (railAvail) setRail(true);
     if (busesAvail) setBuses(true);
@@ -463,22 +465,59 @@
       hintEl.style.display = 'none';
       aroundEl.querySelector('.around-x').onclick = closeAround;
       clearTimeout(aroundTimer);
-      aroundTimer = setTimeout(closeAround, askAvail ? 90000 : 30000);
-      if (askAvail) fetchIdea(latlng, seq);
+      // With a live suggestion loop the card stays; without the agent it self-dismisses.
+      if (!askAvail) aroundTimer = setTimeout(closeAround, 30000);
+      if (askAvail) fetchIdea(latlng, seq, 'fresh');
     } catch (_) {}
   }
 
-  // The silent background call: one suggestion, no conversation.
-  async function fetchIdea(latlng, seq) {
-    const box = () => (seq === suggestSeq ? document.getElementById('idea') : null);
+  function ideaEl() { return document.getElementById('idea'); }
+
+  // Render a ready suggestion with its two next steps: reject, or done→next.
+  function renderIdea(text) {
+    const box = ideaEl();
+    if (!box) return;
+    box.classList.add('ready');
+    box.innerHTML =
+      '<div class="idea-text">💡 ' + esc(text) + '</div>' +
+      '<div class="idea-actions">' +
+        '<button class="ghost" id="idea-diff">Something else</button>' +
+        '<button class="ghost" id="idea-next">I did it — next</button>' +
+      '</div>';
+    box.querySelector('#idea-diff').onclick = () => nextIdea('different');
+    box.querySelector('#idea-next').onclick = () => nextIdea('next');
+  }
+
+  function nextIdea(mode) {
+    if (!myLoc) return;
+    const box = ideaEl();
+    if (box) { box.classList.remove('ready'); box.textContent = mode === 'next' ? 'Finding your next move…' : 'Thinking of something else…'; }
+    fetchIdea(myLoc, ++suggestSeq, mode);
+  }
+
+  // The silent background call: one suggestion, no conversation. mode is
+  // 'fresh' | 'different' | 'next'; history keeps it from repeating itself.
+  async function fetchIdea(latlng, seq, mode) {
     try {
-      const res = await fetch('/api/suggest?lat=' + latlng.lat + '&lng=' + latlng.lng);
+      const res = await fetch('/api/suggest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: latlng.lat, lng: latlng.lng, mode: mode, last: currentIdea, avoid: ideaHistory.slice(-6) }),
+      });
       const d = await res.json();
-      const b = box();
-      if (!b) return;
-      if (d.suggestion) { b.classList.add('ready'); b.textContent = '💡 ' + d.suggestion; }
-      else b.remove();
-    } catch (_) { const b = box(); if (b) b.remove(); }
+      if (seq !== suggestSeq) return;
+      if (d.suggestion) {
+        currentIdea = d.suggestion;
+        ideaHistory.push(d.suggestion);
+        renderIdea(d.suggestion);
+      } else {
+        const box = ideaEl();
+        if (box) box.textContent = 'No idea just now — tap 💡 to try again.';
+      }
+    } catch (_) {
+      if (seq !== suggestSeq) return;
+      const box = ideaEl();
+      if (box) box.textContent = 'Couldn’t think of anything just then — tap 💡 to retry.';
+    }
   }
 
   // Track the keyboard height for the search dropdown on phones.
