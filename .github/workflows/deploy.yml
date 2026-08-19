@@ -41,6 +41,7 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           PORT: ${{ secrets.DEPLOY_PORT || '22' }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -62,6 +63,15 @@ jobs:
           # the new binary a fresh inode, so the running process is untouched and
           # we avoid "Text file busy").
           scp -P "$PORT" -i ~/.ssh/id_deploy malten "$USER@$HOST:/home/malten/malten.new"
+
+          # Waitlist admin token (optional): lets you view /api/interest?token=...
+          # Set the ADMIN_TOKEN repo secret to enable it; without it, the list is
+          # captured but not viewable over HTTP.
+          if [ -n "${ADMIN_TOKEN:-}" ]; then
+            printf '%s' "$ADMIN_TOKEN" > admin_token.txt
+            scp -P "$PORT" -i ~/.ssh/id_deploy admin_token.txt "$USER@$HOST:/home/malten/admin_token"
+            rm -f admin_token.txt
+          fi
 
           $SSH 'bash -se' <<'REMOTE'
           set -euo pipefail

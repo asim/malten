@@ -81,6 +81,34 @@
     s.querySelector('#savekey').onclick = () => { Malten.setKey(input.value.trim()); closeSheet(); setTiles(); };
   }
 
+  // --- outside GB: invite them to register interest -------------------------
+  function openInterest(latlng) {
+    const s = openSheet('keycard',
+      '<h2>Malten is Great Britain only, for now</h2>' +
+      '<p>The maps come from Ordnance Survey, which covers England, Scotland and Wales. ' +
+      'Leave your email and we’ll tell you when Malten reaches where you are.</p>' +
+      '<input id="email" type="email" placeholder="you@example.com" autocomplete="email">' +
+      '<textarea id="where" rows="2" placeholder="Where are you? (optional)" style="margin-top:8px"></textarea>' +
+      '<div class="row"><button class="ghost" id="notnow">Not now</button><span class="spacer"></span><button class="primary" id="reg">Register interest</button></div>');
+    const email = s.querySelector('#email'); email.focus();
+    s.querySelector('#notnow').onclick = closeSheet;
+    s.querySelector('#reg').onclick = () => {
+      const v = email.value.trim();
+      if (v.indexOf('@') < 1) { email.focus(); return; }
+      const btn = s.querySelector('#reg'); btn.disabled = true; btn.textContent = 'Sending…';
+      fetch('/api/interest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: v, note: s.querySelector('#where').value.trim(), country: navigator.language || '', lat: latlng.lat, lng: latlng.lng }),
+      }).then(r => { if (!r.ok) throw new Error(); return r.json(); })
+        .then(() => {
+          localStorage.setItem('malten_interest', 'done');
+          openSheet('keycard', '<h2>Thanks — you’re on the list</h2><p>We’ll be in touch when Malten reaches you.</p><div class="row"><span class="spacer"></span><button class="primary" id="ok">Close</button></div>');
+          sheet.querySelector('#ok').onclick = closeSheet;
+        })
+        .catch(() => { btn.disabled = false; btn.textContent = 'Register interest'; });
+    };
+  }
+
   // --- logging a find --------------------------------------------------------
   let temp = null;
   function clearTemp() { if (temp) { map.removeLayer(temp); temp = null; } }
@@ -151,7 +179,10 @@
       .then(r => r.json())
       .then(d => {
         if (d.in_gb) { map.setView(e.latlng, Math.max(16, map.getZoom())); hintEl.textContent = 'Tap the map to log a find'; }
-        else { hintEl.textContent = 'You’re outside OS coverage — the map only covers Great Britain'; }
+        else {
+          hintEl.textContent = 'You’re outside OS coverage — Great Britain only';
+          if (localStorage.getItem('malten_interest') !== 'done') openInterest(e.latlng);
+        }
       })
       .catch(() => { map.setView(e.latlng, Math.max(16, map.getZoom())); });
   });

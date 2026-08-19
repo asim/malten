@@ -10,7 +10,9 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/asim/malten/internal/osgrid"
@@ -23,16 +25,45 @@ var page = template.Must(template.ParseFS(webFS, "web/base.html", "web/page-map.
 
 // Server serves the app.
 type Server struct {
-	started time.Time
+	started    time.Time
+	interest   *interestBook
+	adminToken string
 }
 
-// New builds a Server.
-func New() *Server { return &Server{started: time.Now()} }
+// New builds a Server. The waitlist is stored at MALTEN_DATA (default
+// interest.jsonl). The list is viewable only with the admin token, read from
+// MALTEN_ADMIN_TOKEN or, failing that, an admin_token file next to the data.
+func New() *Server {
+	dataPath := envOr("MALTEN_DATA", "interest.jsonl")
+	return &Server{
+		started:    time.Now(),
+		interest:   &interestBook{path: dataPath},
+		adminToken: resolveAdminToken(),
+	}
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func resolveAdminToken() string {
+	if t := strings.TrimSpace(os.Getenv("MALTEN_ADMIN_TOKEN")); t != "" {
+		return t
+	}
+	if b, err := os.ReadFile(envOr("MALTEN_ADMIN_TOKEN_FILE", "admin_token")); err == nil {
+		return strings.TrimSpace(string(b))
+	}
+	return ""
+}
 
 // Handler returns the HTTP mux for the application.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/gridref", s.handleGridRef)
+	mux.HandleFunc("/api/interest", s.handleInterest)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/app.js", staticAsset("app.js", "text/javascript; charset=utf-8", "public, max-age=300"))
