@@ -139,12 +139,21 @@
 
   // --- location --------------------------------------------------------------
   let meMarker = null, meCircle = null;
-  document.getElementById('locate').onclick = () => map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true });
+  document.getElementById('locate').onclick = () => { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); };
   map.on('locationfound', e => {
     if (meMarker) map.removeLayer(meMarker);
     if (meCircle) map.removeLayer(meCircle);
     meMarker = L.marker(e.latlng, { icon: meIcon }).addTo(map);
     meCircle = L.circle(e.latlng, { radius: e.accuracy, color: '#2b7fff', weight: 1, fillOpacity: 0.08 }).addTo(map);
+    // Only recentre if you're within OS coverage (Great Britain). Otherwise the
+    // basemap would go blank — OS maps don't cover NI, Ireland or abroad.
+    fetch('/api/gridref?lat=' + e.latlng.lat + '&lng=' + e.latlng.lng)
+      .then(r => r.json())
+      .then(d => {
+        if (d.in_gb) { map.setView(e.latlng, Math.max(16, map.getZoom())); hintEl.textContent = 'Tap the map to log a find'; }
+        else { hintEl.textContent = 'You’re outside OS coverage — the map only covers Great Britain'; }
+      })
+      .catch(() => { map.setView(e.latlng, Math.max(16, map.getZoom())); });
   });
   map.on('locationerror', () => { hintEl.textContent = 'Location unavailable — tap the map to log a find'; });
 
