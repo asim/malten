@@ -5,108 +5,67 @@ carries engineering invariants, not product docs.
 
 ## What this is
 
-Malten is a conversational support companion for **neurodivergent people**
-(ADHD, autism and related), written in Go and shipping as a single binary with
-an embedded chat UI. Someone sends a message; the agent helps them name what
-they're stuck on, think it through, and shape a small next step — logging things
-worth revisiting as "issues". It is not a therapist, diagnostician or crisis
-service, and must never present itself as one; crisis messages are met with care
-and a signpost to real help.
+Malten is a **spatial-exploration** app for Great Britain: a map you move
+through, where you drop "finds" (a note anchored to its Ordnance Survey National
+Grid reference) as you explore. It ships as a single Go binary with the UI — and
+a vendored copy of Leaflet — embedded.
 
-The moat is the **context around the model** (neurodivergent-aware framing, the
-knowledge base, the issues/plans structure, cross-conversation memory) — not the
-raw LLM.
+Ordnance Survey (OS) is the authoritative substrate: the map tiles come from the
+**OS Maps API**. Malten is the experience layer on top. The moat is the
+experience and the spatial memory, not the map data.
 
-**The server is stateless and anonymous.** It stores nothing about users: no
-accounts, no sessions, no conversations, no issues on disk. Conversations and
-issues live in the **browser** (`web/app.js`, localStorage) and travel up with
-each request as context; the server assembles a prompt, calls the model, streams
-a reply (plus any issue changes for the client to save), and forgets. This is a
-deliberate privacy choice — there is no user data server-side to leak or
-encrypt. Real accounts (and cross-device sync) are a later, opt-in story.
+**The server is stateless and anonymous.** It stores nothing about users. Your
+finds and your **OS Data Hub API key** live in the browser (`web/app.js`,
+localStorage). Map tiles are fetched by the client *directly* from the OS APIs
+with your key — the server never sees it. The server only serves the embedded UI
+and one pure helper, `/api/gridref` (WGS84 lat/lng → National Grid reference).
 
 ## Repository map
 
 ```
-cmd/malten        server binary (embeds the UI)
-cmd/eval          evaluation runner
-internal/agent    the bounded agent loop + system prompt
-internal/llm      LLM interface + Stub (deterministic) and Claude backends
-internal/tools    Tool interface, Registry, and the capabilities (search, create_issue)
-internal/policy   validation boundary for destructive actions (fail-closed)
-internal/store    in-memory, read-only knowledge base (KB) — no user data
-internal/tools    Tool interface + issuebook.go (request-scoped, in-memory issues)
-internal/server   stateless HTTP handlers + embedded web UI
-internal/server/web  UI, incl. app.js — the client-side store (localStorage)
-internal/app      single wiring point (Build) used by server and eval
-internal/eval     evaluation harness (emulates a client), scenarios, metrics
-internal/id       short random ids
+cmd/malten          server binary (embeds the UI + Leaflet)
+internal/osgrid     WGS84 -> OS National Grid reference (Helmert + Transverse Mercator), tested
+internal/server     stateless HTTP handlers + embedded web UI
+internal/server/web UI: page-map.html, app.js (client store), vendored leaflet.js/.css, PWA assets
 ```
+
+No external Go dependencies: `go.mod` has no `require` block. Leaflet is vendored
+as a static asset (`web/leaflet.js`, `web/leaflet.css`).
 
 ## Build, test, run
 
 ```bash
-go build ./...            # build everything
-go test ./...             # unit tests + full end-to-end eval (stub backend)
-go run ./cmd/eval         # print the evaluation report
-go run ./cmd/malten       # start the server on :8080 (stub backend by default)
+go build ./...      # build everything
+go test ./...       # unit tests (osgrid grid-reference math)
+go run ./cmd/malten # start the server on :8080
 ```
 
-No API key is required: with none set, the deterministic stub backend runs and
-the app is fully usable offline. Set `ANTHROPIC_API_KEY` (and optionally
-`MALTEN_LLM=claude`, `MALTEN_MODEL=...`) to use the real model.
-
-`go test ./...` must stay green — the eval suite in `internal/eval` is the
-end-to-end contract and asserts **zero safety violations**.
+The map needs a free **OS Data Hub** API key (osdatahub.os.uk), entered in the
+UI — nothing else. `go test ./...` must stay green; the osgrid tests validate the
+projection against OS's own worked example (Caister) to ~0.2 m.
 
 ## Conventions & invariants (do not break these)
 
-- **Safety first.** The agent must never diagnose, must not act as a crisis
-  service, and must respond to crisis/self-harm signals with care and a signpost
-  to emergency help. The system prompt and the crisis eval scenario enforce this.
-- **The policy layer is a hard boundary.** Any tool marked `Destructive()` must
-  pass `policy.Validate` before executing; unknown destructive tools fail closed
-  (Deny). There are no destructive tools today — keep the seam anyway.
-- **The agent loop must terminate.** Keep the `MaxSteps` bound; on exhaustion it
-  closes the turn gently rather than looping.
-- **The server stores nothing about users.** History and issues arrive per
-  request (`agent.Turn`) and issue changes are returned for the client to save;
-  the agent keeps no state. Don't add server-side persistence of user content —
-  that's the whole privacy model. Within a single turn, every `tool_use` must
-  still be answered by a `tool_result` in the next message, or the Anthropic API
-  400s.
-- **The LLM interface stays narrow and provider-agnostic.** Stub and Claude both
-  satisfy `llm.LLM` (`Complete` and `Stream`); anything the agent needs goes
-  through it.
-- **Extensibility is the point.** A new capability is a `Tool` implementation, a
-  `Register` call in `internal/app`, and (if destructive) a `policy.Validate`
-  case. Prefer that over special-casing the agent. Tools that "remember" write
-  to the request-scoped `tools.IssueBook`, never to disk.
-- **Single binary.** Keep SQLite pure-Go (`modernc.org/sqlite`, no cgo) and the
-  UI embedded (`//go:embed`). No cgo, no external asset/CDN dependencies.
-
-## Model usage
-
-- Default model is `claude-opus-4-8`; Sonnet is acceptable for cost. Thinking is
-  intentionally **off** — keep it off unless there's a measured reason.
-- The Claude backend lives only in `internal/llm/claude.go`.
-
-## When adding a capability
-
-1. Implement the `Tool` (schema + `Destructive()` + `Execute`).
-2. Register it in `internal/app/app.go`.
-3. If destructive, add a `policy.Validate` case.
-4. Add an eval scenario in `internal/eval/scenarios.go`.
-5. `go test ./...` and `go vet ./...` before finishing.
+- **The server stores nothing about users.** Finds and the OS key live client-
+  side and never touch the server. `/api/gridref` is a pure function. Don't add
+  server-side persistence of user content — that's the privacy model.
+- **The OS key stays the user's.** It's entered in the browser and sent straight
+  to the OS APIs. Never route it through, log, or store it server-side.
+- **Attribute OS data.** OS licensing requires visible attribution ("Contains OS
+  data © Crown copyright and database rights <year>"); keep it on the map.
+- **Great Britain only.** The OS National Grid and OS Maps API cover England,
+  Scotland and Wales. `osgrid.FromWGS84` returns ok=false outside GB; handle it.
+- **Single binary, no external runtime deps.** Keep the UI and Leaflet embedded
+  (`//go:embed`); no cgo, no CDN. Vendor new assets, don't link them remotely.
+- **Grid math is tested.** Any change to `internal/osgrid` must keep the Caister
+  worked-example test (and the region-letter tests) passing.
 
 ## Known limitations / future work
 
-- KB retrieval is term-overlap, not embeddings.
-- Client-held data is per-device (localStorage); no cross-device sync. Clearing
-  browser data clears everything. Cross-device would need accounts.
-- No accounts yet — intentional, for anonymity. Real accounts + subscriptions
-  are a later, opt-in story.
-- Content still transits the model provider's API in the clear (unavoidable
-  while an LLM reads the text); "we don't store it" is the honest claim, not
-  "no machine sees it".
+- Raster basemap only (OS Maps API). Vector tiles, 3D building extrusion (OS
+  building heights), and terrain (OS Terrain) are the obvious next steps.
+- Finds are anchored to a grid reference + lat/lng, not yet to a persistent OS
+  feature id (TOID/UPRN) — that needs the OS Features/NGD API and a keyed tier.
+- Client-held data is per-device (localStorage); no cross-device sync.
 - License is AGPL-3.0.
+```

@@ -1,0 +1,144 @@
+{{define "content"}}
+<div class="app">
+  <div class="topbar">
+    <span class="brand">Malten</span>
+    <span class="spacer"></span>
+    <span class="count" id="count"></span>
+    <button class="iconbtn" id="settings" title="OS API key">⚙</button>
+  </div>
+  <div id="map"></div>
+  <div class="hint" id="hint">Tap the map to log a find</div>
+  <div class="fabs">
+    <button class="fab" id="locate" title="Find my location">◎</button>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+  const OS_STYLE = 'Outdoor_3857';
+  const app = document.querySelector('.app');
+  const countEl = document.getElementById('count');
+  const hintEl = document.getElementById('hint');
+  function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+  const map = L.map('map', { zoomControl: true, attributionControl: true }).setView([54.5, -2.5], 6);
+  map.attributionControl.setPrefix(false);
+
+  const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [16, 16], iconAnchor: [8, 16] });
+  const meIcon = L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+
+  // --- OS map tiles (client fetches them directly with your key) ------------
+  let tiles = null;
+  function setTiles() {
+    if (tiles) { map.removeLayer(tiles); tiles = null; }
+    const key = Malten.getKey();
+    if (!key) return;
+    tiles = L.tileLayer('https://api.os.uk/maps/raster/v1/zxy/' + OS_STYLE + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(key), {
+      maxZoom: 20,
+      attribution: 'Contains OS data &copy; Crown copyright and database rights 2026',
+    }).addTo(map);
+  }
+
+  // --- a floating card helper -----------------------------------------------
+  let sheet = null;
+  function closeSheet() { if (sheet) { sheet.remove(); sheet = null; } }
+  function openSheet(cls, html) {
+    closeSheet();
+    sheet = document.createElement('div');
+    sheet.className = 'sheet ' + cls;
+    sheet.innerHTML = html;
+    app.appendChild(sheet);
+    return sheet;
+  }
+
+  function askForKey() {
+    const s = openSheet('keycard',
+      '<h2>Add your OS map key</h2>' +
+      '<p>Malten draws its maps from Great Britain’s national mapping, the Ordnance Survey. ' +
+      'Get a free API key from the <a href="https://osdatahub.os.uk/" target="_blank" rel="noopener">OS Data Hub</a> and paste it here. ' +
+      'It is stored only in this browser and sent straight to the OS.</p>' +
+      '<input id="key" placeholder="OS Data Hub project API key" autocomplete="off" value="' + esc(Malten.getKey()) + '">' +
+      '<div class="row"><span class="spacer"></span><button class="primary" id="savekey">Save</button></div>');
+    const input = s.querySelector('#key');
+    input.focus();
+    s.querySelector('#savekey').onclick = () => { Malten.setKey(input.value.trim()); closeSheet(); setTiles(); };
+  }
+
+  // --- logging a find --------------------------------------------------------
+  let temp = null;
+  function clearTemp() { if (temp) { map.removeLayer(temp); temp = null; } }
+
+  function openLog(latlng) {
+    clearTemp();
+    temp = L.marker(latlng, { icon: pinIcon }).addTo(map);
+    const s = openSheet('logsheet',
+      '<div class="gridref" id="gr">…</div><div class="sub" id="grsub">fetching grid reference…</div>' +
+      '<textarea id="note" rows="2" placeholder="What’s here? (optional)"></textarea>' +
+      '<div class="row"><button class="ghost" id="cancel">Cancel</button><span class="spacer"></span><button class="primary" id="save">Save find</button></div>');
+    let ref = { grid_ref: null };
+    fetch('/api/gridref?lat=' + latlng.lat + '&lng=' + latlng.lng)
+      .then(r => r.json())
+      .then(d => {
+        ref = d;
+        s.querySelector('#gr').textContent = d.in_gb ? d.grid_ref : 'Outside Great Britain';
+        s.querySelector('#grsub').textContent = d.in_gb
+          ? 'OS National Grid · ' + latlng.lat.toFixed(5) + ', ' + latlng.lng.toFixed(5)
+          : 'The OS National Grid only covers England, Scotland and Wales.';
+      })
+      .catch(() => { s.querySelector('#grsub').textContent = 'couldn’t reach the grid service'; });
+    s.querySelector('#cancel').onclick = () => { clearTemp(); closeSheet(); };
+    s.querySelector('#save').onclick = () => {
+      const find = {
+        id: Malten.newId(), lat: latlng.lat, lng: latlng.lng,
+        note: s.querySelector('#note').value.trim(),
+        grid_ref: ref.in_gb ? ref.grid_ref : null,
+        created_at: new Date().toISOString(),
+      };
+      Malten.addFind(find);
+      clearTemp(); closeSheet();
+      addFindMarker(find);
+      updateCount();
+    };
+  }
+
+  function popupHtml(f) {
+    return '<div class="note">' + (f.note ? esc(f.note) : '<span class="sub">No note</span>') + '</div>' +
+      '<div class="sub gridref">' + esc(f.grid_ref || 'Outside GB') + '</div>' +
+      '<div class="row"><span class="spacer"></span><button class="ghost del">Delete</button></div>';
+  }
+  function addFindMarker(f) {
+    const m = L.marker([f.lat, f.lng], { icon: pinIcon }).addTo(map).bindPopup(popupHtml(f));
+    m.on('popupopen', e => {
+      const btn = e.popup.getElement().querySelector('.del');
+      if (btn) btn.onclick = () => { Malten.removeFind(f.id); map.removeLayer(m); updateCount(); };
+    });
+    return m;
+  }
+
+  function updateCount() {
+    const n = Malten.getFinds().length;
+    countEl.textContent = n ? n + ' find' + (n === 1 ? '' : 's') : '';
+  }
+
+  // --- location --------------------------------------------------------------
+  let meMarker = null, meCircle = null;
+  document.getElementById('locate').onclick = () => map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true });
+  map.on('locationfound', e => {
+    if (meMarker) map.removeLayer(meMarker);
+    if (meCircle) map.removeLayer(meCircle);
+    meMarker = L.marker(e.latlng, { icon: meIcon }).addTo(map);
+    meCircle = L.circle(e.latlng, { radius: e.accuracy, color: '#2b7fff', weight: 1, fillOpacity: 0.08 }).addTo(map);
+  });
+  map.on('locationerror', () => { hintEl.textContent = 'Location unavailable — tap the map to log a find'; });
+
+  // --- wire it up ------------------------------------------------------------
+  document.getElementById('settings').onclick = askForKey;
+  map.on('click', e => { if (!sheet || !sheet.classList.contains('logsheet')) openLog(e.latlng); });
+
+  Malten.getFinds().forEach(addFindMarker);
+  updateCount();
+  setTiles();
+  if (!Malten.getKey()) askForKey();
+</script>
+{{end}}

@@ -1,7 +1,7 @@
 {
   "name": "Malten",
   "short_name": "Malten",
-  "description": "A support companion for neurodivergent minds.",
+  "description": "A spatial companion for exploring Great Britain, on Ordnance Survey maps.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

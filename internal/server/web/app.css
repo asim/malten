@@ -1,85 +1,82 @@
-/* Malten — a minimalist black-and-white design system, shared by every page via
-   the base template so the chat and issues views share one look. */
+/* Malten — spatial exploration. Minimalist black-and-white chrome over the map. */
 
 :root {
-  --page-max: 760px;
-
-  --bg: #ffffff;
-  --fg: #111315;
-  --muted: #6b7280;
-  --border: #e6e6e8;
-  --panel: #f6f6f7;
-  --user-bg: #111315;   /* user messages: filled, inverted */
-  --user-fg: #ffffff;
-  --agent-bg: #ffffff;  /* agent messages: quiet, bordered */
+  --bg: #ffffff; --fg: #111315; --muted: #6b7280; --border: #e6e6e8; --panel: #ffffff;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0c0d;
-    --fg: #ececec;
-    --muted: #8c9096;
-    --border: #24262a;
-    --panel: #141517;
-    --user-bg: #ececec;
-    --user-fg: #0b0c0d;
-    --agent-bg: #0b0c0d;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0b0c0d; --fg: #ececec; --muted: #8c9096; --border: #24262a;
-  --panel: #141517; --user-bg: #ececec; --user-fg: #0b0c0d; --agent-bg: #0b0c0d;
-}
-:root[data-theme="light"] {
-  --bg: #ffffff; --fg: #111315; --muted: #6b7280; --border: #e6e6e8;
-  --panel: #f6f6f7; --user-bg: #111315; --user-fg: #ffffff; --agent-bg: #ffffff;
+  :root { --bg: #0b0c0d; --fg: #ececec; --muted: #8c9096; --border: #24262a; --panel: #16181b; --shadow: 0 6px 24px rgba(0, 0, 0, 0.5); }
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { height: 100%; margin: 0; }
 body {
-  margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--fg);
-  -webkit-font-smoothing: antialiased;
+  background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
-/* Top bar: a thin rule, the wordmark, and quiet nav. */
-.topbar { border-bottom: 1px solid var(--border); background: var(--bg); }
-.topbar .bar {
-  max-width: var(--page-max); margin: 0 auto; padding: 14px 20px;
-  display: flex; align-items: center; gap: 16px;
+/* App shell: slim bar, then the map fills the rest of the visible viewport. */
+.app { position: fixed; inset: 0; display: flex; flex-direction: column; height: 100dvh; }
+.topbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg); z-index: 500;
 }
-.brand { font-weight: 600; font-size: 17px; letter-spacing: -0.01em; color: var(--fg); text-decoration: none; }
-.topbar nav { margin-left: auto; display: flex; gap: 18px; }
-.topbar nav a { color: var(--muted); font-size: 14px; text-decoration: none; }
-.topbar nav a:hover { color: var(--fg); }
-.topbar nav a.active { color: var(--fg); }
-
-/* Document pages (issues): normal scroll, content centered to page width. */
-body.doc { min-height: 100vh; }
-.wrap { max-width: var(--page-max); margin: 0 auto; padding: 24px 20px; }
-
-/* Chat page: pinned to the visible viewport so the mobile keyboard shrinks the
-   message log rather than pushing the page around. Only #log scrolls. */
-body.chat {
-  position: fixed; top: 0; left: 0; right: 0;
-  overflow: hidden; overscroll-behavior: none;
-  display: flex; flex-direction: column;
-  height: 100dvh; height: var(--app-h, 100dvh);
+.brand { font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
+.topbar .spacer { flex: 1; }
+.count { font-size: 13px; color: var(--muted); }
+.iconbtn {
+  background: none; border: 1px solid var(--border); color: var(--fg); border-radius: 9px;
+  width: 34px; height: 34px; font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
 }
-body.chat .topbar { flex: 0 0 auto; }
-body.chat .topbar .bar { max-width: none; }
-main.chat {
-  flex: 1; min-height: 0;
-  display: flex; flex-direction: column;
-  width: 100%; max-width: var(--page-max); margin: 0 auto;
-}
+.iconbtn:hover { border-color: var(--fg); }
 
-/* Shared atoms. */
-.badge { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
+#map { flex: 1; min-height: 0; background: var(--panel); }
+.leaflet-container { background: var(--panel); font: inherit; }
 
-@media (max-width: 560px) {
-  .topbar .bar { padding: 12px 14px; }
+/* A card that floats over the map (key prompt, log sheet). */
+.sheet {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  width: min(440px, calc(100% - 24px)); background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 16px; z-index: 600;
 }
+.sheet h2 { margin: 0 0 6px; font-size: 16px; }
+.sheet p { margin: 0 0 12px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.sheet p a { color: var(--fg); }
+.keycard { top: 50%; transform: translate(-50%, -50%); }
+.logsheet { bottom: calc(16px + env(safe-area-inset-bottom)); }
+
+.gridref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+.sub { font-size: 12px; color: var(--muted); }
+
+input, textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--fg);
+  border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 16px; resize: none;
+}
+input:focus, textarea:focus { outline: none; border-color: var(--fg); }
+.row { display: flex; gap: 8px; margin-top: 12px; }
+.row .spacer { flex: 1; }
+button.primary { background: var(--fg); color: var(--bg); border: 0; border-radius: 10px; padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+button.ghost { background: none; color: var(--fg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; font: inherit; cursor: pointer; }
+button.ghost:hover { border-color: var(--fg); }
+button:disabled { opacity: 0.4; cursor: default; }
+
+/* Floating map controls. */
+.fabs { position: absolute; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; z-index: 550; }
+.fab {
+  width: 48px; height: 48px; border-radius: 50%; background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 20px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.fab.accent { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+/* Find marker + popup styling (div icons — no image assets needed). */
+.pin { width: 16px; height: 16px; border-radius: 50% 50% 50% 0; background: var(--fg);
+       border: 2px solid var(--bg); transform: rotate(-45deg); box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.me { width: 14px; height: 14px; border-radius: 50%; background: #2b7fff; border: 3px solid var(--bg); box-shadow: 0 0 0 2px #2b7fff55; }
+.leaflet-popup-content { font: inherit; }
+.leaflet-popup-content .note { margin: 0 0 6px; }
+.hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 550;
+        background: var(--panel); border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow);
+        padding: 7px 14px; font-size: 13px; color: var(--muted); }

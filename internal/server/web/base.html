@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover{{if .ChatViewport}}, interactive-widget=resizes-content{{end}}">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>{{.Title}}</title>
+<link rel="stylesheet" href="/leaflet.css">
 <link rel="stylesheet" href="/app.css">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0b0c0d" media="(prefers-color-scheme: dark)">
@@ -15,17 +16,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {{block "head" .}}{{end}}
 </head>
-<body class="{{.BodyClass}}">
-  <header class="topbar">
-    <div class="bar">
-      <a class="brand" href="/">Malten</a>
-      <nav>
-        <a href="/"{{if eq .Active "chat"}} class="active"{{end}}>Chat</a>
-        <a href="/issues"{{if eq .Active "issues"}} class="active"{{end}}>Issues</a>
-      </nav>
-    </div>
-  </header>
+<body>
   {{block "content" .}}{{end}}
+  <script src="/leaflet.js"></script>
   <script src="/app.js"></script>
   {{block "scripts" .}}{{end}}
   <script>
