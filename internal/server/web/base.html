@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>{{.Title}}</title>
-<link rel="stylesheet" href="/leaflet.css">
-<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/leaflet.css?v={{.Ver}}">
+<link rel="stylesheet" href="/app.css?v={{.Ver}}">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0b0c0d" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -18,8 +18,8 @@
 </head>
 <body>
   {{block "content" .}}{{end}}
-  <script src="/leaflet.js"></script>
-  <script src="/app.js"></script>
+  <script src="/leaflet.js?v={{.Ver}}"></script>
+  <script src="/app.js?v={{.Ver}}"></script>
   {{block "scripts" .}}{{end}}
   <script>
     if ('serviceWorker' in navigator) {

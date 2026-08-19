@@ -149,8 +149,11 @@ button:disabled { opacity: 0.4; cursor: default; }
   position: absolute; right: 14px; bottom: calc(16px + var(--kb, 0px) + env(safe-area-inset-bottom));
   width: min(380px, calc(100% - 28px));
   /* Grow to fit the conversation, but never taller than the space available.
-     No fixed height — a short chat is a short box, not a big empty one. */
-  max-height: min(60vh, calc(100dvh - var(--kb, 0px) - 96px));
+     No fixed height — a short chat is a short box, not a big empty one.
+     vh first as a fallback for browsers without dvh (else the cap is dropped
+     and the box grows unbounded). */
+  max-height: min(60vh, calc(100vh - var(--kb, 0px) - 96px));
+  max-height: min(60dvh, calc(100dvh - var(--kb, 0px) - 96px));
   display: flex; flex-direction: column; z-index: 600;
   background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
   overflow: hidden;
@@ -162,6 +165,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   .chat {
     left: 8px; right: 8px; width: auto;
     bottom: calc(8px + var(--kb, 0px) + env(safe-area-inset-bottom));
+    max-height: min(64vh, calc(100vh - var(--kb, 0px) - 72px));
     max-height: min(64dvh, calc(100dvh - var(--kb, 0px) - 72px));
   }
 }
