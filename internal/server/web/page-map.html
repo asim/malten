@@ -22,7 +22,8 @@
   const hintEl = document.getElementById('hint');
   function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 
-  const map = L.map('map', { zoomControl: true, attributionControl: true }).setView([54.5, -2.5], 6);
+  // OS Maps API (EPSG:3857) serves zoom 7–20; starting lower shows only 404s.
+  const map = L.map('map', { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 20 }).setView([54.5, -2.5], 7);
   map.attributionControl.setPrefix(false);
 
   const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [16, 16], iconAnchor: [8, 16] });
@@ -37,11 +38,11 @@
     refreshUI();
     if (!key) return;
     tiles = L.tileLayer('https://api.os.uk/maps/raster/v1/zxy/' + OS_STYLE + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(key), {
-      maxZoom: 20,
+      minZoom: 7, maxZoom: 20,
       attribution: 'Contains OS data &copy; Crown copyright and database rights 2026',
     }).addTo(map);
     tiles.on('tileerror', () => {
-      if (!tileErrored) { tileErrored = true; hintEl.textContent = 'Map didn’t load — check your OS key (tap “Map key”)'; }
+      if (!tileErrored) { tileErrored = true; hintEl.textContent = 'Tiles didn’t load — check the key is right and the OS Maps API is added to your project'; }
     });
     tiles.on('load', () => { if (tileErrored) { tileErrored = false; refreshUI(); } });
   }
@@ -71,9 +72,9 @@
     const s = openSheet('keycard',
       '<h2>Add your OS map key</h2>' +
       '<p>Malten draws its maps from Great Britain’s national mapping, the Ordnance Survey. ' +
-      'Get a free API key from the <a href="https://osdatahub.os.uk/" target="_blank" rel="noopener">OS Data Hub</a> and paste it here. ' +
-      'It is stored only in this browser and sent straight to the OS.</p>' +
-      '<input id="key" placeholder="OS Data Hub project API key" autocomplete="off" value="' + esc(Malten.getKey()) + '">' +
+      'On the <a href="https://osdatahub.os.uk/" target="_blank" rel="noopener">OS Data Hub</a>, add a project with the <b>OS Maps API</b> and paste its <b>Project API Key</b> here. ' +
+      'You don’t need the secret. It’s stored only in this browser and sent straight to the OS.</p>' +
+      '<input id="key" placeholder="Project API Key (not the secret)" autocomplete="off" value="' + esc(Malten.getKey()) + '">' +
       '<div class="row"><span class="spacer"></span><button class="primary" id="savekey">Save</button></div>');
     const input = s.querySelector('#key');
     input.focus();
