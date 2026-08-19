@@ -10,7 +10,8 @@
   <div class="hint" id="hint">Tap the map to log a find</div>
   <div class="fabs">
     <button class="fab" id="ask" title="Ask Malten" hidden>✦</button>
-    <button class="fab" id="live" title="Live transport (London)">🚌</button>
+    <button class="fab" id="rail" title="Live rail (Great Britain)" hidden>🚆</button>
+    <button class="fab" id="live" title="Live buses & tube (London)">🚌</button>
     <button class="fab" id="locate" title="Find my location">◎</button>
   </div>
   <div class="chat" id="chat" hidden>
@@ -244,6 +245,55 @@
     });
   }
 
+  // --- live rail overlay (National Rail: Great Britain) ---------------------
+  const railLayer = L.layerGroup().addTo(map);
+  const railIcon = L.divIcon({ className: '', html: '<div class="station"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+  let rail = false, railTimer = null;
+  const railBtn = document.getElementById('rail');
+  // ODbL requires visible attribution while the station data is shown.
+  const RAIL_ATTR = 'Station data <a href="https://github.com/davwheat/uk-railway-stations" target="_blank" rel="noopener">uk-railway-stations</a> (ODbL)';
+  railBtn.onclick = () => {
+    rail = !rail; railBtn.classList.toggle('accent', rail);
+    if (rail) { map.attributionControl.addAttribution(RAIL_ATTR); loadStations(); }
+    else { map.attributionControl.removeAttribution(RAIL_ATTR); railLayer.clearLayers(); refreshUI(); }
+  };
+  map.on('moveend', () => { if (rail) { clearTimeout(railTimer); railTimer = setTimeout(loadStations, 400); } });
+
+  async function loadStations() {
+    if (!rail) return;
+    if (map.getZoom() < 10) { railLayer.clearLayers(); hintEl.textContent = 'Zoom in to see nearby stations'; return; }
+    const c = map.getCenter();
+    try {
+      const res = await fetch('/api/stations?lat=' + c.lat + '&lng=' + c.lng);
+      const stations = (await res.json()).stations || [];
+      railLayer.clearLayers();
+      if (!stations.length) { hintEl.textContent = 'No stations nearby'; return; }
+      hintEl.textContent = 'Nearest stations — tap one for live departures';
+      stations.forEach(addStation);
+    } catch (_) { hintEl.textContent = 'Couldn’t load stations'; }
+  }
+
+  function addStation(st) {
+    const m = L.marker([st.lat, st.lng], { icon: railIcon }).addTo(railLayer);
+    m.bindPopup('<div class="stopname">' + esc(st.name) + ' <span class="sub">' + esc(st.crs) + '</span></div>' +
+      '<div class="sub" id="dep-' + esc(st.crs) + '">…</div>', { minWidth: 230 });
+    m.on('popupopen', async () => {
+      const box = document.getElementById('dep-' + st.crs);
+      if (!box) return;
+      box.textContent = 'loading live departures…';
+      try {
+        const res = await fetch('/api/departures?crs=' + encodeURIComponent(st.crs));
+        const board = await res.json();
+        const deps = board.departures || [];
+        box.innerHTML = deps.length
+          ? deps.slice(0, 6).map(d => '<div class="arr"><b>' + esc(d.scheduled) + '</b> ' + esc(d.destination) +
+              (d.platform ? ' · Plat ' + esc(d.platform) : '') +
+              ' · <span class="' + (/^on time$/i.test(d.expected) ? 'ontime' : 'delayed') + '">' + esc(d.expected) + '</span></div>').join('')
+          : 'no departures listed right now';
+      } catch (_) { box.textContent = 'couldn’t load live departures'; }
+    });
+  }
+
   // --- Ask Malten (spatial agent) -------------------------------------------
   let myLoc = null;
   const askBtn = document.getElementById('ask');
@@ -252,8 +302,11 @@
   const chatText = document.getElementById('chatText');
   let asking = false;
 
-  // Only offer the agent if the server has it configured.
-  fetch('/api/health').then(r => r.json()).then(d => { if (d.ask) askBtn.hidden = false; }).catch(() => {});
+  // Reveal the agent and live-rail controls only if the server has them.
+  fetch('/api/health').then(r => r.json()).then(d => {
+    if (d.ask) askBtn.hidden = false;
+    if (d.rail) document.getElementById('rail').hidden = false;
+  }).catch(() => {});
 
   askBtn.onclick = () => {
     chat.hidden = !chat.hidden;

@@ -77,9 +77,12 @@ button:disabled { opacity: 0.4; cursor: default; }
        border: 2px solid var(--bg); transform: rotate(-45deg); box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
 .me { width: 14px; height: 14px; border-radius: 50%; background: #2b7fff; border: 3px solid var(--bg); box-shadow: 0 0 0 2px #2b7fff55; }
 .stop { width: 12px; height: 12px; border-radius: 3px; background: #d6262b; border: 2px solid var(--bg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+.station { width: 13px; height: 13px; border-radius: 3px; background: #1b3a8f; border: 2px solid var(--bg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
 .stopname { font-weight: 600; margin-bottom: 2px; }
 .arr { margin: 3px 0; }
 .arr b { font-variant-numeric: tabular-nums; }
+.arr .ontime { color: #1a7f37; }
+.arr .delayed { color: #b3261e; }
 .leaflet-popup-content { font: inherit; }
 .leaflet-popup-content .note { margin: 0 0 6px; }
 .hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 550;

@@ -21,13 +21,17 @@ import (
 
 const askSystem = `You are "Ask Malten", a spatial guide inside Malten — a map-based exploration app for Great Britain built on Ordnance Survey maps.
 
-You help people understand where they are and how to move through it right now: nearby public transport, when the next bus or train is due, and the lie of the land. Live transport data currently covers London only (Transport for London).
+You help people understand where they are and how to move through it right now: nearby public transport, when the next bus or train is due, and the lie of the land.
+
+Live data:
+- National Rail stations and live train departures cover all of Great Britain (nearby_stations, train_departures).
+- Buses, trams and the tube cover London only, via Transport for London (nearby_stops, arrivals).
 
 Guidance:
 - Be concise and practical. Lead with the answer. Prefer short sentences and small lists.
 - When asked about getting somewhere or what's nearby, use the tools to fetch live data rather than guessing. Use the user's current location (provided below) as the default point of reference.
-- Give real minutes and line names from the tool results. Don't invent arrivals.
-- If live transport returns nothing, say the area may be outside current coverage (London only for now).
+- For trains, find the nearest station with nearby_stations, then read its board with train_departures. Give real times and destinations from the tool results — don't invent them.
+- If London bus/tube tools return nothing, the area is likely outside London; rail still works nationwide.
 - You can mention the OS National Grid reference for a spot when it's relevant.
 - Never claim to store anything about the user. You don't.`
 
@@ -99,9 +103,10 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 }
 
 // askTools wires the live-data functions in as model tools. The user's location
-// is closed over as the default reference point for nearby_stops.
+// is closed over as the default reference point. Rail tools (nationwide) are
+// appended alongside the London-only TfL tools.
 func (s *Server) askTools(req askRequest) []llm.Tool {
-	return []llm.Tool{
+	tools := []llm.Tool{
 		{
 			Name: "nearby_stops",
 			Description: "List public-transport stops (bus, tram, tube, rail) near a point, with their line names and stop ids. " +
@@ -197,4 +202,5 @@ func (s *Server) askTools(req askRequest) []llm.Tool {
 			},
 		},
 	}
+	return append(tools, s.railTools(req)...)
 }
