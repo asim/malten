@@ -35,6 +35,21 @@ body {
 #map { flex: 1; min-height: 0; background: var(--panel); }
 .leaflet-container { background: var(--panel); font: inherit; }
 
+/* The OS credit is required but should be quiet — small, muted, out of the way
+   (bottom-left, clear of the FABs and chat on the right). */
+.leaflet-control-attribution {
+  font-size: 10px; line-height: 1.35;
+  padding: 1px 6px; border-radius: 0 6px 0 0;
+  max-width: 66vw;
+  background: rgba(255, 255, 255, 0.66) !important;
+  color: var(--muted) !important;
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+}
+.leaflet-control-attribution a { color: var(--muted) !important; text-decoration: none; }
+@media (prefers-color-scheme: dark) {
+  .leaflet-control-attribution { background: rgba(11, 12, 13, 0.6) !important; }
+}
+
 /* A card that floats over the map (key prompt, log sheet). */
 .sheet {
   position: absolute; left: 50%; transform: translateX(-50%);

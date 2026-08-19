@@ -38,28 +38,30 @@ type Server struct {
 }
 
 // New builds a Server. The waitlist is stored at MALTEN_DATA (default
-// interest.jsonl). The list is viewable only with the admin token, read from
-// MALTEN_ADMIN_TOKEN or, failing that, an admin_token file next to the data.
+// interest.jsonl).
 //
-// "Ask Malten" is enabled only when ANTHROPIC_API_KEY is present; the model can
-// be overridden with MALTEN_MODEL.
+// Every server-side secret is read the same way (see secret): an environment
+// variable if set, otherwise a plain file of the same purpose sitting next to
+// the binary — which is how the deploy provisions them from CI secrets without
+// anyone editing the box. Each feature switches on only when its secret is
+// present, and the UI hides features whose secret is absent (via /api/health).
 func New() *Server {
 	dataPath := envOr("MALTEN_DATA", "interest.jsonl")
 	s := &Server{
 		started:    time.Now(),
 		interest:   &interestBook{path: dataPath},
-		adminToken: resolveAdminToken(),
+		adminToken: secret("MALTEN_ADMIN_TOKEN", "admin_token"),
+		osKey:      secret("OS_API_KEY", "os_api_key"),
 	}
-	if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
+	if key := secret("ANTHROPIC_API_KEY", "anthropic_key"); key != "" {
 		s.llm = llm.New(key, os.Getenv("MALTEN_MODEL"))
 	}
-	if tok := strings.TrimSpace(os.Getenv("NRE_LDBWS_TOKEN")); tok != "" {
+	if tok := secret("NRE_LDBWS_TOKEN", "nre_ldbws_token"); tok != "" {
 		s.darwin = nrail.NewDarwin(tok)
 	}
-	if key := strings.TrimSpace(os.Getenv("BODS_API_KEY")); key != "" {
+	if key := secret("BODS_API_KEY", "bods_api_key"); key != "" {
 		s.bods = bods.New(key)
 	}
-	s.osKey = strings.TrimSpace(os.Getenv("OS_API_KEY"))
 	return s
 }
 
@@ -70,11 +72,14 @@ func envOr(key, def string) string {
 	return def
 }
 
-func resolveAdminToken() string {
-	if t := strings.TrimSpace(os.Getenv("MALTEN_ADMIN_TOKEN")); t != "" {
-		return t
+// secret resolves a server-side secret: the environment variable envKey if set,
+// otherwise the trimmed contents of file (resolved relative to the working
+// directory) if it exists, otherwise "".
+func secret(envKey, file string) string {
+	if v := strings.TrimSpace(os.Getenv(envKey)); v != "" {
+		return v
 	}
-	if b, err := os.ReadFile(envOr("MALTEN_ADMIN_TOKEN_FILE", "admin_token")); err == nil {
+	if b, err := os.ReadFile(file); err == nil {
 		return strings.TrimSpace(string(b))
 	}
 	return ""

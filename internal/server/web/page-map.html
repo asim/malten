@@ -37,6 +37,8 @@
   // OS Maps API (EPSG:3857) serves zoom 7–20; starting lower shows only 404s.
   const map = L.map('map', { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 20 }).setView([54.5, -2.5], 7);
   map.attributionControl.setPrefix(false);
+  // Keep the (required) OS credit clear of the controls and chat on the right.
+  map.attributionControl.setPosition('bottomleft');
 
   const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [16, 16], iconAnchor: [8, 16] });
   const meIcon = L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
