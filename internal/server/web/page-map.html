@@ -9,8 +9,17 @@
   <div id="map"></div>
   <div class="hint" id="hint">Tap the map to log a find</div>
   <div class="fabs">
+    <button class="fab" id="ask" title="Ask Malten" hidden>✦</button>
     <button class="fab" id="live" title="Live transport (London)">🚌</button>
     <button class="fab" id="locate" title="Find my location">◎</button>
+  </div>
+  <div class="chat" id="chat" hidden>
+    <div class="chat-head"><span class="chat-title">Ask Malten</span><button class="chat-x" id="chatClose" title="Close">✕</button></div>
+    <div class="chat-log" id="chatLog"></div>
+    <form class="chat-input" id="chatForm">
+      <input id="chatText" placeholder="What’s nearby, or how do I get to…?" autocomplete="off">
+      <button class="primary" type="submit">Ask</button>
+    </form>
   </div>
 </div>
 {{end}}
@@ -170,6 +179,7 @@
   let meMarker = null, meCircle = null;
   document.getElementById('locate').onclick = () => { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); };
   map.on('locationfound', e => {
+    myLoc = e.latlng;
     if (meMarker) map.removeLayer(meMarker);
     if (meCircle) map.removeLayer(meCircle);
     meMarker = L.marker(e.latlng, { icon: meIcon }).addTo(map);
@@ -233,6 +243,90 @@
       } catch (_) { box.textContent = 'couldn’t load live times'; }
     });
   }
+
+  // --- Ask Malten (spatial agent) -------------------------------------------
+  let myLoc = null;
+  const askBtn = document.getElementById('ask');
+  const chat = document.getElementById('chat');
+  const chatLog = document.getElementById('chatLog');
+  const chatText = document.getElementById('chatText');
+  let asking = false;
+
+  // Only offer the agent if the server has it configured.
+  fetch('/api/health').then(r => r.json()).then(d => { if (d.ask) askBtn.hidden = false; }).catch(() => {});
+
+  askBtn.onclick = () => {
+    chat.hidden = !chat.hidden;
+    if (!chat.hidden) {
+      chatText.focus();
+      if (!chatLog.childElementCount) addMsg('malten', 'Ask me what’s nearby or how to get somewhere right now. Live transport covers London, for now.');
+    }
+  };
+  document.getElementById('chatClose').onclick = () => { chat.hidden = true; };
+
+  function addMsg(who, text) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + who;
+    el.textContent = text;
+    chatLog.appendChild(el);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return el;
+  }
+
+  function toolPhrase(t) {
+    return t === 'nearby_stops' ? 'Finding nearby stops…'
+      : t === 'arrivals' ? 'Checking live arrivals…'
+      : t === 'grid_ref' ? 'Locating on the grid…' : 'Working…';
+  }
+
+  document.getElementById('chatForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const q = chatText.value.trim();
+    if (!q || asking) return;
+    chatText.value = '';
+    addMsg('me', q);
+    asking = true;
+    const bubble = addMsg('malten', '…');
+    bubble.classList.add('streaming', 'toolonly');
+    try {
+      const res = await fetch('/api/ask', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: q, lat: myLoc ? myLoc.lat : 0, lng: myLoc ? myLoc.lng : 0, has_loc: !!myLoc }),
+      });
+      if (!res.ok || !res.body) throw new Error();
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          const line = buf.slice(0, idx).replace(/^data:\s?/, '');
+          buf = buf.slice(idx + 2);
+          if (line === '' || line === '[DONE]') continue;
+          let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
+          if (ev.Type === 'text') {
+            if (bubble.classList.contains('toolonly')) { bubble.classList.remove('toolonly'); bubble.textContent = ''; }
+            bubble.textContent += ev.Text;
+            chatLog.scrollTop = chatLog.scrollHeight;
+          } else if (ev.Type === 'tool') {
+            if (bubble.classList.contains('toolonly')) bubble.textContent = toolPhrase(ev.Tool);
+          } else if (ev.Type === 'error') {
+            if (bubble.classList.contains('toolonly')) { bubble.classList.remove('toolonly'); bubble.textContent = ''; }
+            bubble.textContent += (bubble.textContent ? '\n' : '') + ev.Text;
+          }
+        }
+      }
+    } catch (_) {
+      if (bubble.classList.contains('toolonly')) bubble.textContent = 'Sorry — I couldn’t answer just then.';
+    } finally {
+      bubble.classList.remove('streaming');
+      if (!bubble.textContent) bubble.textContent = '…';
+      asking = false;
+    }
+  };
 
   // --- wire it up ------------------------------------------------------------
   document.getElementById('settings').onclick = askForKey;

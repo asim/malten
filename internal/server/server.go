@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asim/malten/internal/llm"
 	"github.com/asim/malten/internal/osgrid"
 )
 
@@ -28,18 +29,26 @@ type Server struct {
 	started    time.Time
 	interest   *interestBook
 	adminToken string
+	llm        *llm.Client // "Ask Malten"; nil when ANTHROPIC_API_KEY is unset
 }
 
 // New builds a Server. The waitlist is stored at MALTEN_DATA (default
 // interest.jsonl). The list is viewable only with the admin token, read from
 // MALTEN_ADMIN_TOKEN or, failing that, an admin_token file next to the data.
+//
+// "Ask Malten" is enabled only when ANTHROPIC_API_KEY is present; the model can
+// be overridden with MALTEN_MODEL.
 func New() *Server {
 	dataPath := envOr("MALTEN_DATA", "interest.jsonl")
-	return &Server{
+	s := &Server{
 		started:    time.Now(),
 		interest:   &interestBook{path: dataPath},
 		adminToken: resolveAdminToken(),
 	}
+	if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
+		s.llm = llm.New(key, os.Getenv("MALTEN_MODEL"))
+	}
+	return s
 }
 
 func envOr(key, def string) string {
@@ -66,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/stops", s.handleStops)
 	mux.HandleFunc("/api/arrivals", s.handleArrivals)
 	mux.HandleFunc("/api/interest", s.handleInterest)
+	mux.HandleFunc("/api/ask", s.handleAsk)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/app.js", staticAsset("app.js", "text/javascript; charset=utf-8", "public, max-age=300"))
@@ -117,6 +127,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":         "ok",
 		"uptime_seconds": int(time.Since(s.started).Seconds()),
+		"ask":            s.askEnabled(),
 	})
 }
 
