@@ -15,9 +15,12 @@ Ordnance Survey (OS) is the authoritative substrate: the map tiles come from the
 experience and the spatial memory, not the map data.
 
 **The server is stateless and anonymous.** It stores nothing about users. Your
-finds and your **OS Data Hub API key** live in the browser (`web/app.js`,
-localStorage). Map tiles are fetched by the client *directly* from the OS APIs
-with your key — the server never sees it.
+finds live in the browser (`web/app.js`, localStorage). Map tiles come from the
+OS Maps API one of two ways: if the operator sets a shared `OS_API_KEY`, the
+server proxies tiles (`/api/tiles`, `internal/server/tiles.go`) so visitors need
+no key of their own and the key stays server-side; otherwise each visitor enters
+their own **OS Data Hub key** in the UI and the client fetches tiles *directly*
+from the OS with it — the server never sees that per-user key.
 
 Beyond serving the UI, the server does two things, and **neither stores user
 content**:
@@ -68,8 +71,10 @@ go test ./...       # unit tests (osgrid grid-reference math)
 go run ./cmd/malten # start the server on :8080
 ```
 
-The map needs a free **OS Data Hub** API key (osdatahub.os.uk), entered in the
-UI — nothing else. TfL live transport and nearby-station lookup work with no key.
+The map needs a free **OS Data Hub** API key (osdatahub.os.uk). Either the
+operator sets it once as `OS_API_KEY` (the server proxies tiles; visitors need
+nothing), or each visitor enters their own in the UI. TfL live transport and
+nearby-station lookup work with no key.
 Optional server-side keys enable more: `ANTHROPIC_API_KEY` (and optionally
 `MALTEN_MODEL`, default `claude-opus-4-8`) turns on **Ask Malten**;
 `NRE_LDBWS_TOKEN` turns on **live rail departures**; `BODS_API_KEY` turns on
@@ -86,8 +91,11 @@ server (no network, no key).
   user content, and Ask Malten's questions/locations are used per-turn and
   forgotten. The only disk write is the opt-in waitlist. Don't add server-side
   persistence of user content — that's the privacy model.
-- **The OS key stays the user's.** It's entered in the browser and sent straight
-  to the OS APIs. Never route it through, log, or store it server-side.
+- **The per-user OS key stays the user's.** When entered in the browser it's
+  sent straight to the OS APIs — never route that per-user key through, log, or
+  store it server-side. The one exception is an operator-supplied shared
+  `OS_API_KEY`: that is a server-side secret (like the others) used only by the
+  tile proxy, and it too never reaches the browser.
 - **The Anthropic key stays the server's.** `ANTHROPIC_API_KEY` (for Ask Malten)
   is the one server-side secret; it never reaches the browser. Keep the LLM
   client dependency-free (`net/http` + SSE) — don't add the SDK.

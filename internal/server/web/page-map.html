@@ -41,28 +41,46 @@
   const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [16, 16], iconAnchor: [8, 16] });
   const meIcon = L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
 
-  // --- OS map tiles (client fetches them directly with your key) ------------
-  let tiles = null, tileErrored = false;
+  // --- OS map tiles ---------------------------------------------------------
+  // If the server has a shared OS key it proxies tiles at /api/tiles and the
+  // user never needs one. Otherwise the tiles are fetched straight from the OS
+  // with the per-user key entered in this browser (the original model).
+  let tiles = null, tileErrored = false, serverTiles = false;
   function setTiles() {
     if (tiles) { map.removeLayer(tiles); tiles = null; }
     tileErrored = false;
-    const key = Malten.getKey();
     refreshUI();
-    if (!key) return;
-    tiles = L.tileLayer('https://api.os.uk/maps/raster/v1/zxy/' + OS_STYLE + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(key), {
+    let url;
+    if (serverTiles) {
+      url = '/api/tiles/{z}/{x}/{y}.png';
+    } else {
+      const key = Malten.getKey();
+      if (!key) return;
+      url = 'https://api.os.uk/maps/raster/v1/zxy/' + OS_STYLE + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(key);
+    }
+    tiles = L.tileLayer(url, {
       minZoom: 7, maxZoom: 20,
       attribution: 'Contains OS data &copy; Crown copyright and database rights 2026',
     }).addTo(map);
     tiles.on('tileerror', () => {
-      if (!tileErrored) { tileErrored = true; hintEl.textContent = 'Tiles didn’t load — check the key is right and the OS Maps API is added to your project'; }
+      if (!tileErrored) {
+        tileErrored = true;
+        hintEl.textContent = serverTiles ? 'Map tiles didn’t load' : 'Tiles didn’t load — check the key is right and the OS Maps API is added to your project';
+      }
     });
     tiles.on('load', () => { if (tileErrored) { tileErrored = false; refreshUI(); } });
   }
 
-  // Keep the key button and hint reflecting whether a key is set.
+  // Keep the key button and hint reflecting the tile source.
   function refreshUI() {
-    const has = !!Malten.getKey();
     const btn = document.getElementById('settings');
+    if (serverTiles) {
+      btn.hidden = true; // no per-user key needed
+      if (!tileErrored) hintEl.textContent = 'Tap the map to log a find';
+      return;
+    }
+    btn.hidden = false;
+    const has = !!Malten.getKey();
     btn.textContent = has ? 'Map key' : 'Add map key';
     btn.classList.toggle('accent', !has);
     if (!tileErrored) hintEl.textContent = has ? 'Tap the map to log a find' : 'Add your OS key to load the map';
@@ -340,12 +358,15 @@
   const chatText = document.getElementById('chatText');
   let asking = false;
 
-  // Reveal the agent and live-rail controls only if the server has them.
+  // Ask the server what it offers: shared tiles (no per-user key), the agent,
+  // and the live rail/bus feeds.
   fetch('/api/health').then(r => r.json()).then(d => {
+    if (d.tiles) { serverTiles = true; setTiles(); }
     if (d.ask) askBtn.hidden = false;
     if (d.rail) document.getElementById('rail').hidden = false;
     if (d.buses) document.getElementById('buses').hidden = false;
-  }).catch(() => {});
+    if (!serverTiles && !Malten.getKey()) askForKey();
+  }).catch(() => { if (!Malten.getKey()) askForKey(); });
 
   askBtn.onclick = () => {
     chat.hidden = !chat.hidden;
@@ -426,8 +447,7 @@
 
   Malten.getFinds().forEach(addFindMarker);
   updateCount();
-  setTiles();
-  if (!Malten.getKey()) askForKey();
+  setTiles(); // client-key path until /api/health confirms server-side tiles
 
   // Auto-locate on load so the map opens where you are (and the agent knows
   // your location). The locationfound handler only recentres inside GB.
