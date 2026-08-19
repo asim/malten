@@ -36,10 +36,13 @@ content**:
   `/api/buses` adds **nationwide live buses** from the Bus Open Data Service's
   SIRI-VM feed (vehicle positions in a bounding box; free `BODS_API_KEY`,
   `internal/bods`) — SIRI-VM XML, not GTFS-RT protobuf, to stay dependency-free.
-- **Runs "Ask Malten", a spatial agent** (`/api/ask`, SSE). A small bounded
-  tool-use loop over Anthropic's Messages API, with the live-data calls above (plus
-  `/api/gridref`) exposed as tools. It's enabled only when `ANTHROPIC_API_KEY` is
-  set on the server; the question and location are used for the turn and forgotten.
+- **Runs a spatial agent, ambiently.** The agent works in the background, not
+  through a chat box: `/api/suggest` (`internal/server/suggest.go`) runs it
+  silently over the live "around me" snapshot and returns ONE concrete nudge,
+  surfaced in the UI's "Around you" card. The fuller bounded tool-use loop —
+  `/api/ask` (SSE), with the live-data calls above plus `/api/gridref` exposed as
+  tools — remains available server-side. Both are enabled only when
+  `ANTHROPIC_API_KEY` is set; the question/location are used per-turn and forgotten.
 
 - **Place search & reverse geocoding** (`/api/search`, `/api/nearest`,
   `internal/server/search.go`). Proxies the **OS Names** gazetteer with the

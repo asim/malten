@@ -14,19 +14,11 @@
   <div class="hint" id="hint">Tap the map to log a find</div>
   <div class="around" id="around" hidden></div>
   <div class="fabs">
-    <button class="fab" id="ask" title="Ask Malten" hidden>✦</button>
+    <button class="fab" id="ask" title="Suggest something to do" hidden>💡</button>
     <button class="fab" id="rail" title="Live rail (Great Britain)" hidden>🚆</button>
     <button class="fab" id="buses" title="Live buses (Great Britain)" hidden>🚍</button>
     <button class="fab" id="live" title="Bus & tube arrivals (London)">🚌</button>
     <button class="fab" id="locate" title="Find my location">◎</button>
-  </div>
-  <div class="chat" id="chat" hidden>
-    <div class="chat-head"><span class="chat-title">Ask Malten</span><button class="chat-x" id="chatClose" title="Close">✕</button></div>
-    <div class="chat-log" id="chatLog"></div>
-    <form class="chat-input" id="chatForm">
-      <input id="chatText" placeholder="What’s nearby, or how do I get to…?" autocomplete="off">
-      <button class="primary" type="submit">Ask</button>
-    </form>
   </div>
 </div>
 {{end}}
@@ -38,39 +30,6 @@
   const countEl = document.getElementById('count');
   const hintEl = document.getElementById('hint');
   function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
-
-  // Minimal, dependency-free markdown → HTML for chat replies. Input is escaped
-  // first, so the regexes only ever produce our own safe tags.
-  function mdInline(s) {
-    s = s.replace(/`([^`]+)`/g, (_, c) => '<code>' + c + '</code>');
-    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
-    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-    return s;
-  }
-  function mdToHtml(src) {
-    const lines = esc(src).split('\n');
-    let html = '', list = null;
-    const closeList = () => { if (list) { html += '</' + list + '>'; list = null; } };
-    for (const line of lines) {
-      let m;
-      if ((m = line.match(/^\s*[-*]\s+(.*)$/))) {
-        if (list !== 'ul') { closeList(); html += '<ul>'; list = 'ul'; }
-        html += '<li>' + mdInline(m[1]) + '</li>';
-      } else if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) {
-        if (list !== 'ol') { closeList(); html += '<ol>'; list = 'ol'; }
-        html += '<li>' + mdInline(m[1]) + '</li>';
-      } else if ((m = line.match(/^\s*#{1,6}\s+(.*)$/))) {
-        closeList(); html += '<div class="mdh">' + mdInline(m[1]) + '</div>';
-      } else if (line.trim() === '') {
-        closeList();
-      } else {
-        closeList(); html += '<div>' + mdInline(line) + '</div>';
-      }
-    }
-    closeList();
-    return html;
-  }
 
   // OS Maps API (EPSG:3857) serves zoom 7–20; starting lower shows only 404s.
   const map = L.map('map', { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 20 }).setView([54.5, -2.5], 7);
@@ -441,28 +400,18 @@
     } catch (_) { hintEl.textContent = 'Couldn’t load live buses'; }
   }
 
-  // --- Ask Malten (spatial agent) -------------------------------------------
+  // --- Malten's ambient agent -----------------------------------------------
+  // No chat box. The agent works in the background and drops ONE concrete nudge
+  // into the "Around you" card — you never have to type or ask.
   let myLoc = null;
-  const askBtn = document.getElementById('ask');
-  const chat = document.getElementById('chat');
-  const chatLog = document.getElementById('chatLog');
-  const chatText = document.getElementById('chatText');
-  let asking = false;
-
-  // Auto-scroll that doesn't fight the user: only stick to the bottom while the
-  // user is already there. If they scroll up to read, stop yanking them down.
-  let stick = true;
-  function nearBottom() { return chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 48; }
-  function pin() { if (stick) chatLog.scrollTop = chatLog.scrollHeight; }
-  chatLog.addEventListener('scroll', () => { stick = nearBottom(); });
-
+  const ideaBtn = document.getElementById('ask'); // the 💡 control: "another idea"
+  const aroundEl = document.getElementById('around');
   let askAvail = false, railAvail = false, busesAvail = false;
-  // Ask the server what it offers: shared tiles (no per-user key), the agent,
-  // and the live feeds. Remember which live overlays exist so we can auto-start
-  // them once we know where you are.
+  let wentLive = false, aroundTimer = null, suggestSeq = 0;
+
   fetch('/api/health').then(r => r.json()).then(d => {
     if (d.tiles) { serverTiles = true; setTiles(); }
-    if (d.ask) { askAvail = true; askBtn.hidden = false; }
+    if (d.ask) { askAvail = true; ideaBtn.hidden = false; }
     if (d.rail) { railAvail = true; document.getElementById('rail').hidden = false; }
     if (d.buses) { busesAvail = true; document.getElementById('buses').hidden = false; }
     if (d.search) document.getElementById('searchbox').hidden = false;
@@ -470,115 +419,11 @@
     if (myLoc) goLive(myLoc); // location already known before health returned
   }).catch(() => { if (!Malten.getKey()) askForKey(); });
 
-  // focus=true opens the keyboard for typing; the "Around you" card opens the
-  // chat WITHOUT focus, so a canned question doesn't pop the keyboard (which on
-  // iOS scrolls the whole layout and strands the reply off-screen).
-  function openChat(focus) {
-    chat.hidden = false;
-    document.body.classList.add('chatting');
-    window.scrollTo(0, 0);
-    stick = true;
-    if (!chatLog.childElementCount) addMsg('malten', 'Ask me what’s nearby, how to get somewhere, or what’s worth doing around here right now.');
-    pin();
-    if (focus) chatText.focus();
-  }
-  function closeChat() { chat.hidden = true; document.body.classList.remove('chatting'); chatText.blur(); }
-  askBtn.onclick = () => { if (chat.hidden) openChat(true); else closeChat(); };
-  document.getElementById('chatClose').onclick = closeChat;
-
-  function addMsg(who, text) {
-    const el = document.createElement('div');
-    el.className = 'msg ' + who;
-    el.textContent = text;
-    chatLog.appendChild(el);
-    pin();
-    return el;
-  }
-
-  function toolPhrase(t) {
-    return t === 'around_me' ? 'Looking around you…'
-      : t === 'find_place' ? 'Searching the map…'
-      : t === 'whats_here' ? 'Working out where that is…'
-      : t === 'nearby_stations' ? 'Finding nearby stations…'
-      : t === 'train_departures' ? 'Checking live departures…'
-      : t === 'live_buses' ? 'Finding buses nearby…'
-      : t === 'nearby_stops' ? 'Finding nearby stops…'
-      : t === 'arrivals' ? 'Checking live arrivals…'
-      : t === 'grid_ref' ? 'Locating on the grid…' : 'Working…';
-  }
-
-  document.getElementById('chatForm').onsubmit = (e) => { e.preventDefault(); runAsk(chatText.value.trim()); };
-
-  async function runAsk(q) {
-    if (!q || asking) return;
-    stick = true; // a new question jumps to the bottom
-    chatText.value = '';
-    addMsg('me', q);
-    asking = true;
-    const bubble = addMsg('malten', '…');
-    bubble.classList.add('streaming', 'toolonly');
-    let answer = '';
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 90000); // never lock the chat on a hung stream
-    try {
-      const res = await fetch('/api/ask', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
-        body: JSON.stringify({ message: q, lat: myLoc ? myLoc.lat : 0, lng: myLoc ? myLoc.lng : 0, has_loc: !!myLoc }),
-      });
-      if (!res.ok || !res.body) {
-        let msg = 'Sorry — I couldn’t answer just then.';
-        try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_) {}
-        throw new Error(msg);
-      }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        buf = buf.replace(/\r/g, ''); // tolerate CRLF from proxies
-        let idx;
-        while ((idx = buf.indexOf('\n\n')) >= 0) {
-          const line = buf.slice(0, idx).replace(/^data:\s?/, '');
-          buf = buf.slice(idx + 2);
-          if (line === '' || line[0] === ':' || line === '[DONE]') continue; // skip blanks, comments, sentinel
-          let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
-          if (ev.Type === 'text') {
-            if (bubble.classList.contains('toolonly')) { bubble.classList.remove('toolonly'); answer = ''; }
-            answer += ev.Text;
-            bubble.innerHTML = mdToHtml(answer);
-            pin();
-          } else if (ev.Type === 'tool') {
-            if (bubble.classList.contains('toolonly')) { bubble.textContent = toolPhrase(ev.Tool); pin(); }
-          } else if (ev.Type === 'error') {
-            bubble.classList.remove('toolonly');
-            answer = (answer ? answer + '\n' : '') + ev.Text;
-            bubble.textContent = answer;
-            pin();
-          }
-        }
-      }
-    } catch (e) {
-      const msg = (e && e.message && e.name !== 'AbortError') ? e.message : 'Sorry — I couldn’t answer just then.';
-      if (bubble.classList.contains('toolonly')) { bubble.classList.remove('toolonly'); bubble.textContent = ''; }
-      if (!bubble.textContent) bubble.textContent = msg;
-    } finally {
-      clearTimeout(timeout);
-      bubble.classList.remove('streaming');
-      if (!bubble.textContent) bubble.textContent = '…';
-      asking = false;
-    }
-  }
-
-  // Open the agent and ask a question in one go (used by the "Around you" card).
-  // No focus → no keyboard: the reply streams in view instead of being pushed up.
-  function askAbout(q) { openChat(false); runAsk(q); }
-
-  // --- go live: on the first fix, start the moving overlays and greet you with
-  // a live snapshot of what's around you right now. --------------------------
-  const aroundEl = document.getElementById('around');
-  let wentLive = false, aroundTimer = null;
+  // Tapping 💡 asks the background agent for a fresh idea about where you are.
+  ideaBtn.onclick = () => {
+    if (myLoc) showAround(myLoc);
+    else { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }
+  };
 
   function goLive(latlng) {
     if (railAvail) setRail(true);
@@ -588,11 +433,13 @@
 
   function closeAround() { aroundEl.hidden = true; hintEl.style.display = ''; clearTimeout(aroundTimer); }
 
+  // Show the live snapshot, then let the agent quietly fill in a suggestion.
   async function showAround(latlng) {
+    const seq = ++suggestSeq;
     try {
       const res = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng);
       const a = await res.json();
-      if (!a.in_gb) return;
+      if (seq !== suggestSeq || !a.in_gb) return;
       const bits = [];
       if (a.buses_nearby) bits.push('🚍 ' + a.buses_nearby + ' bus' + (a.buses_nearby === 1 ? '' : 'es') + ' moving');
       const st = (a.stations || [])[0];
@@ -611,25 +458,33 @@
         '<button class="around-x" title="Dismiss">✕</button>' +
         '<div class="around-where">' + where + '</div>' +
         (bits.length ? '<div class="around-stats">' + bits.join('<span class="dot">·</span>') + '</div>' : '') +
-        (askAvail ? '<div class="around-actions"><button class="primary" id="around-ask">What’s good nearby?</button></div>' : '');
+        (askAvail ? '<div class="around-idea" id="idea">Thinking of something for you…</div>' : '');
       aroundEl.hidden = false;
       hintEl.style.display = 'none';
       aroundEl.querySelector('.around-x').onclick = closeAround;
-      const ab = aroundEl.querySelector('#around-ask');
-      if (ab) ab.onclick = () => { closeAround(); askAbout('What’s interesting to do near me right now? Give me a couple of concrete options and how to get to each.'); };
-      clearTimeout(aroundTimer); aroundTimer = setTimeout(closeAround, 30000);
+      clearTimeout(aroundTimer);
+      aroundTimer = setTimeout(closeAround, askAvail ? 90000 : 30000);
+      if (askAvail) fetchIdea(latlng, seq);
     } catch (_) {}
   }
 
-  // Track the on-screen keyboard so the chat can sit above it (--kb). Without
-  // this the input hides behind the keyboard on phones.
+  // The silent background call: one suggestion, no conversation.
+  async function fetchIdea(latlng, seq) {
+    const box = () => (seq === suggestSeq ? document.getElementById('idea') : null);
+    try {
+      const res = await fetch('/api/suggest?lat=' + latlng.lat + '&lng=' + latlng.lng);
+      const d = await res.json();
+      const b = box();
+      if (!b) return;
+      if (d.suggestion) { b.classList.add('ready'); b.textContent = '💡 ' + d.suggestion; }
+      else b.remove();
+    } catch (_) { const b = box(); if (b) b.remove(); }
+  }
+
+  // Track the keyboard height for the search dropdown on phones.
   if (window.visualViewport) {
     const vv = window.visualViewport;
-    const onVV = () => {
-      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      document.documentElement.style.setProperty('--kb', kb + 'px');
-      if (!chat.hidden) pin();
-    };
+    const onVV = () => { document.documentElement.style.setProperty('--kb', Math.max(0, window.innerHeight - vv.height - vv.offsetTop) + 'px'); };
     vv.addEventListener('resize', onVV);
     vv.addEventListener('scroll', onVV);
     onVV();
