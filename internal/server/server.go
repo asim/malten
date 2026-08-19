@@ -98,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/tiles/", s.handleTiles)
 	mux.HandleFunc("/api/search", s.handleSearch)
 	mux.HandleFunc("/api/nearest", s.handleNearest)
+	mux.HandleFunc("/api/around", s.handleAround)
 	mux.HandleFunc("/api/ask", s.handleAsk)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))

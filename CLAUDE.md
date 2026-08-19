@@ -48,6 +48,12 @@ content**:
   with `osgrid.ToWGS84` before it leaves the server. Also exposed to the agent
   (`find_place`, `whats_here`).
 
+- **A live "around me" snapshot** (`/api/around`, `internal/server/around.go`).
+  Fans out across every feed above concurrently and folds them into one compact
+  view (nearest place, nearest stations + next trains, buses moving nearby,
+  London stops). It's what makes the app feel alive on open, and the agent has
+  it too (`around_me`). Composes existing feeds only — no new keys.
+
 `/api/gridref` (WGS84 lat/lng → National Grid reference) is still a pure helper.
 The one opt-in exception to statelessness is the out-of-coverage **waitlist**
 (`/api/interest`, a local JSONL file); nothing else touches disk.

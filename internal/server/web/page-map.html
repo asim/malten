@@ -12,6 +12,7 @@
   </div>
   <div id="map"></div>
   <div class="hint" id="hint">Tap the map to log a find</div>
+  <div class="around" id="around" hidden></div>
   <div class="fabs">
     <button class="fab" id="ask" title="Ask Malten" hidden>✦</button>
     <button class="fab" id="rail" title="Live rail (Great Britain)" hidden>🚆</button>
@@ -215,7 +216,7 @@
     fetch('/api/gridref?lat=' + e.latlng.lat + '&lng=' + e.latlng.lng)
       .then(r => r.json())
       .then(d => {
-        if (d.in_gb) { map.setView(e.latlng, Math.max(16, map.getZoom())); hintEl.textContent = 'Tap the map to log a find'; }
+        if (d.in_gb) { map.setView(e.latlng, Math.max(16, map.getZoom())); hintEl.textContent = 'Tap the map to log a find'; goLive(e.latlng); }
         else {
           hintEl.textContent = 'You’re outside OS coverage — Great Britain only';
           if (localStorage.getItem('malten_interest') !== 'done') openInterest(e.latlng);
@@ -321,11 +322,13 @@
   const railBtn = document.getElementById('rail');
   // ODbL requires visible attribution while the station data is shown.
   const RAIL_ATTR = 'Station data <a href="https://github.com/davwheat/uk-railway-stations" target="_blank" rel="noopener">uk-railway-stations</a> (ODbL)';
-  railBtn.onclick = () => {
-    rail = !rail; railBtn.classList.toggle('accent', rail);
-    if (rail) { map.attributionControl.addAttribution(RAIL_ATTR); loadStations(); }
+  function setRail(on) {
+    if (on === rail) return;
+    rail = on; railBtn.classList.toggle('accent', on);
+    if (on) { map.attributionControl.addAttribution(RAIL_ATTR); loadStations(); }
     else { map.attributionControl.removeAttribution(RAIL_ATTR); railLayer.clearLayers(); refreshUI(); }
-  };
+  }
+  railBtn.onclick = () => setRail(!rail);
   map.on('moveend', () => { if (rail) { clearTimeout(railTimer); railTimer = setTimeout(loadStations, 400); } });
 
   async function loadStations() {
@@ -371,15 +374,17 @@
   function busIcon(bearing) {
     return L.divIcon({ className: '', html: '<div class="bus" style="transform:rotate(' + (bearing || 0) + 'deg)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
   }
-  busesBtn.onclick = () => {
-    buses = !buses; busesBtn.classList.toggle('accent', buses);
-    if (buses) {
+  function setBuses(on) {
+    if (on === buses) return;
+    buses = on; busesBtn.classList.toggle('accent', on);
+    if (on) {
       map.attributionControl.addAttribution(BUS_ATTR); loadBuses();
       busPoll = setInterval(loadBuses, 15000); // buses move — refresh their positions
     } else {
       map.attributionControl.removeAttribution(BUS_ATTR); clearInterval(busPoll); busLayer.clearLayers(); refreshUI();
     }
-  };
+  }
+  busesBtn.onclick = () => setBuses(!buses);
   map.on('moveend', () => { if (buses) { clearTimeout(busTimer); busTimer = setTimeout(loadBuses, 400); } });
 
   async function loadBuses() {
@@ -408,24 +413,26 @@
   const chatText = document.getElementById('chatText');
   let asking = false;
 
+  let askAvail = false, railAvail = false, busesAvail = false;
   // Ask the server what it offers: shared tiles (no per-user key), the agent,
-  // and the live rail/bus feeds.
+  // and the live feeds. Remember which live overlays exist so we can auto-start
+  // them once we know where you are.
   fetch('/api/health').then(r => r.json()).then(d => {
     if (d.tiles) { serverTiles = true; setTiles(); }
-    if (d.ask) askBtn.hidden = false;
-    if (d.rail) document.getElementById('rail').hidden = false;
-    if (d.buses) document.getElementById('buses').hidden = false;
+    if (d.ask) { askAvail = true; askBtn.hidden = false; }
+    if (d.rail) { railAvail = true; document.getElementById('rail').hidden = false; }
+    if (d.buses) { busesAvail = true; document.getElementById('buses').hidden = false; }
     if (d.search) document.getElementById('searchbox').hidden = false;
     if (!serverTiles && !Malten.getKey()) askForKey();
+    if (myLoc) goLive(myLoc); // location already known before health returned
   }).catch(() => { if (!Malten.getKey()) askForKey(); });
 
-  askBtn.onclick = () => {
-    chat.hidden = !chat.hidden;
-    if (!chat.hidden) {
-      chatText.focus();
-      if (!chatLog.childElementCount) addMsg('malten', 'Ask me what’s nearby or how to get somewhere right now. Live transport covers London, for now.');
-    }
-  };
+  function openChat() {
+    chat.hidden = false;
+    chatText.focus();
+    if (!chatLog.childElementCount) addMsg('malten', 'Ask me what’s nearby, how to get somewhere, or what’s worth doing around here right now.');
+  }
+  askBtn.onclick = () => { if (chat.hidden) openChat(); else chat.hidden = true; };
   document.getElementById('chatClose').onclick = () => { chat.hidden = true; };
 
   function addMsg(who, text) {
@@ -438,14 +445,20 @@
   }
 
   function toolPhrase(t) {
-    return t === 'nearby_stops' ? 'Finding nearby stops…'
+    return t === 'around_me' ? 'Looking around you…'
+      : t === 'find_place' ? 'Searching the map…'
+      : t === 'whats_here' ? 'Working out where that is…'
+      : t === 'nearby_stations' ? 'Finding nearby stations…'
+      : t === 'train_departures' ? 'Checking live departures…'
+      : t === 'live_buses' ? 'Finding buses nearby…'
+      : t === 'nearby_stops' ? 'Finding nearby stops…'
       : t === 'arrivals' ? 'Checking live arrivals…'
       : t === 'grid_ref' ? 'Locating on the grid…' : 'Working…';
   }
 
-  document.getElementById('chatForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const q = chatText.value.trim();
+  document.getElementById('chatForm').onsubmit = (e) => { e.preventDefault(); runAsk(chatText.value.trim()); };
+
+  async function runAsk(q) {
     if (!q || asking) return;
     chatText.value = '';
     addMsg('me', q);
@@ -490,7 +503,56 @@
       if (!bubble.textContent) bubble.textContent = '…';
       asking = false;
     }
-  };
+  }
+
+  // Open the agent and ask a question in one go (used by the "Around you" card).
+  function askAbout(q) { openChat(); runAsk(q); }
+
+  // --- go live: on the first fix, start the moving overlays and greet you with
+  // a live snapshot of what's around you right now. --------------------------
+  const aroundEl = document.getElementById('around');
+  let wentLive = false, aroundTimer = null;
+
+  function goLive(latlng) {
+    if (railAvail) setRail(true);
+    if (busesAvail) setBuses(true);
+    if (!wentLive) { wentLive = true; showAround(latlng); }
+  }
+
+  function closeAround() { aroundEl.hidden = true; hintEl.style.display = ''; clearTimeout(aroundTimer); }
+
+  async function showAround(latlng) {
+    try {
+      const res = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng);
+      const a = await res.json();
+      if (!a.in_gb) return;
+      const bits = [];
+      if (a.buses_nearby) bits.push('🚍 ' + a.buses_nearby + ' bus' + (a.buses_nearby === 1 ? '' : 'es') + ' moving');
+      const st = (a.stations || [])[0];
+      if (st) {
+        let s = '🚆 ' + esc(st.name);
+        const nx = (st.next || [])[0];
+        if (nx) s += ' · ' + esc(nx.scheduled) + ' → ' + esc(nx.destination) + (/^on time$/i.test(nx.expected) ? '' : ' (' + esc(nx.expected) + ')');
+        else s += ' · ' + st.miles + ' mi';
+        bits.push(s);
+      }
+      if (a.stops_nearby) bits.push('🚇 ' + a.stops_nearby + ' stop' + (a.stops_nearby === 1 ? '' : 's'));
+      const where = a.place
+        ? 'You’re near <b>' + esc(a.place.name) + '</b>' + (a.place.type ? ' <span class="sub">' + esc(a.place.type) + '</span>' : '')
+        : (a.grid_ref ? 'You’re at <b>' + esc(a.grid_ref) + '</b>' : 'You’re here');
+      aroundEl.innerHTML =
+        '<button class="around-x" title="Dismiss">✕</button>' +
+        '<div class="around-where">' + where + '</div>' +
+        (bits.length ? '<div class="around-stats">' + bits.join('<span class="dot">·</span>') + '</div>' : '') +
+        (askAvail ? '<div class="around-actions"><button class="primary" id="around-ask">What’s good nearby?</button></div>' : '');
+      aroundEl.hidden = false;
+      hintEl.style.display = 'none';
+      aroundEl.querySelector('.around-x').onclick = closeAround;
+      const ab = aroundEl.querySelector('#around-ask');
+      if (ab) ab.onclick = () => { closeAround(); askAbout('What’s interesting to do near me right now? Give me a couple of concrete options and how to get to each.'); };
+      clearTimeout(aroundTimer); aroundTimer = setTimeout(closeAround, 30000);
+    } catch (_) {}
+  }
 
   // --- wire it up ------------------------------------------------------------
   document.getElementById('settings').onclick = askForKey;

@@ -124,6 +124,23 @@ button:disabled { opacity: 0.4; cursor: default; }
         background: var(--panel); border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow);
         padding: 7px 14px; font-size: 13px; color: var(--muted); }
 
+/* "Around you" — the live greeting card that makes the app feel alive on open. */
+.around {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 560;
+  width: min(520px, calc(100% - 20px));
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 12px 14px;
+}
+.around[hidden] { display: none; }
+.around-x { position: absolute; top: 8px; right: 10px; background: none; border: 0; color: var(--muted); font-size: 15px; cursor: pointer; line-height: 1; }
+.around-x:hover { color: var(--fg); }
+.around-where { font-size: 15px; padding-right: 18px; }
+.around-where .sub { font-size: 12px; }
+.around-stats { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.around-stats .dot { margin: 0 7px; opacity: 0.5; }
+.around-actions { margin-top: 11px; }
+.around-actions .primary { padding: 8px 14px; font-size: 14px; }
+
 /* Ask Malten — a chat panel that floats bottom-right over the map. */
 .chat {
   position: absolute; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom));

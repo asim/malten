@@ -36,6 +36,7 @@ Guidance:
 // isn't configured for.
 func (s *Server) capabilities() string {
 	lines := []string{
+		"- around_me: one-call live snapshot of the surroundings (place, nearest stations + next trains, buses moving nearby, London stops). Start here for 'what's around me' or 'what should I do nearby'.",
 		"- nearby_stations: nearest National Rail stations, all of Great Britain.",
 		"- nearby_stops / arrivals: stop-level bus, tram and tube arrivals — London only (Transport for London).",
 		"- grid_ref: OS National Grid reference for a point.",
@@ -221,6 +222,7 @@ func (s *Server) askTools(req askRequest) []llm.Tool {
 			},
 		},
 	}
+	tools = append(tools, s.aroundTool(req)...)
 	tools = append(tools, s.searchTools(req)...)
 	tools = append(tools, s.railTools(req)...)
 	tools = append(tools, s.busTools(req)...)
