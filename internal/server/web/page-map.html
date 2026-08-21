@@ -557,7 +557,7 @@
   const offL = document.getElementById('look-off-l');
   const offR = document.getElementById('look-off-r');
   let lookStream = null, lookTargets = [], lookMaxDist = 400, lastHeading = 0, gotOri = false, rafPending = false;
-  let lookTarget = null, lookWatch = null, targetOrigin = null;
+  let lookTarget = null, lookWatch = null, targetOrigin = null, targetMarker = null;
   const HFOV = 66; // assumed horizontal camera field of view, degrees
 
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) lookBtn.hidden = false;
@@ -689,9 +689,34 @@
       '<div class="g-main"><span id="g-txt"></span></div>' +
       '<div class="g-acts"><button class="ghost" id="g-save">Save here</button><button class="ghost" id="g-map">On map</button><button class="ghost" id="g-clear">Stop</button></div>';
     guideEl.querySelector('#g-save').onclick = saveTargetAsFind;
-    guideEl.querySelector('#g-map').onclick = () => { const t2 = lookTarget; closeLook(); map.setView([t2.lat, t2.lng], Math.max(16, map.getZoom())); };
+    guideEl.querySelector('#g-map').onclick = () => showTargetOnMap(lookTarget);
     guideEl.querySelector('#g-clear').onclick = clearTarget;
     updateGuide();
+  }
+
+  // Exit to the map and actually mark the place (with a popup + Save), so you
+  // see the thing you tapped — not just your own location.
+  function showTargetOnMap(t) {
+    if (!t) return;
+    const ll = L.latLng(t.lat, t.lng);
+    closeLook();
+    map.setView(ll, Math.max(17, map.getZoom()));
+    if (targetMarker) map.removeLayer(targetMarker);
+    targetMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup(
+      '<div class="stopname">' + esc(t.name) + '</div>' + (t.kind ? '<div class="sub">' + esc(t.kind) + '</div>' : '') +
+      '<div class="row"><span class="spacer"></span><button class="ghost" id="tgt-save">Save find</button></div>').openPopup();
+    targetMarker.on('popupopen', e => {
+      const b = e.popup.getElement().querySelector('#tgt-save');
+      if (b) b.onclick = () => { saveFindAt(t); b.textContent = 'Saved ✓'; b.disabled = true; };
+    });
+  }
+
+  function saveFindAt(t) {
+    const find = { id: Malten.newId(), lat: t.lat, lng: t.lng, note: t.name, grid_ref: null, created_at: new Date().toISOString() };
+    fetch('/api/gridref?lat=' + t.lat + '&lng=' + t.lng).then(r => r.json())
+      .then(d => { if (d && d.in_gb) find.grid_ref = d.grid_ref; })
+      .catch(() => {})
+      .finally(() => { Malten.addFind(find); addFindMarker(find); updateCount(); });
   }
 
   function clearTarget() {
@@ -718,11 +743,7 @@
 
   function saveTargetAsFind() {
     if (!lookTarget) return;
-    const t = lookTarget;
-    const find = { id: Malten.newId(), lat: t.lat, lng: t.lng, note: t.name, grid_ref: null, created_at: new Date().toISOString() };
-    fetch('/api/gridref?lat=' + t.lat + '&lng=' + t.lng).then(r => r.json())
-      .then(d => { if (d.in_gb) find.grid_ref = d.grid_ref; Malten.addFind(find); addFindMarker(find); updateCount(); })
-      .catch(() => { Malten.addFind(find); addFindMarker(find); updateCount(); });
+    saveFindAt(lookTarget);
     const btn = guideEl.querySelector('#g-save');
     if (btn) { btn.textContent = 'Saved ✓'; btn.disabled = true; }
   }
