@@ -556,7 +556,7 @@
   const guideEl = document.getElementById('look-guide');
   const offL = document.getElementById('look-off-l');
   const offR = document.getElementById('look-off-r');
-  let lookStream = null, lookTargets = [], lookMaxDist = 400, lastHeading = 0, gotOri = false, rafPending = false;
+  let lookStream = null, lookTargets = [], lookEls = new Map(), lookMaxDist = 400, lastHeading = 0, gotOri = false, rafPending = false;
   let lookTarget = null, lookWatch = null, targetOrigin = null, targetMarker = null;
   const HFOV = 66; // assumed horizontal camera field of view, degrees
 
@@ -594,7 +594,7 @@
   async function openLook() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
     lookView.hidden = false;
-    lookScene.innerHTML = '';
+    lookScene.innerHTML = ''; lookEls.clear(); // fresh start; reconciler rebuilds
     lookHint.textContent = 'Starting camera…';
     // Ask for the compass FIRST — iOS only grants motion access when the request
     // comes straight from the tap, before any other await consumes the gesture.
@@ -621,11 +621,16 @@
   function startWatch() {
     if (!navigator.geolocation || lookWatch != null) return;
     lookWatch = navigator.geolocation.watchPosition(pos => {
+      // Ignore noisy fixes — they're what made the tags jump and vanish.
+      if (pos.coords.accuracy > 60) return;
       const lat = pos.coords.latitude, lng = pos.coords.longitude;
       myLoc = L.latLng(lat, lng);
+      // Just update bearings/distances on the existing tags — never rebuild the
+      // set here, so nothing flickers or disappears while you're panning.
       lookTargets.forEach(t => { t.bearing = bearingTo(lat, lng, t.lat, t.lng); t.dist = distM(lat, lng, t.lat, t.lng); });
-      if (targetOrigin && distM(lat, lng, targetOrigin.lat, targetOrigin.lng) > 250) loadLookTargets(myLoc);
-      else positionTags(lastHeading);
+      positionTags(lastHeading);
+      // Only refresh the whole set once you've genuinely walked to a new area.
+      if (targetOrigin && distM(lat, lng, targetOrigin.lat, targetOrigin.lng) > 600) loadLookTargets(myLoc);
     }, () => {}, { enableHighAccuracy: true, maximumAge: 2000, timeout: 12000 });
   }
   function stopWatch() { if (lookWatch != null && navigator.geolocation) { navigator.geolocation.clearWatch(lookWatch); lookWatch = null; } }
@@ -683,22 +688,34 @@
       .catch(() => {});
   }
 
+  // Reconcile by a stable key so existing tags are reused (not wiped and
+  // rebuilt) — nothing that's on screen disappears when POIs fold in.
   function renderLookTargets(list, loc) {
-    lookTargets = list.map(t => ({ ...t, bearing: bearingTo(loc.lat, loc.lng, t.lat, t.lng), dist: distM(loc.lat, loc.lng, t.lat, t.lng) }))
+    lookTargets = list.map(t => ({ ...t, key: t.name + '@' + t.lat.toFixed(5) + ',' + t.lng.toFixed(5), bearing: bearingTo(loc.lat, loc.lng, t.lat, t.lng), dist: distM(loc.lat, loc.lng, t.lat, t.lng) }))
       .filter(t => t.dist > 8 && t.dist < 900)
       .sort((a, b) => a.dist - b.dist)
       .slice(0, 40);
     lookMaxDist = Math.max(250, ...lookTargets.map(t => t.dist));
-    lookScene.innerHTML = '';
+
+    const keep = new Set();
     lookTargets.forEach(t => {
-      const el = document.createElement('button');
-      el.className = 'look-tag';
-      el.innerHTML = kindEmoji(t.kind) + ' <span class="nm">' + esc(t.name) + '</span> <span class="d">' + prettyDist(t.dist) + '</span>';
+      keep.add(t.key);
+      let el = lookEls.get(t.key);
+      if (!el) {
+        el = document.createElement('button');
+        el.className = 'look-tag';
+        el.innerHTML = kindEmoji(t.kind) + ' <span class="nm">' + esc(t.name) + '</span> <span class="d">' + prettyDist(t.dist) + '</span>';
+        lookScene.appendChild(el);
+        lookEls.set(t.key, el);
+      } else {
+        const d = el.querySelector('.d'); if (d) d.textContent = prettyDist(t.dist);
+      }
       el.onclick = () => selectTarget(t);
-      if (lookTarget && t.name === lookTarget.name && t.lat === lookTarget.lat) el.classList.add('sel');
-      lookScene.appendChild(el);
+      el.classList.toggle('sel', !!(lookTarget && lookTarget.name === t.name && lookTarget.lat === t.lat));
       t.el = el;
     });
+    lookEls.forEach((el, key) => { if (!keep.has(key)) { el.remove(); lookEls.delete(key); } });
+
     if (!lookTarget) lookHint.textContent = lookTargets.length ? 'Pan around — tap a tag to head for it' : 'Nothing tagged nearby yet…';
     positionTags(lastHeading);
   }
