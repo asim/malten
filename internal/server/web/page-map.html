@@ -642,12 +642,23 @@
     setTimeout(() => { if (!gotOri) lookHead.textContent = 'No compass — showing nearest by distance'; }, 1800);
   }
 
+  // Low-pass the compass so tags glide instead of jittering. Snap on big jumps
+  // (fast turns / the 359°→0° seam) so it never lags or spins the wrong way.
+  let smHeading = null;
+  function smoothHeading(h) {
+    if (smHeading == null) { smHeading = h; return h; }
+    const diff = ((h - smHeading + 540) % 360) - 180;
+    if (Math.abs(diff) > 40) { smHeading = h; return h; }
+    smHeading = ((smHeading + diff * 0.2) % 360 + 360) % 360;
+    return smHeading;
+  }
+
   function onOri(e) {
     let h = null;
     if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;      // iOS: degrees from north
     else if (e.absolute && e.alpha != null) h = (360 - e.alpha) % 360;   // Android absolute
     if (h == null) return;
-    gotOri = true; lastHeading = h;
+    gotOri = true; lastHeading = smoothHeading(h);
     if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; positionTags(lastHeading); }); }
   }
 
@@ -748,18 +759,32 @@
     if (btn) { btn.textContent = 'Saved ✓'; btn.disabled = true; }
   }
 
+  const FADE = 16; // degrees beyond the edge over which a tag fades out
   function positionTags(heading) {
     if (gotOri) lookHead.textContent = compass8(heading) + ' · ' + Math.round(heading) + '°';
+    const half = HFOV / 2;
     for (const t of lookTargets) {
       if (!t.el) continue;
-      const delta = ((t.bearing - heading + 540) % 360) - 180; // [-180,180]
-      if (Math.abs(delta) > HFOV / 2 + 8) { t.el.style.display = 'none'; continue; }
-      t.el.style.display = '';
-      const x = 50 + (delta / (HFOV / 2)) * 50;
       const y = 68 - Math.min(46, (t.dist / lookMaxDist) * 46); // nearer lower, farther higher
-      t.el.style.left = Math.max(3, Math.min(97, x)) + '%';
+      if (!gotOri) {
+        // No compass: lay everything out by absolute bearing (a compass rose),
+        // all visible — better than guessing which way you face.
+        t.el.style.left = ((t.bearing / 360) * 94 + 3) + '%';
+        t.el.style.top = y + '%';
+        t.el.style.opacity = '1';
+        t.el.style.pointerEvents = 'auto';
+        continue;
+      }
+      const delta = ((t.bearing - heading + 540) % 360) - 180; // [-180,180]
+      const ad = Math.abs(delta);
+      // Fade at the edges instead of popping; keep the element in the DOM so
+      // panning back reveals it instantly.
+      const op = ad <= half ? 1 : ad <= half + FADE ? 1 - (ad - half) / FADE : 0;
+      const x = Math.max(3, Math.min(97, 50 + (delta / half) * 50));
+      t.el.style.left = x + '%';
       t.el.style.top = y + '%';
-      t.el.style.opacity = Math.abs(delta) > HFOV / 2 ? '0.55' : '1';
+      t.el.style.opacity = op.toFixed(2);
+      t.el.style.pointerEvents = op < 0.15 ? 'none' : 'auto';
     }
     if (lookTarget) updateGuide();
   }

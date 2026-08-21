@@ -154,8 +154,9 @@ button:disabled { opacity: 0.4; cursor: default; }
   display: inline-flex; align-items: center; gap: 5px; max-width: 60vw;
   background: rgba(0, 0, 0, 0.55); color: #fff; border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px; padding: 6px 11px; font: inherit; font-size: 13px; line-height: 1.1; white-space: nowrap;
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: auto; cursor: pointer;
-  transition: left 0.12s linear, top 0.12s linear, opacity 0.12s linear;
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); cursor: pointer;
+  transition: opacity 0.22s linear; /* position tracks per-frame; only fade is eased */
+  will-change: left, top, opacity;
 }
 .look-tag .nm { overflow: hidden; text-overflow: ellipsis; }
 .look-tag .d { opacity: 0.7; font-variant-numeric: tabular-nums; }
