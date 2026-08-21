@@ -560,9 +560,7 @@
   let lookTarget = null, lookWatch = null, targetOrigin = null, targetMarker = null;
   const HFOV = 66; // assumed horizontal camera field of view, degrees
 
-  // Camera "look around" (AR) is PARKED for now — phone compass/GPS make it too
-  // fiddly to be worth it. The code stays; we just don't surface the button.
-  // To bring it back, restore: if (navigator.mediaDevices?.getUserMedia) lookBtn.hidden = false;
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) lookBtn.hidden = false;
   lookBtn.onclick = openLook;
   document.getElementById('look-x').onclick = closeLook;
 
