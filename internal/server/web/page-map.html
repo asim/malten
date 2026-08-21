@@ -589,11 +589,13 @@
     lookView.hidden = false;
     lookScene.innerHTML = '';
     lookHint.textContent = 'Starting camera…';
+    // Ask for the compass FIRST — iOS only grants motion access when the request
+    // comes straight from the tap, before any other await consumes the gesture.
+    await startCompass();
     try {
       lookStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
       lookCam.srcObject = lookStream;
     } catch (_) { lookHint.textContent = 'Camera permission is needed to look around.'; }
-    await startCompass();
     if (myLoc) loadLookTargets(myLoc);
     else { lookHint.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }
   }
