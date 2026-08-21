@@ -147,8 +147,22 @@ button:disabled { opacity: 0.4; cursor: default; }
 /* "Look around" — full-screen camera with tags placed by compass bearing. */
 .look { position: fixed; inset: 0; z-index: 900; background: #000; overflow: hidden; }
 .look[hidden] { display: none; }
-#look-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Noir: desaturated, punchy contrast over the live camera. */
+#look-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; filter: grayscale(1) contrast(1.22) brightness(0.96); }
+.look::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.62) 100%); }
+/* Everything sits above the vignette. */
+.look-scene, .look-head, .look-hint, .look-cred, .look-reticle, .look-arrow { z-index: 2; }
+.look-guide, .look-x { z-index: 3; }
 .look-scene { position: absolute; inset: 0; pointer-events: none; }
+/* Navigation arrow — points the way to your beacon, rotates with your heading. */
+.look-arrow {
+  position: absolute; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom));
+  width: 88px; height: 88px; margin-left: -44px; transform-origin: 50% 50%;
+  transition: transform 0.12s linear; pointer-events: none;
+  filter: drop-shadow(0 2px 9px rgba(0, 0, 0, 0.6));
+}
+.look-arrow[hidden] { display: none; }
+.look-arrow.on svg path { fill: #37d67a; } /* you're facing it */
 .look-tag {
   position: absolute; transform: translate(-50%, -50%);
   display: inline-flex; align-items: center; gap: 5px; max-width: 60vw;

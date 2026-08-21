@@ -26,8 +26,11 @@
     <div class="look-scene" id="look-scene"></div>
     <div class="look-reticle"></div>
     <div class="look-head" id="look-head">Point your phone around you</div>
-    <div class="look-off left" id="look-off-l" hidden>‹</div>
-    <div class="look-off right" id="look-off-r" hidden>›</div>
+    <div class="look-arrow" id="look-arrow" hidden>
+      <svg viewBox="0 0 100 100" width="88" height="88" aria-hidden="true">
+        <path d="M50 6 L88 60 L60 60 L60 94 L40 94 L40 60 L12 60 Z" fill="rgba(255,255,255,0.94)" stroke="rgba(0,0,0,0.4)" stroke-width="4" stroke-linejoin="round"/>
+      </svg>
+    </div>
     <div class="look-hint" id="look-hint"></div>
     <div class="look-guide" id="look-guide" hidden></div>
     <div class="look-cred">Places © OpenStreetMap contributors</div>
@@ -554,8 +557,7 @@
   const lookHead = document.getElementById('look-head');
   const lookHint = document.getElementById('look-hint');
   const guideEl = document.getElementById('look-guide');
-  const offL = document.getElementById('look-off-l');
-  const offR = document.getElementById('look-off-r');
+  const arrowEl = document.getElementById('look-arrow');
   let lookStream = null, lookTargets = [], lookEls = new Map(), lookMaxDist = 400, lastHeading = 0, gotOri = false, rafPending = false;
   let lookTarget = null, lookWatch = null, targetOrigin = null, targetMarker = null;
   const HFOV = 66; // assumed horizontal camera field of view, degrees
@@ -764,7 +766,7 @@
   function clearTarget() {
     lookTarget = null;
     lookTargets.forEach(x => x.el && x.el.classList.remove('sel'));
-    guideEl.hidden = true; offL.hidden = true; offR.hidden = true;
+    guideEl.hidden = true; arrowEl.hidden = true;
     lookHint.hidden = false;
   }
 
@@ -778,9 +780,16 @@
     else dir = compass8(b) + ' of you';
     const txt = document.getElementById('g-txt');
     if (txt) txt.innerHTML = kindEmoji(lookTarget.kind) + ' ' + esc(lookTarget.name) + ' · <b>' + prettyDist(d) + '</b> · ' + dir;
-    const off = Math.abs(delta) > HFOV / 2;
-    offR.hidden = !(off && delta > 0);
-    offL.hidden = !(off && delta <= 0);
+    // The navigation arrow: rotates to point at the target (0° = straight ahead,
+    // swinging to the side as you turn, pointing back when it's behind you).
+    // It only has meaning with a compass; otherwise stay hidden.
+    if (gotOri) {
+      arrowEl.hidden = false;
+      arrowEl.style.transform = 'rotate(' + delta.toFixed(1) + 'deg)';
+      arrowEl.classList.toggle('on', Math.abs(delta) < 12); // green when you're facing it
+    } else {
+      arrowEl.hidden = true;
+    }
   }
 
   function saveTargetAsFind() {
