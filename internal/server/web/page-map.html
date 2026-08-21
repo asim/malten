@@ -662,18 +662,32 @@
     if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; positionTags(lastHeading); }); }
   }
 
-  async function loadLookTargets(loc) {
-    lookHint.textContent = 'Finding what’s around you…';
-    const list = [];
-    Malten.getFinds().forEach(f => list.push({ name: f.note || 'Your find', kind: 'find', lat: f.lat, lng: f.lng }));
-    try { const r = await fetch('/api/stations?lat=' + loc.lat + '&lng=' + loc.lng); (((await r.json()).stations) || []).forEach(s => list.push({ name: s.name, kind: 'station', lat: s.lat, lng: s.lng })); } catch (_) {}
-    try { const r = await fetch('/api/poi?lat=' + loc.lat + '&lng=' + loc.lng + '&radius=600'); (((await r.json()).pois) || []).forEach(p => list.push({ name: p.name, kind: p.kind, lat: p.lat, lng: p.lng })); } catch (_) {}
+  function lookFetch(url, ms) {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { signal: ctrl.signal }).then(r => r.json()).finally(() => clearTimeout(to));
+  }
 
+  async function loadLookTargets(loc) {
+    targetOrigin = { lat: loc.lat, lng: loc.lng };
+    lookHint.textContent = 'Finding what’s around you…';
+    // Finds + stations are instant — render them straight away so the view is
+    // never blocked waiting on Overpass (which can be slow or rate-limited).
+    const base = [];
+    Malten.getFinds().forEach(f => base.push({ name: f.note || 'Your find', kind: 'find', lat: f.lat, lng: f.lng }));
+    try { const d = await lookFetch('/api/stations?lat=' + loc.lat + '&lng=' + loc.lng, 6000); (d.stations || []).forEach(s => base.push({ name: s.name, kind: 'station', lat: s.lat, lng: s.lng })); } catch (_) {}
+    renderLookTargets(base, loc);
+    // POIs fold in when they arrive; a timeout keeps a slow Overpass from hanging.
+    lookFetch('/api/poi?lat=' + loc.lat + '&lng=' + loc.lng + '&radius=600', 12000)
+      .then(d => renderLookTargets(base.concat((d.pois || []).map(p => ({ name: p.name, kind: p.kind, lat: p.lat, lng: p.lng }))), loc))
+      .catch(() => {});
+  }
+
+  function renderLookTargets(list, loc) {
     lookTargets = list.map(t => ({ ...t, bearing: bearingTo(loc.lat, loc.lng, t.lat, t.lng), dist: distM(loc.lat, loc.lng, t.lat, t.lng) }))
       .filter(t => t.dist > 8 && t.dist < 900)
       .sort((a, b) => a.dist - b.dist)
       .slice(0, 40);
-    targetOrigin = { lat: loc.lat, lng: loc.lng };
     lookMaxDist = Math.max(250, ...lookTargets.map(t => t.dist));
     lookScene.innerHTML = '';
     lookTargets.forEach(t => {
@@ -685,7 +699,7 @@
       lookScene.appendChild(el);
       t.el = el;
     });
-    if (!lookTarget) lookHint.textContent = lookTargets.length ? 'Pan around — tap a tag to head for it' : 'Nothing tagged nearby right now';
+    if (!lookTarget) lookHint.textContent = lookTargets.length ? 'Pan around — tap a tag to head for it' : 'Nothing tagged nearby yet…';
     positionTags(lastHeading);
   }
 

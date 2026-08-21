@@ -26,7 +26,7 @@ import (
 // Overpass. The cache holds only public place data (no user content), in memory,
 // with a short TTL; it never touches disk.
 
-var overpassClient = &http.Client{Timeout: 25 * time.Second}
+var overpassClient = &http.Client{Timeout: 18 * time.Second}
 
 // overpassEndpoint is the Overpass instance to query. Defaults to the main
 // public server; override with MALTEN_OVERPASS_URL to use a mirror (also handy
