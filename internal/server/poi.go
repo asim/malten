@@ -4,21 +4,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // poi.go proxies the OpenStreetMap Overpass API for named points of interest
 // near a point — pubs, parks, landmarks, viewpoints, historic sites. It's what
-// the camera "look around" mode tags in view. Overpass is free and keyless;
-// the response is JSON, so this stays dependency-free (encoding/json). OSM data
-// is ODbL — the UI attributes it.
+// the camera "look around" mode tags in view. Overpass is free and keyless; the
+// response is JSON, so this stays dependency-free (encoding/json). OSM data is
+// ODbL — the UI attributes it.
+//
+// Results are cached server-side by grid cell: the first request in a cell
+// fetches a padded bounding box once, and every later request whose point falls
+// in that cell is served from memory — so wandering around an area never re-hits
+// Overpass. The cache holds only public place data (no user content), in memory,
+// with a short TTL; it never touches disk.
 
-var overpassClient = &http.Client{Timeout: 20 * time.Second}
+var overpassClient = &http.Client{Timeout: 25 * time.Second}
 
 // overpassEndpoint is the Overpass instance to query. Defaults to the main
 // public server; override with MALTEN_OVERPASS_URL to use a mirror (also handy
@@ -33,29 +41,99 @@ type POI struct {
 	Lng  float64 `json:"lng"`
 }
 
-// overpassQuery builds an Overpass QL query for interesting, named features
-// within radius metres of a point.
-func overpassQuery(lat, lng float64, radius int) string {
-	a := fmt.Sprintf("around:%d,%.6f,%.6f", radius, lat, lng)
-	return "[out:json][timeout:20];(" +
-		"node(" + a + ")[name][tourism];" +
-		"way(" + a + ")[name][tourism];" +
-		"node(" + a + ")[name][historic];" +
-		"way(" + a + ")[name][historic];" +
-		`node(` + a + `)[name][leisure~"^(park|garden|nature_reserve|common|pitch|stadium|sports_centre)$"];` +
-		`way(` + a + `)[name][leisure~"^(park|garden|nature_reserve|common|stadium|sports_centre)$"];` +
-		`node(` + a + `)[name][natural~"^(peak|water|beach|wood|spring|cliff)$"];` +
-		`node(` + a + `)[name][amenity~"^(pub|cafe|bar|restaurant|theatre|cinema|marketplace|place_of_worship|library|arts_centre)$"];` +
-		");out center 80;"
+// --- bounding-box cache -----------------------------------------------------
+
+const (
+	poiCellDeg = 0.02             // ~2.2 km grid cell
+	poiPadDeg  = 0.009            // ~1 km padding, so a point anywhere in the cell
+	poiTTL     = 10 * time.Minute // has full coverage around it
+)
+
+type poiCell struct {
+	mu   sync.Mutex
+	pois []POI
+	at   time.Time
 }
 
-// fetchPOIs runs an Overpass query and returns nearby POIs.
+var (
+	poiCellsMu sync.Mutex
+	poiCells   = map[string]*poiCell{}
+)
+
+// cellFor returns the cache key and the padded bounding box (S, W, N, E) for the
+// grid cell containing a point.
+func cellFor(lat, lng float64) (key string, south, west, north, east float64) {
+	ci, cj := math.Floor(lat/poiCellDeg), math.Floor(lng/poiCellDeg)
+	south = ci*poiCellDeg - poiPadDeg
+	north = (ci+1)*poiCellDeg + poiPadDeg
+	west = cj*poiCellDeg - poiPadDeg
+	east = (cj+1)*poiCellDeg + poiPadDeg
+	return fmt.Sprintf("%d:%d", int(ci), int(cj)), south, west, north, east
+}
+
+// cellPOIs returns the POIs for the cell containing the point, fetching from
+// Overpass only on a cache miss or when the entry has gone stale. The per-cell
+// lock serializes concurrent misses so a busy cell hits Overpass once.
+func cellPOIs(lat, lng float64) ([]POI, error) {
+	key, s, w, n, e := cellFor(lat, lng)
+
+	poiCellsMu.Lock()
+	c := poiCells[key]
+	if c == nil {
+		c = &poiCell{}
+		poiCells[key] = c
+	}
+	poiCellsMu.Unlock()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.at.IsZero() && time.Since(c.at) < poiTTL {
+		return c.pois, nil
+	}
+	pois, err := runOverpass(bboxQuery(s, w, n, e))
+	if err != nil {
+		if !c.at.IsZero() {
+			return c.pois, nil // serve stale rather than fail
+		}
+		return nil, err
+	}
+	c.pois, c.at = pois, time.Now()
+	return pois, nil
+}
+
+// --- Overpass ---------------------------------------------------------------
+
+// categories is the shared set of feature filters (applied to nodes and, where
+// it makes sense, ways). %s is the area clause (around:… or a bbox).
+func overpassBody(area string) string {
+	n := func(f string) string { return "node(" + area + ")[name]" + f + ";" }
+	way := func(f string) string { return "way(" + area + ")[name]" + f + ";" }
+	return "[out:json][timeout:25];(" +
+		n("[tourism]") + way("[tourism]") +
+		n("[historic]") + way("[historic]") +
+		n(`[leisure~"^(park|garden|nature_reserve|common|pitch|stadium|sports_centre)$"]`) +
+		way(`[leisure~"^(park|garden|nature_reserve|common|stadium|sports_centre)$"]`) +
+		n(`[natural~"^(peak|water|beach|wood|spring|cliff)$"]`) +
+		n(`[amenity~"^(pub|cafe|bar|restaurant|theatre|cinema|marketplace|place_of_worship|library|arts_centre)$"]`) +
+		");out center 300;"
+}
+
+func bboxQuery(s, w, n, e float64) string {
+	return overpassBody(fmt.Sprintf("%.6f,%.6f,%.6f,%.6f", s, w, n, e))
+}
+
+// fetchPOIs runs an around-radius query (used directly by tests and callers that
+// want a specific radius rather than the cell cache).
 func fetchPOIs(lat, lng float64, radius int) ([]POI, error) {
 	if radius <= 0 || radius > 2000 {
 		radius = 400
 	}
+	return runOverpass(overpassBody(fmt.Sprintf("around:%d,%.6f,%.6f", radius, lat, lng)))
+}
+
+func runOverpass(query string) ([]POI, error) {
 	form := url.Values{}
-	form.Set("data", overpassQuery(lat, lng, radius))
+	form.Set("data", query)
 	req, err := http.NewRequest(http.MethodPost, overpassEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
@@ -107,7 +185,7 @@ func parsePOIs(body []byte) []POI {
 		if lat == 0 && lng == 0 {
 			continue
 		}
-		if seen[name] { // collapse duplicate names (a place mapped as several features)
+		if seen[name] {
 			continue
 		}
 		seen[name] = true
@@ -133,18 +211,20 @@ func (s *Server) handlePOI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "lat and lng are required"})
 		return
 	}
-	radius, _ := strconv.Atoi(r.URL.Query().Get("radius"))
-	pois, err := fetchPOIs(lat, lng, radius)
+	cached, err := cellPOIs(lat, lng)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "couldn't reach the places service"})
 		return
 	}
-	// Nearest first (by rough squared distance; fine at these scales).
+	// Copy before sorting — the cached slice is shared across requests.
+	pois := make([]POI, len(cached))
+	copy(pois, cached)
 	sort.Slice(pois, func(i, j int) bool {
-		di := sq(pois[i].Lat-lat) + sq(pois[i].Lng-lng)
-		dj := sq(pois[j].Lat-lat) + sq(pois[j].Lng-lng)
-		return di < dj
+		return sq(pois[i].Lat-lat)+sq(pois[i].Lng-lng) < sq(pois[j].Lat-lat)+sq(pois[j].Lng-lng)
 	})
+	if len(pois) > 120 {
+		pois = pois[:120]
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"pois": pois})
 }
 

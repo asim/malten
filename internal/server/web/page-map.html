@@ -26,7 +26,10 @@
     <div class="look-scene" id="look-scene"></div>
     <div class="look-reticle"></div>
     <div class="look-head" id="look-head">Point your phone around you</div>
+    <div class="look-off left" id="look-off-l" hidden>‹</div>
+    <div class="look-off right" id="look-off-r" hidden>›</div>
     <div class="look-hint" id="look-hint"></div>
+    <div class="look-guide" id="look-guide" hidden></div>
     <div class="look-cred">Places © OpenStreetMap contributors</div>
     <button class="look-x" id="look-x">Done</button>
   </div>
@@ -550,7 +553,11 @@
   const lookScene = document.getElementById('look-scene');
   const lookHead = document.getElementById('look-head');
   const lookHint = document.getElementById('look-hint');
+  const guideEl = document.getElementById('look-guide');
+  const offL = document.getElementById('look-off-l');
+  const offR = document.getElementById('look-off-r');
   let lookStream = null, lookTargets = [], lookMaxDist = 400, lastHeading = 0, gotOri = false, rafPending = false;
+  let lookTarget = null, lookWatch = null, targetOrigin = null;
   const HFOV = 66; // assumed horizontal camera field of view, degrees
 
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) lookBtn.hidden = false;
@@ -598,6 +605,7 @@
     } catch (_) { lookHint.textContent = 'Camera permission is needed to look around.'; }
     if (myLoc) loadLookTargets(myLoc);
     else { lookHint.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }
+    startWatch();
   }
 
   function closeLook() {
@@ -605,7 +613,22 @@
     if (lookStream) { lookStream.getTracks().forEach(t => t.stop()); lookStream = null; }
     window.removeEventListener('deviceorientationabsolute', onOri, true);
     window.removeEventListener('deviceorientation', onOri, true);
+    stopWatch();
+    clearTarget();
   }
+
+  // Live location while looking — so distances update as you walk toward a tag.
+  function startWatch() {
+    if (!navigator.geolocation || lookWatch != null) return;
+    lookWatch = navigator.geolocation.watchPosition(pos => {
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+      myLoc = L.latLng(lat, lng);
+      lookTargets.forEach(t => { t.bearing = bearingTo(lat, lng, t.lat, t.lng); t.dist = distM(lat, lng, t.lat, t.lng); });
+      if (targetOrigin && distM(lat, lng, targetOrigin.lat, targetOrigin.lng) > 250) loadLookTargets(myLoc);
+      else positionTags(lastHeading);
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 2000, timeout: 12000 });
+  }
+  function stopWatch() { if (lookWatch != null && navigator.geolocation) { navigator.geolocation.clearWatch(lookWatch); lookWatch = null; } }
 
   async function startCompass() {
     gotOri = false;
@@ -639,18 +662,69 @@
       .filter(t => t.dist > 8 && t.dist < 900)
       .sort((a, b) => a.dist - b.dist)
       .slice(0, 40);
+    targetOrigin = { lat: loc.lat, lng: loc.lng };
     lookMaxDist = Math.max(250, ...lookTargets.map(t => t.dist));
     lookScene.innerHTML = '';
     lookTargets.forEach(t => {
       const el = document.createElement('button');
       el.className = 'look-tag';
       el.innerHTML = kindEmoji(t.kind) + ' <span class="nm">' + esc(t.name) + '</span> <span class="d">' + prettyDist(t.dist) + '</span>';
-      el.onclick = () => { closeLook(); map.setView([t.lat, t.lng], Math.max(16, map.getZoom())); };
+      el.onclick = () => selectTarget(t);
+      if (lookTarget && t.name === lookTarget.name && t.lat === lookTarget.lat) el.classList.add('sel');
       lookScene.appendChild(el);
       t.el = el;
     });
-    lookHint.textContent = lookTargets.length ? 'Pan around — tap a tag to see it on the map' : 'Nothing tagged nearby right now';
+    if (!lookTarget) lookHint.textContent = lookTargets.length ? 'Pan around — tap a tag to head for it' : 'Nothing tagged nearby right now';
     positionTags(lastHeading);
+  }
+
+  // Tapping a tag makes it your beacon: live distance + a turn arrow that
+  // updates as you move and turn, so you can walk to it through the camera.
+  function selectTarget(t) {
+    lookTarget = { name: t.name, kind: t.kind, lat: t.lat, lng: t.lng };
+    lookTargets.forEach(x => x.el && x.el.classList.toggle('sel', x === t));
+    lookHint.hidden = true;
+    guideEl.hidden = false;
+    guideEl.innerHTML =
+      '<div class="g-main"><span id="g-txt"></span></div>' +
+      '<div class="g-acts"><button class="ghost" id="g-save">Save here</button><button class="ghost" id="g-map">On map</button><button class="ghost" id="g-clear">Stop</button></div>';
+    guideEl.querySelector('#g-save').onclick = saveTargetAsFind;
+    guideEl.querySelector('#g-map').onclick = () => { const t2 = lookTarget; closeLook(); map.setView([t2.lat, t2.lng], Math.max(16, map.getZoom())); };
+    guideEl.querySelector('#g-clear').onclick = clearTarget;
+    updateGuide();
+  }
+
+  function clearTarget() {
+    lookTarget = null;
+    lookTargets.forEach(x => x.el && x.el.classList.remove('sel'));
+    guideEl.hidden = true; offL.hidden = true; offR.hidden = true;
+    lookHint.hidden = false;
+  }
+
+  function updateGuide() {
+    if (!lookTarget || !myLoc) return;
+    const b = bearingTo(myLoc.lat, myLoc.lng, lookTarget.lat, lookTarget.lng);
+    const d = distM(myLoc.lat, myLoc.lng, lookTarget.lat, lookTarget.lng);
+    const delta = ((b - lastHeading + 540) % 360) - 180;
+    let dir;
+    if (gotOri) dir = Math.abs(delta) < 12 ? '↑ ahead' : (delta > 0 ? '→ turn right' : '← turn left');
+    else dir = compass8(b) + ' of you';
+    const txt = document.getElementById('g-txt');
+    if (txt) txt.innerHTML = kindEmoji(lookTarget.kind) + ' ' + esc(lookTarget.name) + ' · <b>' + prettyDist(d) + '</b> · ' + dir;
+    const off = Math.abs(delta) > HFOV / 2;
+    offR.hidden = !(off && delta > 0);
+    offL.hidden = !(off && delta <= 0);
+  }
+
+  function saveTargetAsFind() {
+    if (!lookTarget) return;
+    const t = lookTarget;
+    const find = { id: Malten.newId(), lat: t.lat, lng: t.lng, note: t.name, grid_ref: null, created_at: new Date().toISOString() };
+    fetch('/api/gridref?lat=' + t.lat + '&lng=' + t.lng).then(r => r.json())
+      .then(d => { if (d.in_gb) find.grid_ref = d.grid_ref; Malten.addFind(find); addFindMarker(find); updateCount(); })
+      .catch(() => { Malten.addFind(find); addFindMarker(find); updateCount(); });
+    const btn = guideEl.querySelector('#g-save');
+    if (btn) { btn.textContent = 'Saved ✓'; btn.disabled = true; }
   }
 
   function positionTags(heading) {
@@ -666,6 +740,7 @@
       t.el.style.top = y + '%';
       t.el.style.opacity = Math.abs(delta) > HFOV / 2 ? '0.55' : '1';
     }
+    if (lookTarget) updateGuide();
   }
 
   // --- wire it up ------------------------------------------------------------

@@ -174,6 +174,31 @@ button:disabled { opacity: 0.4; cursor: default; }
   color: #fff; background: rgba(0, 0, 0, 0.55); border-radius: 999px; padding: 7px 14px; font-size: 13px; text-align: center; max-width: 82%;
 }
 .look-cred { position: absolute; bottom: calc(6px + env(safe-area-inset-bottom)); right: 10px; color: rgba(255, 255, 255, 0.7); font-size: 10px; }
+.look-tag.sel { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
+/* Off-screen beacon arrows: which way to turn to face your target. */
+.look-off {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
+  color: #fff; font-size: 40px; line-height: 1; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+  animation: nudge 1s ease-in-out infinite;
+}
+.look-off.left { left: 8px; } .look-off.right { right: 8px; }
+.look-off[hidden] { display: none; }
+@keyframes nudge { 50% { opacity: 0.4; } }
+/* The beacon guidance bar — live distance + turn direction + actions. */
+.look-guide {
+  position: absolute; left: 10px; right: 10px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 3;
+  background: rgba(0, 0, 0, 0.62); color: #fff; border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 14px; padding: 11px 13px; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+}
+.look-guide[hidden] { display: none; }
+.look-guide .g-main { font-size: 15px; line-height: 1.35; }
+.look-guide .g-main b { font-variant-numeric: tabular-nums; }
+.look-guide .g-acts { display: flex; gap: 8px; margin-top: 10px; }
+.look-guide .g-acts .ghost {
+  flex: 1; background: rgba(255, 255, 255, 0.12); color: #fff; border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 9px; padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.look-guide .g-acts .ghost:disabled { opacity: 0.6; }
 
 /* The ambient agent's nudge, shown inside the "Around you" card. No chat box —
    just a suggestion and its two next steps: reject, or done → next. */

@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 )
 
@@ -40,6 +41,43 @@ func TestParsePOIs(t *testing.T) {
 	// tourism preferred over empty tags.
 	if byName["Trafalgar Square"].Kind != "attraction" {
 		t.Errorf("Trafalgar Square kind = %q, want attraction", byName["Trafalgar Square"].Kind)
+	}
+}
+
+func TestCellCaching(t *testing.T) {
+	var hits int
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		_, _ = w.Write([]byte(sampleOverpass))
+	}))
+	defer srv.Close()
+
+	old := overpassEndpoint
+	overpassEndpoint = srv.URL
+	defer func() { overpassEndpoint = old }()
+	// Isolate the cache for the test.
+	poiCellsMu.Lock()
+	poiCells = map[string]*poiCell{}
+	poiCellsMu.Unlock()
+
+	// Two nearby points inside the same ~2km cell → one upstream fetch.
+	if _, err := cellPOIs(51.5080, -0.1281); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cellPOIs(51.5090, -0.1290); err != nil {
+		t.Fatal(err)
+	}
+	// A point in a far-away cell → a second fetch.
+	if _, err := cellPOIs(53.4800, -2.2400); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if hits != 2 {
+		t.Errorf("overpass hit %d times, want 2 (same cell cached, new cell fetched)", hits)
 	}
 }
 
