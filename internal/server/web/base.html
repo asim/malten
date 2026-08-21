@@ -22,16 +22,11 @@
   <script src="/app.js?v={{.Ver}}"></script>
   {{block "scripts" .}}{{end}}
   <script>
+    // Register the service worker for offline/installability. We do NOT reload
+    // on controllerchange — the page is network-first and CSS/JS are version-
+    // stamped, so updates land on the next normal load without a jarring
+    // self-refresh.
     if ('serviceWorker' in navigator) {
-      // When a new service worker takes over (after a deploy), reload once so
-      // the running page picks up the fresh app instead of staying on the old
-      // cached one. The flag guards against reload loops.
-      var swRefreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function () {
-        if (swRefreshing) return;
-        swRefreshing = true;
-        window.location.reload();
-      });
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('/sw.js').catch(function () {});
       });
