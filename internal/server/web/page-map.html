@@ -18,7 +18,17 @@
     <button class="fab" id="rail" title="Live rail (Great Britain)" hidden>🚆</button>
     <button class="fab" id="buses" title="Live buses (Great Britain)" hidden>🚍</button>
     <button class="fab" id="live" title="Bus & tube arrivals (London)">🚌</button>
+    <button class="fab" id="look" title="Look around (camera)" hidden>📷</button>
     <button class="fab" id="locate" title="Find my location">◎</button>
+  </div>
+  <div class="look" id="look-view" hidden>
+    <video id="look-cam" playsinline muted autoplay></video>
+    <div class="look-scene" id="look-scene"></div>
+    <div class="look-reticle"></div>
+    <div class="look-head" id="look-head">Point your phone around you</div>
+    <div class="look-hint" id="look-hint"></div>
+    <div class="look-cred">Places © OpenStreetMap contributors</div>
+    <button class="look-x" id="look-x">Done</button>
   </div>
 </div>
 {{end}}
@@ -202,6 +212,7 @@
   document.getElementById('locate').onclick = () => { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); };
   map.on('locationfound', e => {
     myLoc = e.latlng;
+    if (typeof lookView !== 'undefined' && !lookView.hidden && !lookTargets.length) loadLookTargets(e.latlng);
     if (meMarker) map.removeLayer(meMarker);
     if (meCircle) map.removeLayer(meCircle);
     meMarker = L.marker(e.latlng, { icon: meIcon }).addTo(map);
@@ -527,6 +538,132 @@
     vv.addEventListener('resize', onVV);
     vv.addEventListener('scroll', onVV);
     onVV();
+  }
+
+  // --- "look around" camera mode --------------------------------------------
+  // Point the phone and Malten tags what's actually in that direction — POIs,
+  // stations, your finds — using the compass. Keyless; the camera + heading +
+  // bearing maths are all client-side.
+  const lookBtn = document.getElementById('look');
+  const lookView = document.getElementById('look-view');
+  const lookCam = document.getElementById('look-cam');
+  const lookScene = document.getElementById('look-scene');
+  const lookHead = document.getElementById('look-head');
+  const lookHint = document.getElementById('look-hint');
+  let lookStream = null, lookTargets = [], lookMaxDist = 400, lastHeading = 0, gotOri = false, rafPending = false;
+  const HFOV = 66; // assumed horizontal camera field of view, degrees
+
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) lookBtn.hidden = false;
+  lookBtn.onclick = openLook;
+  document.getElementById('look-x').onclick = closeLook;
+
+  function toRad(d) { return d * Math.PI / 180; }
+  function bearingTo(lat1, lng1, lat2, lng2) {
+    const dλ = toRad(lng2 - lng1), φ1 = toRad(lat1), φ2 = toRad(lat2);
+    const y = Math.sin(dλ) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(dλ);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+  function distM(lat1, lng1, lat2, lng2) {
+    const R = 6371000, dφ = toRad(lat2 - lat1), dλ = toRad(lng2 - lng1);
+    const a = Math.sin(dφ / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dλ / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  function compass8(b) { return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(b / 45) % 8]; }
+  function prettyDist(m) { return m < 950 ? Math.round(m / 10) * 10 + 'm' : (m / 1000).toFixed(1) + 'km'; }
+  function kindEmoji(k) {
+    k = (k || '').toLowerCase();
+    if (k === 'find') return '📍'; if (k === 'station') return '🚉';
+    if (/museum|gallery|attraction|artwork|viewpoint/.test(k)) return '🎨';
+    if (/pub|bar/.test(k)) return '🍺'; if (/cafe|coffee/.test(k)) return '☕';
+    if (/restaurant|food/.test(k)) return '🍽️'; if (/theatre|arts/.test(k)) return '🎭';
+    if (/cinema/.test(k)) return '🎬'; if (/park|garden|common|nature|wood/.test(k)) return '🌳';
+    if (/peak|cliff/.test(k)) return '⛰️'; if (/water|spring|beach/.test(k)) return '💧';
+    if (/church|place_of_worship|monument|memorial|castle|ruins|historic/.test(k)) return '🏛️';
+    if (/library/.test(k)) return '📚'; if (/market/.test(k)) return '🛒';
+    return '📍';
+  }
+
+  async function openLook() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    lookView.hidden = false;
+    lookScene.innerHTML = '';
+    lookHint.textContent = 'Starting camera…';
+    try {
+      lookStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      lookCam.srcObject = lookStream;
+    } catch (_) { lookHint.textContent = 'Camera permission is needed to look around.'; }
+    await startCompass();
+    if (myLoc) loadLookTargets(myLoc);
+    else { lookHint.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }
+  }
+
+  function closeLook() {
+    lookView.hidden = true;
+    if (lookStream) { lookStream.getTracks().forEach(t => t.stop()); lookStream = null; }
+    window.removeEventListener('deviceorientationabsolute', onOri, true);
+    window.removeEventListener('deviceorientation', onOri, true);
+  }
+
+  async function startCompass() {
+    gotOri = false;
+    try {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        await DeviceOrientationEvent.requestPermission(); // iOS: needs the tap we're inside of
+      }
+    } catch (_) {}
+    window.addEventListener('deviceorientationabsolute', onOri, true);
+    window.addEventListener('deviceorientation', onOri, true);
+    setTimeout(() => { if (!gotOri) lookHead.textContent = 'No compass — showing nearest by distance'; }, 1800);
+  }
+
+  function onOri(e) {
+    let h = null;
+    if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;      // iOS: degrees from north
+    else if (e.absolute && e.alpha != null) h = (360 - e.alpha) % 360;   // Android absolute
+    if (h == null) return;
+    gotOri = true; lastHeading = h;
+    if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; positionTags(lastHeading); }); }
+  }
+
+  async function loadLookTargets(loc) {
+    lookHint.textContent = 'Finding what’s around you…';
+    const list = [];
+    Malten.getFinds().forEach(f => list.push({ name: f.note || 'Your find', kind: 'find', lat: f.lat, lng: f.lng }));
+    try { const r = await fetch('/api/stations?lat=' + loc.lat + '&lng=' + loc.lng); (((await r.json()).stations) || []).forEach(s => list.push({ name: s.name, kind: 'station', lat: s.lat, lng: s.lng })); } catch (_) {}
+    try { const r = await fetch('/api/poi?lat=' + loc.lat + '&lng=' + loc.lng + '&radius=600'); (((await r.json()).pois) || []).forEach(p => list.push({ name: p.name, kind: p.kind, lat: p.lat, lng: p.lng })); } catch (_) {}
+
+    lookTargets = list.map(t => ({ ...t, bearing: bearingTo(loc.lat, loc.lng, t.lat, t.lng), dist: distM(loc.lat, loc.lng, t.lat, t.lng) }))
+      .filter(t => t.dist > 8 && t.dist < 900)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 40);
+    lookMaxDist = Math.max(250, ...lookTargets.map(t => t.dist));
+    lookScene.innerHTML = '';
+    lookTargets.forEach(t => {
+      const el = document.createElement('button');
+      el.className = 'look-tag';
+      el.innerHTML = kindEmoji(t.kind) + ' <span class="nm">' + esc(t.name) + '</span> <span class="d">' + prettyDist(t.dist) + '</span>';
+      el.onclick = () => { closeLook(); map.setView([t.lat, t.lng], Math.max(16, map.getZoom())); };
+      lookScene.appendChild(el);
+      t.el = el;
+    });
+    lookHint.textContent = lookTargets.length ? 'Pan around — tap a tag to see it on the map' : 'Nothing tagged nearby right now';
+    positionTags(lastHeading);
+  }
+
+  function positionTags(heading) {
+    if (gotOri) lookHead.textContent = compass8(heading) + ' · ' + Math.round(heading) + '°';
+    for (const t of lookTargets) {
+      if (!t.el) continue;
+      const delta = ((t.bearing - heading + 540) % 360) - 180; // [-180,180]
+      if (Math.abs(delta) > HFOV / 2 + 8) { t.el.style.display = 'none'; continue; }
+      t.el.style.display = '';
+      const x = 50 + (delta / (HFOV / 2)) * 50;
+      const y = 68 - Math.min(46, (t.dist / lookMaxDist) * 46); // nearer lower, farther higher
+      t.el.style.left = Math.max(3, Math.min(97, x)) + '%';
+      t.el.style.top = y + '%';
+      t.el.style.opacity = Math.abs(delta) > HFOV / 2 ? '0.55' : '1';
+    }
   }
 
   // --- wire it up ------------------------------------------------------------

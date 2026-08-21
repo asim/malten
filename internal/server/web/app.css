@@ -144,6 +144,37 @@ button:disabled { opacity: 0.4; cursor: default; }
 .around-actions { margin-top: 11px; }
 .around-actions .primary { padding: 8px 14px; font-size: 14px; }
 
+/* "Look around" — full-screen camera with tags placed by compass bearing. */
+.look { position: fixed; inset: 0; z-index: 900; background: #000; overflow: hidden; }
+.look[hidden] { display: none; }
+#look-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.look-scene { position: absolute; inset: 0; pointer-events: none; }
+.look-tag {
+  position: absolute; transform: translate(-50%, -50%);
+  display: inline-flex; align-items: center; gap: 5px; max-width: 60vw;
+  background: rgba(0, 0, 0, 0.55); color: #fff; border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px; padding: 6px 11px; font: inherit; font-size: 13px; line-height: 1.1; white-space: nowrap;
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: auto; cursor: pointer;
+  transition: left 0.12s linear, top 0.12s linear, opacity 0.12s linear;
+}
+.look-tag .nm { overflow: hidden; text-overflow: ellipsis; }
+.look-tag .d { opacity: 0.7; font-variant-numeric: tabular-nums; }
+.look-reticle { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 2px solid rgba(255, 255, 255, 0.85); border-radius: 50%; }
+.look-head {
+  position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  color: #fff; background: rgba(0, 0, 0, 0.5); border-radius: 999px; padding: 5px 13px; font-size: 13px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums;
+}
+.look-x {
+  position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px;
+  background: rgba(0, 0, 0, 0.55); color: #fff; border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px; padding: 8px 13px; font: inherit; font-size: 14px; cursor: pointer;
+}
+.look-hint {
+  position: absolute; bottom: calc(18px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+  color: #fff; background: rgba(0, 0, 0, 0.55); border-radius: 999px; padding: 7px 14px; font-size: 13px; text-align: center; max-width: 82%;
+}
+.look-cred { position: absolute; bottom: calc(6px + env(safe-area-inset-bottom)); right: 10px; color: rgba(255, 255, 255, 0.7); font-size: 10px; }
+
 /* The ambient agent's nudge, shown inside the "Around you" card. No chat box —
    just a suggestion and its two next steps: reject, or done → next. */
 .around-idea {

@@ -51,6 +51,12 @@ content**:
   with `osgrid.ToWGS84` before it leaves the server. Also exposed to the agent
   (`find_place`, `whats_here`).
 
+- **Nearby points of interest** (`/api/poi`, `internal/server/poi.go`). Proxies
+  the OpenStreetMap **Overpass** API (free, keyless) for named features near a
+  point — pubs, parks, landmarks, viewpoints. It's what the camera "look around"
+  mode tags in view. Override the instance with `MALTEN_OVERPASS_URL`. OSM is
+  ODbL — the UI attributes it.
+
 - **A live "around me" snapshot** (`/api/around`, `internal/server/around.go`).
   Fans out across every feed above concurrently and folds them into one compact
   view (nearest place, nearest stations + next trains, buses moving nearby,
