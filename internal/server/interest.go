@@ -16,7 +16,8 @@ import (
 // leave, not private user content. It is appended to a JSONL file.
 type interest struct {
 	ID        string    `json:"id"`
-	Email     string    `json:"email"`
+	Place     string    `json:"place,omitempty"` // the city/town someone's asking for
+	Email     string    `json:"email,omitempty"`
 	Note      string    `json:"note,omitempty"`
 	Country   string    `json:"country,omitempty"`
 	Lat       float64   `json:"lat,omitempty"`
@@ -101,6 +102,7 @@ func (s *Server) handleInterest(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var in struct {
+			Place   string  `json:"place"`
 			Email   string  `json:"email"`
 			Note    string  `json:"note"`
 			Country string  `json:"country"`
@@ -111,13 +113,19 @@ func (s *Server) handleInterest(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 			return
 		}
+		// A city request needs a place OR an email; the email is optional here.
+		place := clip(in.Place, 120)
 		email := clip(in.Email, 200)
-		if !looksLikeEmail(email) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a valid email is required"})
+		if email != "" && !looksLikeEmail(email) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "that email doesn't look right"})
+			return
+		}
+		if place == "" && email == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tell us your city (an email is optional)"})
 			return
 		}
 		rec := interest{
-			ID: newID(), Email: email, Note: clip(in.Note, 500), Country: clip(in.Country, 80),
+			ID: newID(), Place: place, Email: email, Note: clip(in.Note, 500), Country: clip(in.Country, 80),
 			Lat: in.Lat, Lng: in.Lng, IP: clientIP(r), CreatedAt: time.Now().UTC(),
 		}
 		if err := s.interest.add(rec); err != nil {

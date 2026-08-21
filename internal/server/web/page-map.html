@@ -129,31 +129,32 @@
     s.querySelector('#savekey').onclick = () => { Malten.setKey(input.value.trim()); closeSheet(); setTiles(); };
   }
 
-  // --- outside GB: invite them to register interest -------------------------
+  // --- outside GB: let people request their city ----------------------------
   function openInterest(latlng) {
     const s = openSheet('keycard',
-      '<h2>Malten is Great Britain only, for now</h2>' +
+      '<h2>Malten is Great Britain, for now</h2>' +
       '<p>The maps come from Ordnance Survey, which covers England, Scotland and Wales. ' +
-      'Leave your email and we’ll tell you when Malten reaches where you are.</p>' +
-      '<input id="email" type="email" placeholder="you@example.com" autocomplete="email">' +
-      '<textarea id="where" rows="2" placeholder="Where are you? (optional)" style="margin-top:8px"></textarea>' +
-      '<div class="row"><button class="ghost" id="notnow">Not now</button><span class="spacer"></span><button class="primary" id="reg">Register interest</button></div>');
-    const email = s.querySelector('#email'); email.focus();
+      'Want Malten where you are? Tell us your city and we’ll prioritise the places people ask for.</p>' +
+      '<input id="place" placeholder="Your city or town" autocomplete="off">' +
+      '<input id="email" type="email" placeholder="Email (optional — to hear when it lands)" autocomplete="email" style="margin-top:8px">' +
+      '<div class="row"><button class="ghost" id="notnow">Not now</button><span class="spacer"></span><button class="primary" id="reg">Request my city</button></div>');
+    const place = s.querySelector('#place'); place.focus();
+    const email = s.querySelector('#email');
     s.querySelector('#notnow').onclick = closeSheet;
     s.querySelector('#reg').onclick = () => {
-      const v = email.value.trim();
-      if (v.indexOf('@') < 1) { email.focus(); return; }
+      const p = place.value.trim(), e = email.value.trim();
+      if (!p && e.indexOf('@') < 1) { place.focus(); return; }
       const btn = s.querySelector('#reg'); btn.disabled = true; btn.textContent = 'Sending…';
       fetch('/api/interest', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: v, note: s.querySelector('#where').value.trim(), country: navigator.language || '', lat: latlng.lat, lng: latlng.lng }),
+        body: JSON.stringify({ place: p, email: e, country: navigator.language || '', lat: latlng.lat, lng: latlng.lng }),
       }).then(r => { if (!r.ok) throw new Error(); return r.json(); })
         .then(() => {
           localStorage.setItem('malten_interest', 'done');
-          openSheet('keycard', '<h2>Thanks — you’re on the list</h2><p>We’ll be in touch when Malten reaches you.</p><div class="row"><span class="spacer"></span><button class="primary" id="ok">Close</button></div>');
+          openSheet('keycard', '<h2>Thanks — noted' + (p ? ' for ' + esc(p) : '') + '</h2><p>We prioritise the cities people ask for. The more requests, the sooner it lands.</p><div class="row"><span class="spacer"></span><button class="primary" id="ok">Close</button></div>');
           sheet.querySelector('#ok').onclick = closeSheet;
         })
-        .catch(() => { btn.disabled = false; btn.textContent = 'Register interest'; });
+        .catch(() => { btn.disabled = false; btn.textContent = 'Request my city'; });
     };
   }
 
