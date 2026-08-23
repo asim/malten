@@ -157,13 +157,15 @@ button:disabled { opacity: 0.4; cursor: default; }
 .arr .delayed { color: #b3261e; }
 .leaflet-popup-content { font: inherit; }
 .leaflet-popup-content .note { margin: 0 0 6px; }
-.hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 550;
+/* --topbar-h is measured live (the bar grows with the search box); these cards
+   clear the bar and the feed/map button rather than sitting under them. */
+.hint { position: absolute; top: calc(var(--topbar-h, 44px) + 14px); left: 50%; transform: translateX(-50%); z-index: 550;
         background: var(--panel); border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow);
         padding: 7px 14px; font-size: 13px; color: var(--muted); }
 
 /* "Around you" — the live greeting card that makes the app feel alive on open. */
 .around {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 560;
+  position: absolute; top: calc(var(--topbar-h, 44px) + 14px); left: 50%; transform: translateX(-50%); z-index: 560;
   width: min(520px, calc(100% - 20px));
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
   padding: 12px 14px;

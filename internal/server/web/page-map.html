@@ -61,6 +61,14 @@
   const app = document.querySelector('.app');
   const countEl = document.getElementById('count');
   const hintEl = document.getElementById('hint');
+
+  // Cards floating over the map hang off the bottom of the bar rather than a
+  // guessed offset — the bar's height moves with the search box and the notch.
+  const topbarEl = document.querySelector('.topbar');
+  const syncBarHeight = () => app.style.setProperty('--topbar-h', topbarEl.offsetHeight + 'px');
+  syncBarHeight();
+  if (window.ResizeObserver) new ResizeObserver(syncBarHeight).observe(topbarEl);
+  else window.addEventListener('resize', syncBarHeight);
   function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 
   // OS Maps API (EPSG:3857) serves zoom 7–20; starting lower shows only 404s.
