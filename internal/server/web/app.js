@@ -8,6 +8,7 @@
   const TIMELINE_TTL = 7 * 24 * 3600e3; // a week; older than that, start a fresh trail
   const TIMELINE_V = 1;                // schema version of the stored log
   const SQUARES = 'malten_squares';    // OS grid squares you've been in: {code: {t, place}}
+  const KIDAGE = 'malten_kidage';      // who the hunts are written for
 
   // Storage that degrades instead of throwing. localStorage is unavailable or
   // throws in some private-browsing modes, so fall back to sessionStorage (the
@@ -85,6 +86,11 @@
       try { write(SQUARES, all); } catch (_) { return true; }
       return true;
     },
+    // Hunts are written for whoever's actually along; remembered so it's asked
+    // once, not every time you go out.
+    getKidAge: () => +(S.getItem(KIDAGE) || 0) || 6,
+    hasKidAge: () => !!S.getItem(KIDAGE),
+    setKidAge: (n) => S.setItem(KIDAGE, String(n)),
     getKey: () => S.getItem(KEY) || '',
     setKey: (k) => k ? S.setItem(KEY, k) : S.removeItem(KEY),
     newId: () => { const a = new Uint8Array(6); crypto.getRandomValues(a); return 'F-' + Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); },

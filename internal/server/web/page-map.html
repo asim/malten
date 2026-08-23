@@ -562,7 +562,7 @@
   let myLoc = null;
   const ideaBtn = document.getElementById('ask'); // the 💡 control: "another idea"
   const aroundEl = document.getElementById('around');
-  let askAvail = false, railAvail = false, busesAvail = false;
+  let askAvail = false, railAvail = false, busesAvail = false, needKey = false;
   let wentLive = false, aroundTimer = null, suggestSeq = 0;
 
   fetch('/api/health').then(r => r.json()).then(d => {
@@ -572,9 +572,11 @@
     if (d.rail) { railAvail = true; document.getElementById('rail').hidden = false; }
     if (d.buses) { busesAvail = true; document.getElementById('buses').hidden = false; }
     if (d.search) document.getElementById('searchbox').hidden = false;
-    if (!serverTiles && !Malten.getKey()) askForKey();
+    // The key is only needed to draw the map. Asking for it over the feed —
+    // which needs nothing — is a dialog in front of an app you haven't seen yet.
+    if (!serverTiles && !Malten.getKey()) { needKey = true; if (timelineEl.hidden) askForKey(); }
     if (myLoc) goLive(myLoc); // location already known before health returned
-  }).catch(() => { if (!Malten.getKey()) askForKey(); });
+  }).catch(() => { if (!Malten.getKey()) { needKey = true; if (timelineEl.hidden) askForKey(); } });
 
   // Tapping 💡 asks the background agent for a fresh idea about where you are.
   ideaBtn.onclick = () => {
@@ -992,6 +994,7 @@
     viewBtn.textContent = 'Feed';
     setTimeout(() => map.invalidateSize(), 60);
     if (!wentLive && myLoc) goLive(myLoc); // the card's turn now the map is up
+    if (needKey && !Malten.getKey()) { needKey = false; askForKey(); }
   }
   function showTimeline() {
     timelineEl.hidden = false; document.body.classList.remove('map-open');
@@ -1069,12 +1072,12 @@
       }
       case 'idea': {
         el = ev.text
-          ? entryEl('💡', esc(ev.text), '<a class="tl-reroll">Something else</a>', 'idea')
+          ? entryEl('💡', esc(ev.text), '<a class="tl-reroll">Something else</a><a class="tl-hunt">Kids’ hunt</a>', 'idea')
           : entryEl('💡', 'Thinking of something for you…', '', 'idea loading');
-        const link = el.querySelector('.tl-reroll');
+        const link = el.querySelector('.tl-reroll'), hunt = el.querySelector('.tl-hunt');
         if (link) {
-          if (lastIdea && lastIdea.id === ev.id) link.onclick = () => reroll(ev);
-          else link.remove(); // only the newest nudge offers another
+          if (lastIdea && lastIdea.id === ev.id) { link.onclick = () => reroll(ev); if (hunt) hunt.onclick = askHunt; }
+          else { link.remove(); if (hunt) hunt.remove(); } // only the newest nudge offers more
         }
         break;
       }
@@ -1086,6 +1089,34 @@
         el = entryEl('🧭', 'New ground' + (ev.place ? ' · ' + esc(ev.place) : ''),
           esc(ev.square) + ' — first time here' + (ev.count > 1 ? ' · ' + ev.count + ' squares so far' : ''), 'ground');
         break;
+      case 'hunt': {
+        // A hunt for going out with a child: five things to find here, ticked
+        // off as you find them. Meant to be read once and the phone put away.
+        el = document.createElement('div');
+        el.className = 'tl-entry hunt' + (ev.items && ev.items.length ? '' : ' loading');
+        if (!ev.items || !ev.items.length) {
+          el.innerHTML = '<span class="ic">🔍</span><div class="bd"><div class="t">' +
+            (ev.failed ? 'Couldn’t make a hunt here just now.' : 'Looking for five things to find…') + '</div></div>';
+          break;
+        }
+        const done = ev.items.filter(i => i.done).length;
+        const many = ['no', 'One', 'Two', 'Three', 'Four', 'Five'][ev.items.length] || ev.items.length;
+        el.innerHTML = '<span class="ic">🔍</span><div class="bd">' +
+          '<div class="t">' + many + ' things to find' + (ev.place ? ' near ' + esc(ev.place) : '') +
+          '<span class="hunt-score">' + done + '/' + ev.items.length + '</span></div>' +
+          '<ul class="hunt-list">' + ev.items.map((it, i) =>
+            '<li class="' + (it.done ? 'done' : '') + '" data-i="' + i + '">' +
+            '<span class="tick">' + (it.done ? '✓' : '') + '</span>' +
+            '<span class="txt">' + esc(it.what) + (it.hint ? '<span class="hunt-hint">' + esc(it.hint) + '</span>' : '') + '</span></li>').join('') +
+          '</ul></div>';
+        el.querySelectorAll('.hunt-list li').forEach(li => {
+          li.onclick = () => {
+            const it = ev.items[+li.dataset.i];
+            if (it) { it.done = !it.done; patch(ev); saveNow(); }
+          };
+        });
+        break;
+      }
       case 'q': el = entryEl('💬', esc(ev.text), '', 'ask'); break;
       case 'a':
         el = entryEl('✦', ev.text ? multiline(ev.text) : esc(ev.note || 'Thinking…'), '', 'ans' + (ev.text ? '' : ' loading'));
@@ -1423,6 +1454,39 @@
     vv.addEventListener('resize', fitKeyboard);
     vv.addEventListener('scroll', fitKeyboard);
     fitKeyboard();
+  }
+
+  // Asked once, then remembered: a hunt for a four-year-old and one for a
+  // ten-year-old are not the same hunt.
+  function askHunt() {
+    if (Malten.hasKidAge()) return startHunt();
+    openSheet('keycard', '<h2>Who’s coming?</h2>' +
+      '<p>So the things to find are the right sort of thing. You can change it later by tapping a hunt.</p>' +
+      '<div class="row age-row">' + [4, 6, 8, 10].map(a =>
+        '<button class="ghost" data-age="' + a + '">' + a + '</button>').join('') + '</div>');
+    sheet.querySelectorAll('[data-age]').forEach(b => {
+      b.onclick = () => { Malten.setKidAge(+b.dataset.age); closeSheet(); startHunt(); };
+    });
+  }
+
+  // A hunt for wherever you are. It appends like everything else, so it sits in
+  // the trail with the rest of the day and is still there tomorrow.
+  async function startHunt() {
+    const at = myLoc || (lastFix ? { lat: lastFix.lat, lng: lastFix.lng } : null);
+    if (!at) return;
+    let place = '';
+    for (let i = tlEvents.length - 1; i >= 0; i--) if (tlEvents[i].k === 'when' && tlEvents[i].place) { place = tlEvents[i].place; break; }
+    const ev = push({ k: 'hunt', items: [], place: place });
+    try {
+      const r = await fetch('/api/hunt', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: at.lat, lng: at.lng, age: Malten.getKidAge() }),
+      });
+      ev.items = ((await r.json()).items || []).map(i => ({ what: i.what, hint: i.hint || '', done: false }));
+    } catch (_) {}
+    if (!ev.items.length) ev.failed = true;
+    patch(ev);
+    saveNow();
   }
 
   // "Something else" — a different nudge, appended as a new event rather than

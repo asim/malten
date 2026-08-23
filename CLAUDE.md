@@ -79,6 +79,13 @@ content**:
   isn't being there. Standing still adds nothing. The map is behind a button. The agent has the same snapshot (`around_me`).
   Composes existing feeds only — no new keys.
 
+- **A hunt for going out with a child** (`/api/hunt`, `internal/server/hunt.go`).
+  One call, no tools: the live snapshot plus the real named places within 500m,
+  and five things to find, returned as JSON the client renders as a tickable
+  list in the timeline. The prompt's hard rule is that it may name only places
+  from that list — a child hunting for a statue that isn't there ends the walk
+  badly. The age is asked once and kept in the browser.
+
 - **Nudges you outdoors** (`/api/push/*`, `internal/server/nudge.go`,
   `internal/push`). The only part of Malten that reaches out rather than waiting
   to be opened: an hourly loop over opted-in devices that **usually decides to

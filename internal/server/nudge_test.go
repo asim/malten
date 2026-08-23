@@ -54,9 +54,9 @@ func offline(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	t.Cleanup(stub.Close)
-	wOld, tOld := weatherAPI, tflAPI
-	weatherAPI, tflAPI = stub.URL, stub.URL
-	t.Cleanup(func() { weatherAPI, tflAPI = wOld, tOld })
+	wOld, tOld, oOld := weatherAPI, tflAPI, overpassEndpoint
+	weatherAPI, tflAPI, overpassEndpoint = stub.URL, stub.URL, stub.URL
+	t.Cleanup(func() { weatherAPI, tflAPI, overpassEndpoint = wOld, tOld, oOld })
 }
 
 // testServer wires a server with the agent stubbed and the network stubbed out.

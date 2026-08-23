@@ -165,6 +165,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/around", s.handleAround)
 	mux.HandleFunc("/api/poi", s.handlePOI)
 	mux.HandleFunc("/api/suggest", s.handleSuggest)
+	mux.HandleFunc("/api/hunt", s.handleHunt)
 	mux.HandleFunc("/api/ask", s.handleAsk)
 	mux.HandleFunc("/api/push/subscribe", s.handlePushSubscribe)
 	mux.HandleFunc("/api/push/unsubscribe", s.handlePushUnsubscribe)

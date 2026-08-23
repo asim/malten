@@ -50,6 +50,11 @@ the spatial memory, not the map data.
   first time and the feed says so. No points, no streaks, nobody to compete
   with — and the agent knows which squares near you you've never been in, so
   it can send you somewhere genuinely new.
+- **A hunt, for going out with kids.** Tap *Kids' hunt* and the agent writes
+  five things to find where you're actually standing — a postbox, something
+  older than Grandma, three different leaves — using the real places nearby, and
+  never naming one that isn't there. Tick them off as you find them; it stays in
+  the timeline. Written for the age you tell it once.
 - **Nudges (opt-in).** An hourly loop that usually says nothing. It notifies only
   when there's a specific, time-bound reason — somewhere new a short walk away,
   the last of the light, a train that gets you back — at most once a day, never
@@ -139,6 +144,7 @@ Pure helpers and public-data proxies (none store user content):
 | `/api/poi` | Nearby named POIs (OpenStreetMap Overpass, cached by grid cell) |
 | `/api/around` | One live "around me" snapshot across every feed |
 | `/api/suggest` | The ambient agent's single nudge (SSE-free; one call) |
+| `/api/hunt` | Five things for a child to find nearby, from real places |
 | `/api/ask` | The fuller bounded tool-use agent loop (SSE) |
 | `/api/push/subscribe`, `/api/push/unsubscribe` | Opt in/out of nudges (unsubscribing deletes the record) |
 | `/api/interest` | Out-of-coverage waitlist (POST to add; GET with token to read) |
