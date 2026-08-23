@@ -48,6 +48,23 @@ body.look-open .viewbtn { display: none; }
 .tl-entry.poi { cursor: pointer; }
 .tl-entry.muted { border-style: dashed; background: transparent; color: var(--muted); }
 .tl-entry.loading { color: var(--muted); font-style: italic; }
+.tl-entry.ask { background: color-mix(in srgb, var(--fg) 8%, var(--panel)); border-color: transparent; }
+.tl-entry.ans .t { line-height: 1.5; }
+
+/* Ask about here. One composer, pinned under the feed. */
+.tl-ask {
+  flex: 0 0 auto; display: flex; gap: 8px; align-items: center;
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border); background: var(--bg);
+  margin-bottom: var(--kb, 0px); /* lifts clear of the on-screen keyboard */
+}
+.tl-ask[hidden] { display: none; }
+.tl-ask input { flex: 1; min-width: 0; border-radius: 999px; padding: 11px 16px; }
+.tl-send {
+  flex: 0 0 auto; width: 42px; height: 42px; border: 0; border-radius: 50%;
+  background: var(--fg); color: var(--bg); font: inherit; font-size: 18px; font-weight: 700; cursor: pointer;
+}
+.tl-send:disabled { opacity: 0.35; cursor: default; }
 
 /* App shell: slim bar, then the map fills the rest of the visible viewport. */
 .app { position: fixed; inset: 0; display: flex; flex-direction: column; height: 100dvh; }
@@ -111,7 +128,8 @@ body.look-open .viewbtn { display: none; }
   position: absolute; left: 50%; transform: translateX(-50%);
   width: min(440px, calc(100% - 24px)); background: var(--panel); color: var(--fg);
   border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
-  padding: 16px; z-index: 600;
+  /* above Leaflet's controls (1000), which otherwise draw through the card */
+  padding: 16px; z-index: 1060;
 }
 .sheet h2 { margin: 0 0 6px; font-size: 16px; }
 .sheet p { margin: 0 0 12px; font-size: 13px; color: var(--muted); line-height: 1.5; }
@@ -159,13 +177,13 @@ button:disabled { opacity: 0.4; cursor: default; }
 .leaflet-popup-content .note { margin: 0 0 6px; }
 /* --topbar-h is measured live (the bar grows with the search box); these cards
    clear the bar and the feed/map button rather than sitting under them. */
-.hint { position: absolute; top: calc(var(--topbar-h, 44px) + 14px); left: 50%; transform: translateX(-50%); z-index: 550;
+.hint { position: absolute; top: calc(var(--topbar-h, 44px) + 14px); left: 50%; transform: translateX(-50%); z-index: 1040;
         background: var(--panel); border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow);
         padding: 7px 14px; font-size: 13px; color: var(--muted); }
 
 /* "Around you" — the live greeting card that makes the app feel alive on open. */
 .around {
-  position: absolute; top: calc(var(--topbar-h, 44px) + 14px); left: 50%; transform: translateX(-50%); z-index: 560;
+  position: absolute; top: calc(var(--topbar-h, 44px) + 14px); left: 50%; transform: translateX(-50%); z-index: 1050;
   width: min(520px, calc(100% - 20px));
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
   padding: 12px 14px;

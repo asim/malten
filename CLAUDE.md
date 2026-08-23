@@ -36,13 +36,15 @@ content**:
   `/api/buses` adds **nationwide live buses** from the Bus Open Data Service's
   SIRI-VM feed (vehicle positions in a bounding box; free `BODS_API_KEY`,
   `internal/bods`) — SIRI-VM XML, not GTFS-RT protobuf, to stay dependency-free.
-- **Runs a spatial agent, ambiently.** The agent works in the background, not
-  through a chat box: `/api/suggest` (`internal/server/suggest.go`) runs it
-  silently over the live "around me" snapshot and returns ONE concrete nudge,
-  surfaced in the UI's "Around you" card. The fuller bounded tool-use loop —
-  `/api/ask` (SSE), with the live-data calls above plus `/api/gridref` exposed as
-  tools — remains available server-side. Both are enabled only when
-  `ANTHROPIC_API_KEY` is set; the question/location are used per-turn and forgotten.
+- **Runs a spatial agent.** Two ways in, neither a chat window. Ambiently:
+  `/api/suggest` (`internal/server/suggest.go`) runs the agent silently over the
+  live "around me" snapshot and returns ONE concrete nudge, surfaced in the
+  timeline and the "Around you" card. On demand: a composer at the foot of the
+  timeline posts to `/api/ask` (SSE) — the bounded tool-use loop, with the
+  live-data calls above plus `/api/gridref` exposed as tools — and the streamed
+  answer lands as an entry in the feed, so the timeline stays the surface. Both
+  are enabled only when `ANTHROPIC_API_KEY` is set; the question and location are
+  used per-turn and forgotten.
 
 - **Place search & reverse geocoding** (`/api/search`, `/api/nearest`,
   `internal/server/search.go`). Proxies the **OS Names** gazetteer with the

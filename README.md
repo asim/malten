@@ -32,9 +32,11 @@ the spatial memory, not the map data.
 - **Place search & reverse geocoding** across Great Britain (OS Names gazetteer).
 - **"Around you".** On open, a live snapshot of your surroundings — nearest place,
   nearest station and its next trains, buses moving nearby.
-- **Ambient agent ("Ask Malten").** No chat box: it works in the background and
-  offers one concrete thing to go and do, with a loop — *something else* or
-  *I did it → next*.
+- **A spatial agent ("Ask Malten").** No chat window. It works in the background
+  and offers one concrete thing to go and do, with a loop — *something else* or
+  *I did it → next* — and a composer at the foot of the timeline lets you ask
+  about where you are ("when's the next train to Leeds?"). The answer streams in
+  as an entry in the feed, using live transport, places and weather as tools.
 - **Look around (camera).** Point your phone; POIs, stations and your finds are
   tagged in view by real compass bearing, over a noir camera treatment. Tap one
   to lock a navigation beacon with a live-updating arrow and distance.
