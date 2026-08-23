@@ -68,8 +68,11 @@ content**:
   view (nearest place, nearest stations + next trains, buses moving nearby,
   London stops, and current **weather** from Open-Meteo — free/keyless,
   `internal/server/weather.go`). It powers the **timeline** — the app's front
-  door, a live feed of time/place/weather/what's-nearby that grows as you move,
-  with the map behind a button. The agent has the same snapshot (`around_me`).
+  door, an append-only log of what happened: arriving somewhere, what's around,
+  a nudge, a question, an answer — each appended in the order it happened and
+  never rewritten, so a conversation and the trail don't disturb each other. A
+  fix is appended when you move ~180m or reopen after a while; standing still
+  adds nothing. The map is behind a button. The agent has the same snapshot (`around_me`).
   Composes existing feeds only — no new keys.
 
 `/api/gridref` (WGS84 lat/lng → National Grid reference) is still a pure helper.

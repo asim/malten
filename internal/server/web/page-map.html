@@ -507,7 +507,10 @@
   function goLive(latlng) {
     if (railAvail) setRail(true);
     if (busesAvail) setBuses(true);
-    if (!wentLive) { wentLive = true; showAround(latlng); }
+    // The card belongs to the map. While the feed is the view you're looking at,
+    // it's the one telling you where you are — showing both would mean two agent
+    // calls and, worse, two different answers to the same question.
+    if (!wentLive && timelineEl.hidden) { wentLive = true; showAround(latlng); }
   }
 
   function closeAround() { aroundEl.hidden = true; hintEl.style.display = ''; clearTimeout(aroundTimer); }
@@ -897,7 +900,7 @@
   const tlPlace = document.getElementById('tl-place');
   const tlWeather = document.getElementById('tl-weather');
   const tlFeed = document.getElementById('tl-feed');
-  let tlBlocks = [], tlWatch = null;
+  let tlWatch = null;
 
   // The feed and the map are one view with two faces, so they share one button
   // in one place — it just changes what it says.
@@ -906,6 +909,7 @@
     timelineEl.hidden = true; document.body.classList.add('map-open');
     viewBtn.textContent = 'Feed';
     setTimeout(() => map.invalidateSize(), 60);
+    if (!wentLive && myLoc) goLive(myLoc); // the card's turn now the map is up
   }
   function showTimeline() {
     timelineEl.hidden = false; document.body.classList.remove('map-open');
@@ -932,6 +936,125 @@
     return '🌡️';
   }
 
+  // The feed is an append-only log. Everything that happens — arriving
+  // somewhere, what's around, a nudge, a question, an answer — is one event,
+  // appended in the order it happened and never rewritten afterwards. That's
+  // what keeps a conversation and the trail out of each other's way: nothing
+  // already on screen moves when something new arrives.
+  const multiline = s => esc(s).replace(/\n+/g, '<br>');
+  const atBottom = () => tlFeed.scrollHeight - tlFeed.scrollTop - tlFeed.clientHeight < 90;
+  const hhmm = t => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const TL_MAX_EVENTS = 200;
+
+  let tlEvents = [], tlSeq = 0, lastFix = null, lastIdea = null;
+
+  function entryEl(icon, title, sub, cls) {
+    const el = document.createElement('div');
+    el.className = 'tl-entry ' + (cls || '');
+    el.innerHTML = (icon ? '<span class="ic">' + icon + '</span>' : '') +
+      '<div class="bd"><div class="t">' + title + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
+    return el;
+  }
+
+  // One event → one node, with its own handlers. Rebuilding a single node is
+  // cheap; rebuilding the feed is what used to throw the conversation around.
+  function nodeFor(ev) {
+    let el;
+    switch (ev.k) {
+      case 'when': {
+        el = document.createElement('div');
+        el.className = 'tl-when';
+        el.textContent = hhmm(ev.t) + (ev.place ? ' · ' + ev.place : '');
+        break;
+      }
+      case 'place': {
+        const p = ev.poi;
+        el = entryEl(kindEmoji(p.kind), esc(p.name), esc(p.kind) + (ev.dist ? ' · ' + ev.dist : ''), 'poi');
+        el.onclick = () => showPlaceOnMap(p);
+        break;
+      }
+      case 'idea': {
+        el = ev.text
+          ? entryEl('💡', esc(ev.text), '<a class="tl-reroll">Something else</a>', 'idea')
+          : entryEl('💡', 'Thinking of something for you…', '', 'idea loading');
+        const link = el.querySelector('.tl-reroll');
+        if (link) {
+          if (lastIdea && lastIdea.id === ev.id) link.onclick = () => reroll(ev);
+          else link.remove(); // only the newest nudge offers another
+        }
+        break;
+      }
+      case 'q': el = entryEl('💬', esc(ev.text), '', 'ask'); break;
+      case 'a':
+        el = entryEl('✦', ev.text ? multiline(ev.text) : esc(ev.note || 'Thinking…'), '', 'ans' + (ev.text ? '' : ' loading'));
+        break;
+      case 'city':
+        el = entryEl('🌍', 'Malten is Great Britain, for now', '<a class="tl-city">Request your city</a>', 'muted');
+        el.querySelector('.tl-city').onclick = () => { if (myLoc) openInterest(myLoc); };
+        break;
+      default:
+        el = entryEl(ev.icon || '', esc(ev.title || ''), esc(ev.sub || ''), ev.cls || '');
+    }
+    el.dataset.ev = ev.id;
+    return el;
+  }
+
+  // Only the newest nudge offers another; the ones above it are history, so
+  // hand the link forward and redraw the one that just lost it.
+  function setLatestIdea(ev) {
+    const prev = lastIdea;
+    lastIdea = ev;
+    if (prev && prev !== ev) patch(prev);
+    return prev;
+  }
+
+  function showPlaceOnMap(p) {
+    showMap();
+    const ll = L.latLng(p.lat, p.lng);
+    map.setView(ll, Math.max(placeZoom(), map.getZoom()));
+    if (targetMarker) map.removeLayer(targetMarker);
+    targetMarker = L.marker(ll, { icon: pinIcon }).addTo(map)
+      .bindPopup('<div class="stopname">' + esc(p.name) + '</div><div class="sub">' + esc(p.kind) + '</div>').openPopup();
+  }
+
+  // Append one event. Follows the feed to the bottom only if you were already
+  // there — reading back through the trail is never yanked away.
+  function push(ev) {
+    ev.id = ++tlSeq;
+    ev.t = ev.t || Date.now();
+    const follow = atBottom();
+    tlEvents.push(ev);
+    tlFeed.appendChild(nodeFor(ev));
+    while (tlEvents.length > TL_MAX_EVENTS) {
+      const old = tlEvents.shift();
+      const node = tlFeed.querySelector('[data-ev="' + old.id + '"]');
+      if (node) node.remove();
+    }
+    if (follow) tlFeed.scrollTop = tlFeed.scrollHeight;
+    saveTimeline();
+    return ev;
+  }
+
+  // Redraw one event's node in place.
+  function patch(ev) {
+    const node = tlFeed.querySelector('[data-ev="' + ev.id + '"]');
+    if (!node) return;
+    const follow = atBottom();
+    node.replaceWith(nodeFor(ev));
+    if (follow) tlFeed.scrollTop = tlFeed.scrollHeight;
+    saveTimeline();
+  }
+
+  // Cheaper patch for the streaming answer: just the text, no node swap.
+  function patchAnswer(ev) {
+    const node = tlFeed.querySelector('[data-ev="' + ev.id + '"]');
+    if (!node) return patch(ev);
+    const follow = atBottom();
+    node.className = 'tl-entry ans' + (ev.text ? '' : ' loading');
+    node.querySelector('.t').innerHTML = ev.text ? multiline(ev.text) : esc(ev.note || 'Thinking…');
+    if (follow) tlFeed.scrollTop = tlFeed.scrollHeight;
+  }
+
   function tlHeader(a) {
     if (!a) return;
     if (a.place) tlPlace.textContent = a.place.name + (a.place.county ? ' · ' + a.place.county : '');
@@ -941,160 +1064,66 @@
       (a.weather.wind_kph >= 20 ? ' · breezy' : '');
   }
 
-  const multiline = s => esc(s).replace(/\n+/g, '<br>');
-  const tlEntry = (icon, title, sub, cls, data) =>
-    '<div class="tl-entry ' + (cls || '') + '"' + (data || '') + '>' +
-    (icon ? '<span class="ic">' + icon + '</span>' : '') +
-    '<div class="bd"><div class="t">' + title + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div></div>';
-
-  // Questions and answers, in the order they happened, at the foot of the block
-  // they were asked in — so a new exchange pushes the trail up, like a chat.
-  function asksHtml(b) {
-    return (b.asks || []).map(q =>
-      tlEntry('💬', esc(q.q), '', 'ask') +
-      tlEntry('✦', q.a ? multiline(q.a) : esc(q.note || 'Thinking…'),
-        '', 'ans' + (q.a ? '' : ' loading'), ' data-ask="' + q.id + '"')).join('');
-  }
-
-  function blockHtml(b, current) {
-    const a = b.around;
-    const placeName = (a && (a.place && a.place.name)) || (a && a.grid_ref) || 'Here';
-    const when = b.time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    let parts = ['<div class="tl-when">' + when + ' · ' + esc(placeName) + '</div>'];
-    const close = () => '<div class="tl-block' + (current ? ' current' : '') + '">' + parts.join('') + asksHtml(b) + '</div>';
-
-    if (a && a.in_gb === false) {
-      parts.push(tlEntry('🌍', 'Malten is Great Britain, for now', '<a class="tl-city">Request your city</a>', 'muted'));
-      return close();
-    }
-    if (!a) { parts.push(tlEntry('', 'Looking around you…', '', 'loading')); return close(); }
-
-    if (current) {
-      const st = (a.stations || [])[0];
-      if (st) {
-        const nx = st.next || [];
-        const sub = nx.length ? nx.slice(0, 2).map(d => esc(d.scheduled) + ' → ' + esc(d.destination)).join(' · ') : (st.miles + ' mi away');
-        parts.push(tlEntry('🚆', esc(st.name), sub));
-      }
-      if (a.buses_nearby) parts.push(tlEntry('🚍', a.buses_nearby + ' bus' + (a.buses_nearby === 1 ? '' : 'es') + ' moving nearby', ''));
-      (b.pois || []).forEach((p, i) => parts.push(
-        tlEntry(kindEmoji(p.kind), esc(p.name), esc(p.kind) + ' · ' + prettyDist(distM(b.lat, b.lng, p.lat, p.lng)), 'poi', ' data-i="' + i + '"')));
-      // The nudge goes last, under the places it draws on: the feed sits at the
-      // bottom, so on a phone this is what's in view when you arrive — rather
-      // than the one thing worth acting on having scrolled off the top.
-      if (b.suggestion) parts.push(tlEntry('💡', esc(b.suggestion), '<a class="tl-reroll">Something else</a>', 'idea'));
-      else if (askAvail) parts.push(tlEntry('💡', 'Thinking of something for you…', '', 'idea loading'));
-    } else {
-      const bits = [];
-      const st = (a.stations || [])[0];
-      if (st) bits.push('🚆 ' + esc(st.name));
-      if (a.buses_nearby) bits.push('🚍 ' + a.buses_nearby);
-      (b.pois || []).slice(0, 3).forEach(p => bits.push(kindEmoji(p.kind) + ' ' + esc(p.name)));
-      if (bits.length) parts.push(tlEntry('', bits.join(' · '), '', 'muted'));
-    }
-    return close();
-  }
-
-  // The feed reads forwards: oldest at the top, now at the bottom, next to the
-  // composer. New places and new answers land at the end and push it up.
-  const nowBlock = () => tlBlocks[tlBlocks.length - 1];
-  const atBottom = () => tlFeed.scrollHeight - tlFeed.scrollTop - tlFeed.clientHeight < 90;
-
-  function renderTimeline(stick) {
-    const follow = stick === undefined ? atBottom() : stick;
-    tlFeed.innerHTML = tlBlocks.map((b, i) => blockHtml(b, i === tlBlocks.length - 1)).join('');
-    const now = nowBlock();
-    const reroll = tlFeed.querySelector('.tl-reroll');
-    if (reroll && now) reroll.onclick = () => rerollBlock(now);
-    const city = tlFeed.querySelector('.tl-city');
-    if (city) city.onclick = () => { if (myLoc) openInterest(myLoc); };
-    // POIs are only listed in full for the block you're standing in.
-    if (now && now.pois) tlFeed.querySelectorAll('.tl-block.current .tl-entry.poi').forEach(el => {
-      const p = now.pois[+el.dataset.i];
-      if (p) el.onclick = () => { showMap(); const ll = L.latLng(p.lat, p.lng); map.setView(ll, Math.max(placeZoom(), map.getZoom())); if (targetMarker) map.removeLayer(targetMarker); targetMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup('<div class="stopname">' + esc(p.name) + '</div><div class="sub">' + esc(p.kind) + '</div>').openPopup(); };
-    });
-    if (follow) tlFeed.scrollTop = tlFeed.scrollHeight;
-    saveTimeline();
-  }
-
-  // Persist the trail so a reload picks up where you left off. Times go out as
-  // epoch millis and come back as Dates; nothing here ever reaches the server.
+  // Persist the log so a reload continues the same trail. Nothing here ever
+  // reaches the server.
   let saveTimer = null;
   function saveNow() {
     clearTimeout(saveTimer); saveTimer = null;
-    Malten.setTimeline(tlBlocks.map(b => ({
-      t: +b.time, lat: b.lat, lng: b.lng, around: b.around, pois: b.pois,
-      suggestion: b.suggestion, asks: (b.asks || []).filter(q => q.a),
-    })));
+    Malten.setTimeline(tlEvents.filter(e => e.k !== 'a' || e.text), lastFix);
   }
   function saveTimeline() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 400); }
-  // A reload or a swipe away shouldn't drop the last few seconds of the trail.
   addEventListener('pagehide', saveNow);
   addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
 
   function restoreTimeline() {
     const saved = Malten.getTimeline();
-    if (!saved.length) return;
-    tlBlocks = saved.map(b => ({
-      time: new Date(b.t || Date.now()), lat: b.lat, lng: b.lng, around: b.around || null,
-      pois: b.pois || [], suggestion: b.suggestion || '', asks: (b.asks || []).map(q => ({ ...q, id: ++askSeq })),
-    }));
-    const last = nowBlock();
-    if (last && last.around) tlHeader(last.around);
-    renderTimeline(true);
+    lastFix = saved.fix;
+    if (!saved.events.length) return;
+    tlEvents = saved.events;
+    tlSeq = tlEvents.reduce((m, e) => Math.max(m, e.id || 0), 0);
+    lastIdea = null;
+    for (let i = tlEvents.length - 1; i >= 0; i--) if (tlEvents[i].k === 'idea' && tlEvents[i].text) { lastIdea = tlEvents[i]; break; }
+    const frag = document.createDocumentFragment();
+    tlEvents.forEach(ev => frag.appendChild(nodeFor(ev)));
+    tlFeed.appendChild(frag);
+    tlFeed.scrollTop = tlFeed.scrollHeight;
   }
 
   // --- asking about where you are --------------------------------------------
   // The composer is the one place to type; answers land in the feed as entries,
   // so the timeline stays the surface and there's no chat window to manage.
   const askForm = document.getElementById('tl-ask'), askInput = document.getElementById('tl-q'), askSend = document.getElementById('tl-send');
-  let askSeq = 0, asking = false;
+  let asking = false;
   const TOOL_NOTE = {
     around_me: 'Looking around you…', nearby_stations: 'Finding the nearest stations…',
+    nearby_places: 'Looking up places nearby…',
     train_departures: 'Reading the departure board…', nearby_stops: 'Finding nearby stops…',
     arrivals: 'Checking live arrivals…', live_buses: 'Tracking buses nearby…',
     find_place: 'Looking that place up…', whats_here: 'Working out what’s there…',
     grid_ref: 'Checking the grid reference…',
   };
 
-  // Repaint one answer in place — a full re-render would lose the scroll position
-  // and fight the stream.
-  function paintAsk(q) {
-    const el = tlFeed.querySelector('[data-ask="' + q.id + '"]');
-    if (!el) { renderTimeline(); return; }
-    const follow = atBottom();
-    el.className = 'tl-entry ans' + (q.a ? '' : ' loading');
-    el.querySelector('.t').innerHTML = q.a ? multiline(q.a) : esc(q.note || 'Thinking…');
-    if (follow) tlFeed.scrollTop = tlFeed.scrollHeight; // let the answer grow into view
-  }
-
   // The conversation the server replays: it keeps nothing between turns, so the
-  // history travels with each question. Answers only — the trail's place fixes
-  // aren't part of the dialogue.
+  // history travels with each question. The trail's place fixes aren't part of
+  // the dialogue — only what was actually said.
   function askHistory() {
     const turns = [];
-    tlBlocks.forEach(b => (b.asks || []).forEach(q => {
-      if (!q.a) return;
-      turns.push({ role: 'user', text: q.q }, { role: 'assistant', text: q.a });
-    }));
+    tlEvents.forEach(ev => {
+      if (ev.k === 'q') turns.push({ role: 'user', text: ev.text });
+      else if (ev.k === 'a' && ev.text) turns.push({ role: 'assistant', text: ev.text });
+    });
     return turns.slice(-12);
   }
 
   async function askQuestion(text) {
     if (asking || !text) return;
-    let block = nowBlock();
-    if (!block) {
-      block = { time: new Date(), lat: myLoc ? myLoc.lat : 0, lng: myLoc ? myLoc.lng : 0, around: null, pois: [], suggestion: '', asks: [] };
-      tlBlocks.push(block);
-    }
-    if (!block.asks) block.asks = [];
     const history = askHistory();
-    const q = { id: ++askSeq, q: text, a: '', note: 'Thinking…' };
-    block.asks.push(q);
+    push({ k: 'q', text: text });
+    const ans = push({ k: 'a', text: '', note: 'Thinking…' });
     asking = true; askInput.value = ''; askSend.disabled = true;
-    renderTimeline(true); // follow the new exchange to the bottom
+    tlFeed.scrollTop = tlFeed.scrollHeight;
 
-    const loc = myLoc || (block.lat ? { lat: block.lat, lng: block.lng } : null);
+    const loc = myLoc || (lastFix ? { lat: lastFix.lat, lng: lastFix.lng } : null);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 90000);
     try {
@@ -1116,19 +1145,20 @@
           if (!payload || payload === '[DONE]') continue;
           let ev; try { ev = JSON.parse(payload); } catch (_) { continue; }
           const type = ev.Type || ev.type, txt = ev.Text || ev.text || '', tool = ev.Tool || ev.tool;
-          if (type === 'text') { q.a += txt; paintAsk(q); }
-          else if (type === 'tool') { q.note = TOOL_NOTE[tool] || 'Checking live data…'; if (!q.a) paintAsk(q); }
-          else if (type === 'error') { q.a = q.a || txt || 'Something went wrong reaching the guide.'; paintAsk(q); }
+          if (type === 'text') { ans.text += txt; patchAnswer(ans); }
+          else if (type === 'tool') { ans.note = TOOL_NOTE[tool] || 'Checking live data…'; if (!ans.text) patchAnswer(ans); }
+          else if (type === 'error') { ans.text = ans.text || txt || 'Something went wrong reaching the guide.'; patchAnswer(ans); }
         }
       }
     } catch (_) {
-      q.a = q.a || 'Couldn’t reach the guide just now — try again.';
+      ans.text = ans.text || 'Couldn’t reach the guide just now — try again.';
     }
     clearTimeout(timer);
-    if (!q.a) q.a = 'No answer came back.';
-    q.note = ''; asking = false; askSend.disabled = false;
-    paintAsk(q);
+    if (!ans.text) ans.text = 'No answer came back.';
+    ans.note = ''; asking = false; askSend.disabled = false;
+    patchAnswer(ans);
     saveNow(); // the finished exchange is part of the trail now
+    if (pendingFix) { const p = pendingFix; pendingFix = null; timelineFix(p, true); }
   }
 
   askForm.onsubmit = e => { e.preventDefault(); askQuestion(askInput.value.trim()); };
@@ -1146,60 +1176,115 @@
     fitKeyboard();
   }
 
-  async function rerollBlock(b) {
-    const el = tlFeed.querySelector('.tl-reroll'); if (el) { el.textContent = '…'; }
+  // "Something else" — a different nudge, appended as a new event rather than
+  // rewriting the old one. The log only ever grows.
+  async function reroll(ev) {
+    const node = tlFeed.querySelector('[data-ev="' + ev.id + '"] .tl-reroll');
+    if (node) node.textContent = '…';
+    const seen = tlEvents.filter(e => e.k === 'idea' && e.text).map(e => e.text).slice(-6);
+    const at = lastFix || myLoc;
+    if (!at) return;
+    const fresh = push({ k: 'idea', text: '' });
+    setLatestIdea(fresh); // the old nudge gives up its link
     try {
-      const r = await fetch('/api/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat: b.lat, lng: b.lng, mode: 'different', last: b.suggestion, avoid: [b.suggestion] }) });
-      const d = await r.json();
-      if (d.suggestion) b.suggestion = d.suggestion;
-      renderTimeline();
-    } catch (_) { renderTimeline(); }
+      const r = await fetch('/api/suggest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: at.lat, lng: at.lng, mode: 'different', last: ev.text, avoid: seen }),
+      });
+      fresh.text = (await r.json()).suggestion || 'Nothing else comes to mind right now.';
+    } catch (_) {
+      fresh.text = 'Couldn’t reach the guide just now.';
+    }
+    patch(fresh);
   }
 
-  // Create a fresh block for a location (throttled: a new block only when you've
-  // moved to a new area, so the feed reads as a trail of where you've been).
-  const TL_MOVED_M = 180;         // far enough away to count as somewhere new
-  const TL_STALE_MS = 12 * 60e3;  // a fix this old is worth refreshing
-  const TL_RESUME_MS = 45 * 60e3; // …but come back after this long and it's a new visit
+  // --- where you are ----------------------------------------------------------
+  // A fix is appended when you've moved somewhere new, or when you open the app
+  // after a while. Standing still adds nothing: the feed stays put, so a
+  // conversation isn't pushed around by a trickle of repeat entries.
+  const TL_MOVED_M = 180;        // far enough away to count as somewhere new
+  const TL_REOPEN_MS = 10 * 60e3; // reopening after this long is worth a fresh fix
+  let fixing = false, pendingFix = null;
 
-  async function timelineFix(latlng) {
-    const now = nowBlock();
-    let block = null;
-    if (now && distM(latlng.lat, latlng.lng, now.lat, now.lng) < TL_MOVED_M) {
-      const age = Date.now() - +now.time;
-      // Nothing new to say: don't interrupt a conversation with a duplicate.
-      if (age < TL_STALE_MS && now.around) return;
-      // A reload or a long pause in the same spot refreshes the fix in place,
-      // rather than stacking a second entry for where you already are.
-      if (age < TL_RESUME_MS) {
-        block = now;
-        block.time = new Date(); block.lat = latlng.lat; block.lng = latlng.lng;
+  async function timelineFix(latlng, force) {
+    const moved = !lastFix || distM(latlng.lat, latlng.lng, lastFix.lat, lastFix.lng) >= TL_MOVED_M;
+    if (!force && !moved) return;
+    if (fixing) return;
+    // Don't move the ground under a question that's still being answered — hold
+    // the fix and append it once the answer has landed.
+    if (asking) { pendingFix = latlng; return; }
+    fixing = true;
+    lastFix = { t: Date.now(), lat: latlng.lat, lng: latlng.lng };
+
+    const when = push({ k: 'when', place: '' });
+    let around = null;
+    try { const r = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng); around = await r.json(); } catch (_) {}
+    tlHeader(around);
+    when.place = (around && ((around.place && around.place.name) || around.grid_ref)) || '';
+    patch(when);
+
+    if (around && around.in_gb === false) {
+      push({ k: 'city' });
+      fixing = false;
+      return;
+    }
+    if (around) {
+      const st = (around.stations || [])[0];
+      if (st) {
+        const nx = st.next || [];
+        push({
+          k: 'entry', icon: '🚆', title: st.name,
+          sub: nx.length ? nx.slice(0, 2).map(d => d.scheduled + ' → ' + d.destination).join(' · ') : st.miles + ' mi away',
+        });
+      }
+      if (around.buses_nearby) push({ k: 'entry', icon: '🚍', title: around.buses_nearby + ' bus' + (around.buses_nearby === 1 ? '' : 'es') + ' moving nearby' });
+    }
+
+    try {
+      const r = await fetch('/api/poi?lat=' + latlng.lat + '&lng=' + latlng.lng + '&radius=500');
+      ((await r.json()).pois || []).slice(0, 6).forEach(p =>
+        push({ k: 'place', poi: { name: p.name, kind: p.kind, lat: p.lat, lng: p.lng }, dist: prettyDist(distM(latlng.lat, latlng.lng, p.lat, p.lng)) }));
+    } catch (_) {}
+
+    // The nudge lands last, under the places it draws on — on a phone that puts
+    // the one thing worth acting on right above the composer.
+    if (askAvail && around && around.in_gb !== false) {
+      const idea = push({ k: 'idea', text: '' });
+      const prevIdea = setLatestIdea(idea);
+      try {
+        const seen = tlEvents.filter(e => e.k === 'idea' && e.text).map(e => e.text).slice(-6);
+        const r = await fetch('/api/suggest', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat: latlng.lat, lng: latlng.lng, mode: 'fresh', avoid: seen }),
+        });
+        idea.text = (await r.json()).suggestion || '';
+      } catch (_) {}
+      if (idea.text) patch(idea);
+      else {
+        // Nothing came back — drop the placeholder and give the link back.
+        tlEvents = tlEvents.filter(e => e !== idea);
+        const n = tlFeed.querySelector('[data-ev="' + idea.id + '"]');
+        if (n) n.remove();
+        lastIdea = prevIdea;
+        if (prevIdea) patch(prevIdea);
       }
     }
-    if (!block) {
-      block = { time: new Date(), lat: latlng.lat, lng: latlng.lng, around: null, pois: [], suggestion: '', asks: [] };
-      tlBlocks.push(block);
-      if (tlBlocks.length > 25) tlBlocks.shift();
-      renderTimeline();
-    }
-    const fresh = () => block === nowBlock(); // a later fix may have moved on
-
-    try { const r = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng); block.around = await r.json(); } catch (_) {}
-    if (fresh()) tlHeader(block.around);
-    try { const r = await fetch('/api/poi?lat=' + latlng.lat + '&lng=' + latlng.lng + '&radius=500'); block.pois = ((await r.json()).pois || []).slice(0, 6); } catch (_) {}
-    renderTimeline();
-    if (askAvail && block.around && block.around.in_gb) {
-      try { const r = await fetch('/api/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat: latlng.lat, lng: latlng.lng, mode: 'fresh' }) }); block.suggestion = (await r.json()).suggestion || ''; renderTimeline(); } catch (_) {}
-    }
+    fixing = false;
+    saveNow();
   }
 
   // A gentle location watch drives the timeline (independent of the map).
   if (navigator.geolocation) {
+    let firstFix = true;
     tlWatch = navigator.geolocation.watchPosition(pos => {
       if (pos.coords.accuracy > 80) return;
       const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
       myLoc = ll;
-      timelineFix(ll);
+      // Opening the app after a while is worth a fresh look even standing still
+      // — but a quick reload isn't, or the feed fills with repeats of here.
+      const reopened = firstFix && (!lastFix || Date.now() - lastFix.t > TL_REOPEN_MS);
+      firstFix = false;
+      timelineFix(ll, reopened);
     }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
   }
 

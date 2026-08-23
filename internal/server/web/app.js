@@ -4,8 +4,8 @@
 (function () {
   const FINDS = 'malten_finds';       // [{id, lat, lng, note, grid_ref, created_at}]
   const KEY = 'malten_oskey';         // your OS Data Hub project API key
-  const TIMELINE = 'malten_timeline'; // the trail so far, so a reload isn't a fresh start
-  const TIMELINE_TTL = 36 * 3600e3;   // a day and a half; older than that, start over
+  const TIMELINE = 'malten_timeline2'; // the trail so far, so a reload isn't a fresh start
+  const TIMELINE_TTL = 36 * 3600e3;    // a day and a half; older than that, start over
 
   function read(k, f) { try { return JSON.parse(localStorage.getItem(k)) || f; } catch (_) { return f; } }
   function write(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
@@ -15,15 +15,17 @@
     setFinds: (f) => write(FINDS, f),
     addFind: (f) => { const a = read(FINDS, []); a.push(f); write(FINDS, a); return f; },
     removeFind: (id) => { write(FINDS, read(FINDS, []).filter(f => f.id !== id)); },
-    // The timeline (place fixes and the conversation) is client-side too — the
-    // server holds no history, so this browser is the only memory there is.
+    // The timeline is client-side too — the server holds no history, so this
+    // browser is the only memory there is. It's an append-only log of events
+    // (place fixes, nearby things, nudges, the conversation) plus the last fix,
+    // so a reload continues the same trail instead of starting a new one.
     getTimeline: () => {
       const t = read(TIMELINE, null);
-      if (!t || !Array.isArray(t.blocks) || !(Date.now() - (t.saved_at || 0) < TIMELINE_TTL)) return [];
-      return t.blocks;
+      if (!t || !Array.isArray(t.events) || !(Date.now() - (t.saved_at || 0) < TIMELINE_TTL)) return { events: [], fix: null };
+      return { events: t.events, fix: t.fix || null };
     },
-    setTimeline: (blocks) => {
-      try { write(TIMELINE, { saved_at: Date.now(), blocks: blocks }); }
+    setTimeline: (events, fix) => {
+      try { write(TIMELINE, { saved_at: Date.now(), events: events, fix: fix || null }); }
       catch (_) { try { localStorage.removeItem(TIMELINE); } catch (_) {} } // quota: drop it rather than break
     },
     clearTimeline: () => localStorage.removeItem(TIMELINE),
