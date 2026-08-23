@@ -13,6 +13,10 @@ import (
 // JSON (so no new dependency). It's folded into the "around me" snapshot so the
 // timeline and the agent both see it.
 
+// weatherAPI is Open-Meteo's forecast endpoint; a var so tests can point it at a
+// stub rather than the internet.
+var weatherAPI = "https://api.open-meteo.com/v1/forecast"
+
 var weatherClient = &http.Client{Timeout: 6 * time.Second}
 
 // Weather is the current conditions at a point.
@@ -26,7 +30,7 @@ type Weather struct {
 
 // fetchWeather returns current conditions for a lat/lng, or nil on any error.
 func fetchWeather(ctx context.Context, lat, lng float64) *Weather {
-	u := fmt.Sprintf("https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"+
+	u := fmt.Sprintf(weatherAPI+"?latitude=%.4f&longitude=%.4f"+
 		"&current=temperature_2m,weather_code,wind_speed_10m,is_day&wind_speed_unit=kmh&timezone=auto", lat, lng)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

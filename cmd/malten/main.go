@@ -10,6 +10,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 func main() {
 	addr := env("MALTEN_ADDR", ":8080")
 	srv := server.New()
+	srv.Start(context.Background()) // the hourly nudge loop, if it's configured
 	log.Printf("malten listening on %s (spatial exploration, stateless)", addr)
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 		log.Fatal(err)

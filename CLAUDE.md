@@ -77,9 +77,25 @@ content**:
   adds nothing. The map is behind a button. The agent has the same snapshot (`around_me`).
   Composes existing feeds only — no new keys.
 
-`/api/gridref` (WGS84 lat/lng → National Grid reference) is still a pure helper.
-The one opt-in exception to statelessness is the out-of-coverage **waitlist**
-(`/api/interest`, a local JSONL file); nothing else touches disk.
+- **Nudges you outdoors** (`/api/push/*`, `internal/server/nudge.go`,
+  `internal/push`). The only part of Malten that reaches out rather than waiting
+  to be opened: an hourly loop over opted-in devices that **usually decides to
+  say nothing**. The agent is asked whether there's a specific, time-bound reason
+  to interrupt — somewhere they've never stood, the last of the light, a train
+  back — and returns nothing if not. At most one a day, never outside 08:00–20:00
+  local. Web Push is hand-rolled (VAPID/RFC 8292 + RFC 8291 aes128gcm), so no SDK;
+  the payload is encrypted for the subscriber's browser and the push service
+  relays ciphertext it can't read. Needs `ANTHROPIC_API_KEY` plus a VAPID key
+  (`VAPID_PRIVATE_KEY`/`vapid_key`, generated on first run if absent).
+
+`/api/gridref` (WGS84 lat/lng → National Grid reference, plus the 1 km square and
+its eight neighbours) is still a pure helper. There are **two** opt-in exceptions
+to statelessness, and no more: the out-of-coverage **waitlist**
+(`/api/interest`) and the **nudge subscriber list** (`push.json`) — a
+notification can't be composed by a browser that isn't running, so that list
+holds the push subscription, a coarse location (the centre of a 1 km grid
+square), the squares explored and the last few nudges sent. It's opt-in,
+disclosed in the UI, and unsubscribing deletes the record.
 
 ## Repository map
 
@@ -89,7 +105,8 @@ internal/osgrid     WGS84 <-> OS National Grid reference (Helmert + Transverse M
 internal/llm        dependency-free Anthropic Messages API client (HTTP+SSE, bounded tool loop), tested
 internal/nrail      National Rail: embedded station dataset (ODbL) + Darwin OpenLDBWS SOAP client, tested
 internal/bods       Bus Open Data Service SIRI-VM client (live bus positions in a bbox), tested
-internal/server     stateless HTTP handlers + embedded web UI (gridref, tfl + rail + bus proxies, ask agent, waitlist)
+internal/push       Web Push, hand-rolled: VAPID (RFC 8292) + payload encryption (RFC 8291 aes128gcm), tested
+internal/server     stateless HTTP handlers + embedded web UI (gridref, tfl + rail + bus proxies, ask agent, nudge loop, waitlist)
 internal/server/web UI: page-map.html, app.js (client store), vendored leaflet.js/.css, PWA assets
 ```
 
@@ -146,6 +163,11 @@ server (no network, no key).
 - **Attribute OS data.** OS licensing requires visible attribution ("Contains OS
   data © Crown copyright and database rights <year>"); keep it on the map. The
   vendored rail station dataset is ODbL — keep its attribution too.
+- **The reward is the place, never a score.** "New ground" (the 1 km grid
+  squares you've stood in, `Malten.getSquares`) is a record, not a game: no
+  points, badges, streaks or leaderboards, and the prompts say so explicitly.
+  Extrinsic rewards are exactly what made check-in apps hollow. Keep it a fact
+  about where someone has been.
 - **Great Britain only.** The OS National Grid and OS Maps API cover England,
   Scotland and Wales. `osgrid.FromWGS84` returns ok=false outside GB; handle it.
 - **Don't hard-code the deepest zoom.** How far the OS Maps API zooms depends on

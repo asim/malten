@@ -5,7 +5,7 @@
 // slow. API traffic is never cached.
 //
 // Bump VERSION whenever the shell changes; it wipes the old cache on activate.
-const VERSION = 'malten-v48';
+const VERSION = 'malten-v49';
 const SHELL = [
   '/',
   '/app.css', '/app.js', '/leaflet.js', '/leaflet.css', '/manifest.webmanifest',
@@ -55,6 +55,35 @@ async function networkFirst(req) {
     throw _;
   }
 }
+
+// A nudge from the server: one notification, tapping it opens the app. The
+// payload is encrypted end-to-end — the push service relayed it without being
+// able to read it.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = { body: event.data && event.data.text() }; }
+  if (!data.body) return;
+  event.waitUntil(self.registration.showNotification(data.title || 'Malten', {
+    body: data.body,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: 'malten-nudge',   // a newer nudge replaces an unread one
+    renotify: false,
+    data: { url: data.url || '/' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil((async () => {
+    const all = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of all) {
+      if (c.url.includes(self.location.origin)) return c.focus();
+    }
+    return clients.openWindow(url);
+  })());
+});
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;

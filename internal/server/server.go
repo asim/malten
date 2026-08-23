@@ -5,6 +5,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/asim/malten/internal/llm"
 	"github.com/asim/malten/internal/nrail"
 	"github.com/asim/malten/internal/osgrid"
+	"github.com/asim/malten/internal/push"
 )
 
 //go:embed web/*
@@ -53,6 +55,8 @@ type Server struct {
 	darwin     *nrail.Darwin // live rail departures; nil when NRE_LDBWS_TOKEN is unset
 	bods       *bods.Client  // live buses; nil when BODS_API_KEY is unset
 	osKey      string        // shared OS Maps key for the tile proxy; "" = per-user key in the browser
+	push       *push.Sender  // web push; nil when no VAPID key is available
+	subs       *subStore     // opted-in devices for the hourly nudge loop
 }
 
 // New builds a Server. The waitlist is stored at MALTEN_DATA (default
@@ -80,7 +84,49 @@ func New() *Server {
 	if key := secret("BODS_API_KEY", "bods_api_key"); key != "" {
 		s.bods = bods.New(key)
 	}
+	// Nudges need somewhere to keep the opted-in devices and a VAPID identity.
+	// The key is generated once and kept next to the binary, because the browsers
+	// that subscribed to the old one won't accept a new one.
+	if key := vapidKey(); key != "" {
+		if sender, err := push.NewSender(key, envOr("MALTEN_PUSH_SUBJECT", "https://malten.ai")); err != nil {
+			log.Printf("push: bad VAPID key: %v", err)
+		} else {
+			s.push = sender
+			s.subs = newSubStore(envOr("MALTEN_PUSH_DATA", "push.json"))
+		}
+	}
 	return s
+}
+
+// Start runs the server's background work (the hourly nudge loop) until ctx is
+// done. Serving works without it; nobody is nudged.
+func (s *Server) Start(ctx context.Context) {
+	every := time.Hour
+	if v := os.Getenv("MALTEN_NUDGE_EVERY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			every = d
+		}
+	}
+	s.startNudges(ctx, every)
+}
+
+// vapidKey resolves the application's push identity: the configured key if
+// there is one, otherwise a generated key saved beside the binary so it's the
+// same after a restart. Returning "" leaves nudges switched off.
+func vapidKey() string {
+	if k := secret("VAPID_PRIVATE_KEY", "vapid_key"); k != "" {
+		return k
+	}
+	priv, pub, err := push.GenerateKey()
+	if err != nil {
+		return ""
+	}
+	if err := os.WriteFile("vapid_key", []byte(priv), 0o600); err != nil {
+		log.Printf("push: couldn't save a VAPID key (%v) — nudges stay off until VAPID_PRIVATE_KEY is set", err)
+		return ""
+	}
+	log.Printf("push: generated a VAPID key (public %s)", pub)
+	return priv
 }
 
 func envOr(key, def string) string {
@@ -120,6 +166,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/poi", s.handlePOI)
 	mux.HandleFunc("/api/suggest", s.handleSuggest)
 	mux.HandleFunc("/api/ask", s.handleAsk)
+	mux.HandleFunc("/api/push/subscribe", s.handlePushSubscribe)
+	mux.HandleFunc("/api/push/unsubscribe", s.handlePushUnsubscribe)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/app.js", staticAsset("app.js", "text/javascript; charset=utf-8", "public, max-age=300"))
@@ -180,6 +228,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"buses":          s.busesEnabled(),
 		"tiles":          s.tilesEnabled(),
 		"search":         s.searchEnabled(),
+		"push":           s.pushEnabled(),
+		// The application server key the browser needs to subscribe. Public by
+		// design — it's the half of the VAPID pair that identifies us.
+		"vapid_public": s.vapidPublic(),
 	})
 }
 

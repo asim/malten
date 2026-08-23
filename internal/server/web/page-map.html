@@ -35,6 +35,11 @@
       </div>
     </div>
     <div class="tl-feed" id="tl-feed"></div>
+    <!-- Nudges: opt-in, off by default, and honest about what it costs. -->
+    <div class="tl-nudge" id="tl-nudge" hidden>
+      <button class="ghost" id="nudge-on">Nudge me outdoors</button>
+      <span class="tl-nudge-note">Once a day at most, only when there's a reason. Roughly where you are is kept on the server so it can find one; turning it off deletes it.</span>
+    </div>
     <!-- Ask about where you are. The answer lands in the feed, not in a chat. -->
     <form class="tl-ask" id="tl-ask" hidden>
       <input id="tl-q" type="text" placeholder="Ask about here…" autocomplete="off" enterkeyhint="send">
@@ -489,6 +494,7 @@
   fetch('/api/health').then(r => r.json()).then(d => {
     if (d.tiles) { serverTiles = true; setTiles(); }
     if (d.ask) { askAvail = true; ideaBtn.hidden = false; document.getElementById('tl-ask').hidden = false; }
+    if (d.push && d.vapid_public) { vapidKey = d.vapid_public; nudgeInit(); }
     if (d.rail) { railAvail = true; document.getElementById('rail').hidden = false; }
     if (d.buses) { busesAvail = true; document.getElementById('buses').hidden = false; }
     if (d.search) document.getElementById('searchbox').hidden = false;
@@ -1231,6 +1237,78 @@
 
   askForm.onsubmit = e => { e.preventDefault(); askQuestion(askInput.value.trim()); };
 
+  // --- nudges -----------------------------------------------------------------
+  // The one thing that reaches out to you. Off until you ask for it, at most one
+  // a day, and only when the agent finds a real reason. Subscribing hands the
+  // server your push endpoint, roughly where you are (a 1 km square, not a fix)
+  // and which squares you've explored — turning it off deletes all of it.
+  const nudgeBox = document.getElementById('tl-nudge'), nudgeBtn = document.getElementById('nudge-on');
+  let vapidKey = '', pushSub = null;
+
+  const b64ToBytes = (s) => {
+    const pad = (s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+    return Uint8Array.from(atob(pad), c => c.charCodeAt(0));
+  };
+  const bytesToB64 = (buf) =>
+    btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  function nudgeUI() {
+    if (!vapidKey || !('serviceWorker' in navigator) || !('PushManager' in window)) { nudgeBox.hidden = true; return; }
+    nudgeBox.hidden = false;
+    nudgeBtn.textContent = pushSub ? 'Nudges on — turn off' : 'Nudge me outdoors';
+    nudgeBox.classList.toggle('on', !!pushSub);
+  }
+
+  async function nudgeInit() {
+    if (!vapidKey || !navigator.serviceWorker) return;
+    nudgeUI(); // show the opt-in straight away, even if the worker is slow
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      pushSub = await reg.pushManager.getSubscription();
+      if (pushSub) sendSubscription(pushSub); // keep the server's copy current
+    } catch (_) {}
+    nudgeUI();
+  }
+
+  // What the server is told: the subscription, the centre of the square you're
+  // in, the squares you've explored, and your timezone (so nothing arrives at 3am).
+  async function sendSubscription(sub) {
+    const been = Object.keys(Malten.getSquares());
+    const at = myLoc || (lastFix ? { lat: lastFix.lat, lng: lastFix.lng } : null);
+    if (!at) return;
+    try {
+      await fetch('/api/push/subscribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sub: sub.toJSON ? sub.toJSON() : sub, lat: at.lat, lng: at.lng, squares: been, tz_offset: new Date().getTimezoneOffset() }),
+      });
+    } catch (_) {}
+  }
+
+  nudgeBtn.onclick = async () => {
+    nudgeBtn.disabled = true;
+    try {
+      if (pushSub) {
+        const endpoint = pushSub.endpoint;
+        await pushSub.unsubscribe().catch(() => {});
+        pushSub = null;
+        await fetch('/api/push/unsubscribe', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint }),
+        }).catch(() => {});
+      } else {
+        if (await Notification.requestPermission() !== 'granted') return;
+        const reg = await navigator.serviceWorker.ready;
+        pushSub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(vapidKey) });
+        await sendSubscription(pushSub);
+      }
+    } catch (e) {
+      pushSub = null;
+    } finally {
+      nudgeBtn.disabled = false;
+      nudgeUI();
+    }
+  };
+
   // Keep the composer above the on-screen keyboard (iOS shrinks the visual
   // viewport without moving the layout one, so a fixed bar ends up underneath).
   if (window.visualViewport) {
@@ -1289,6 +1367,7 @@
     try { const r = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng); around = await r.json(); } catch (_) {}
     when.place = (around && ((around.place && around.place.name) || around.grid_ref)) || '';
     noteGround(around, when.place); // before the header, so its count includes this square
+    if (pushSub) sendSubscription(pushSub); // nudges follow you, coarsely
     tlHeader(around);
     patch(when);
 

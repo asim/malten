@@ -56,6 +56,16 @@ body.look-open .viewbtn { display: none; }
 .tl-entry.ground .t { font-weight: 600; }
 .tl-entry.ans .t { line-height: 1.5; }
 
+/* Nudges — the opt-in, above the composer. Quiet, and honest about the trade. */
+.tl-nudge {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px 0; font-size: 12px; color: var(--muted); line-height: 1.4;
+}
+.tl-nudge[hidden] { display: none; }
+.tl-nudge .ghost { flex: 0 0 auto; padding: 7px 12px; font-size: 13px; border-radius: 9px; }
+.tl-nudge.on .ghost { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.tl-nudge-note { min-width: 0; }
+
 /* Ask about here. One composer, pinned under the feed. */
 .tl-ask {
   flex: 0 0 auto; display: flex; gap: 8px; align-items: center;

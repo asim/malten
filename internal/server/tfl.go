@@ -18,6 +18,9 @@ import (
 // endpoints — nearby stops and live arrivals — are also the shape the future
 // "Ask Malten" agent will call as tools.
 
+// tflAPI is the Transport for London Unified API; a var so tests can stub it.
+var tflAPI = "https://api.tfl.gov.uk"
+
 var tflClient = &http.Client{Timeout: 12 * time.Second}
 
 func tflGet(path string, q url.Values) ([]byte, error) {
@@ -27,7 +30,7 @@ func tflGet(path string, q url.Values) ([]byte, error) {
 	if k := os.Getenv("TFL_APP_KEY"); k != "" {
 		q.Set("app_key", k)
 	}
-	u := "https://api.tfl.gov.uk" + path
+	u := tflAPI + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
