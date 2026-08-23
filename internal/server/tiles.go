@@ -3,10 +3,12 @@ package server
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,6 +28,22 @@ func (s *Server) tilesEnabled() bool { return s.osKey != "" }
 
 // osStyle is the OS Maps API raster style (EPSG:3857, zoom 7–20).
 const osStyle = "Outdoor_3857"
+
+// logTileFailure reports each (zoom, status) pair once — a failing zoom level
+// produces a tile error per tile, and the operator only needs to hear it once.
+var tileFailSeen sync.Map
+
+func logTileFailure(z, status int) {
+	key := z<<16 | status
+	if _, dup := tileFailSeen.LoadOrStore(key, true); dup {
+		return
+	}
+	msg := fmt.Sprintf("os maps: zoom %d returned %d", z, status)
+	if status == http.StatusForbidden {
+		msg += " — the OS Data Hub project for OS_API_KEY doesn't cover this zoom level (add the Premium plan for the detailed levels); the map falls back to scaling up the deepest level it can fetch"
+	}
+	log.Print(msg)
+}
 
 // handleTiles proxies GET /api/tiles/{z}/{x}/{y}.png to the OS Maps API. z/x/y
 // are validated as integers before being placed into the upstream URL.
@@ -63,7 +81,11 @@ func (s *Server) handleTiles(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		// Pass the upstream status through (404 for out-of-coverage tiles, etc.)
-		// without the body, so Leaflet's tileerror fires cleanly.
+		// without the body, so Leaflet's tileerror fires cleanly. Log it — a 403
+		// on the detailed zooms means the key's OS Data Hub project is on the
+		// OpenData plan, which doesn't reach them, and there's no other way for
+		// the operator to find that out.
+		logTileFailure(z, resp.StatusCode)
 		http.Error(w, "tile unavailable", resp.StatusCode)
 		return
 	}

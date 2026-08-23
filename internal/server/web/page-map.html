@@ -93,6 +93,26 @@
   // user never needs one. Otherwise the tiles are fetched straight from the OS
   // with the per-user key entered in this browser (the original model).
   let tiles = null, tileErrored = false, serverTiles = false;
+
+  // The deepest zoom the OS actually serves for this key. It's discovered from
+  // tile errors (see below) and remembered, so the next visit starts right.
+  const MIN_NATIVE_ZOOM = 12;
+  let nativeMax = +(localStorage.getItem('malten_tile_zoom') || 20);
+  if (!(nativeMax >= MIN_NATIVE_ZOOM && nativeMax <= 20)) nativeMax = 20;
+  let zoomFails = {};
+
+  function setNativeMax(z) {
+    if (z >= nativeMax || z < MIN_NATIVE_ZOOM) return;
+    nativeMax = z;
+    try { localStorage.setItem('malten_tile_zoom', String(z)); } catch (_) {}
+    if (tiles) { tiles.options.maxNativeZoom = z; tiles.redraw(); }
+    tileErrored = false;
+    refreshUI(); // it's over-zoom, not a broken map — clear the warning
+  }
+
+  // Zoom for "show me this place": as close as the tiles are sharp, no closer.
+  const placeZoom = () => Math.min(17, nativeMax);
+
   function setTiles() {
     if (tiles) { map.removeLayer(tiles); tiles = null; }
     tileErrored = false;
@@ -106,10 +126,20 @@
       url = 'https://api.os.uk/maps/raster/v1/zxy/' + OS_STYLE + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(key);
     }
     tiles = L.tileLayer(url, {
-      minZoom: 7, maxZoom: 20,
+      minZoom: 7, maxZoom: 20, maxNativeZoom: nativeMax,
       attribution: 'Contains OS data &copy; Crown copyright and database rights 2026',
     }).addTo(map);
-    tiles.on('tileerror', () => {
+    tiles.on('tileerror', (e) => {
+      // How deep the OS serves depends on the key's plan — the OpenData tier
+      // stops short of the detailed levels and answers 403 there. Rather than
+      // hard-code a limit, learn it: when a zoom level keeps failing, treat the
+      // one below as the deepest real level and let Leaflet scale it up. The map
+      // then goes soft instead of blank, and a premium key keeps its detail.
+      const z = e && e.coords && e.coords.z;
+      if (typeof z === 'number' && z > MIN_NATIVE_ZOOM && z <= nativeMax) {
+        zoomFails[z] = (zoomFails[z] || 0) + 1;
+        if (zoomFails[z] >= 3) { setNativeMax(z - 1); return; }
+      }
       if (!tileErrored) {
         tileErrored = true;
         hintEl.textContent = serverTiles ? 'Map tiles didn’t load' : 'Tiles didn’t load — check the key is right and the OS Maps API is added to your project';
@@ -258,13 +288,13 @@
     fetch('/api/gridref?lat=' + e.latlng.lat + '&lng=' + e.latlng.lng)
       .then(r => r.json())
       .then(d => {
-        if (d.in_gb) { map.setView(e.latlng, Math.max(16, map.getZoom())); hintEl.textContent = 'Tap the map to log a find'; goLive(e.latlng); }
+        if (d.in_gb) { map.setView(e.latlng, Math.max(placeZoom(), map.getZoom())); hintEl.textContent = 'Tap the map to log a find'; goLive(e.latlng); }
         else {
           hintEl.textContent = 'You’re outside OS coverage — Great Britain only';
           if (localStorage.getItem('malten_interest') !== 'done') openInterest(e.latlng);
         }
       })
-      .catch(() => { map.setView(e.latlng, Math.max(16, map.getZoom())); });
+      .catch(() => { map.setView(e.latlng, Math.max(placeZoom(), map.getZoom())); });
   });
   map.on('locationerror', () => { hintEl.textContent = 'Location unavailable — tap the map to log a find'; });
 
@@ -333,7 +363,7 @@
     searchResults.hidden = true;
     searchInput.value = p.name;
     const ll = L.latLng(p.lat, p.lng);
-    map.setView(ll, Math.max(15, map.getZoom()));
+    map.setView(ll, Math.max(Math.min(15, nativeMax), map.getZoom()));
     if (searchMarker) map.removeLayer(searchMarker);
     searchMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup(
       '<div class="stopname">' + esc(p.name) + '</div><div class="sub">' + esc(placeSub(p)) + '</div>' +
@@ -776,7 +806,7 @@
     if (!t) return;
     const ll = L.latLng(t.lat, t.lng);
     closeLook();
-    map.setView(ll, Math.max(17, map.getZoom()));
+    map.setView(ll, Math.max(placeZoom(), map.getZoom()));
     if (targetMarker) map.removeLayer(targetMarker);
     targetMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup(
       '<div class="stopname">' + esc(t.name) + '</div>' + (t.kind ? '<div class="sub">' + esc(t.kind) + '</div>' : '') +
@@ -940,8 +970,6 @@
     if (!a) { parts.push(tlEntry('', 'Looking around you…', '', 'loading')); return close(); }
 
     if (current) {
-      if (b.suggestion) parts.push(tlEntry('💡', esc(b.suggestion), '<a class="tl-reroll">Something else</a>', 'idea'));
-      else if (askAvail) parts.push(tlEntry('💡', 'Thinking of something for you…', '', 'idea loading'));
       const st = (a.stations || [])[0];
       if (st) {
         const nx = st.next || [];
@@ -951,6 +979,11 @@
       if (a.buses_nearby) parts.push(tlEntry('🚍', a.buses_nearby + ' bus' + (a.buses_nearby === 1 ? '' : 'es') + ' moving nearby', ''));
       (b.pois || []).forEach((p, i) => parts.push(
         tlEntry(kindEmoji(p.kind), esc(p.name), esc(p.kind) + ' · ' + prettyDist(distM(b.lat, b.lng, p.lat, p.lng)), 'poi', ' data-i="' + i + '"')));
+      // The nudge goes last, under the places it draws on: the feed sits at the
+      // bottom, so on a phone this is what's in view when you arrive — rather
+      // than the one thing worth acting on having scrolled off the top.
+      if (b.suggestion) parts.push(tlEntry('💡', esc(b.suggestion), '<a class="tl-reroll">Something else</a>', 'idea'));
+      else if (askAvail) parts.push(tlEntry('💡', 'Thinking of something for you…', '', 'idea loading'));
     } else {
       const bits = [];
       const st = (a.stations || [])[0];
@@ -978,7 +1011,7 @@
     // POIs are only listed in full for the block you're standing in.
     if (now && now.pois) tlFeed.querySelectorAll('.tl-block.current .tl-entry.poi').forEach(el => {
       const p = now.pois[+el.dataset.i];
-      if (p) el.onclick = () => { showMap(); const ll = L.latLng(p.lat, p.lng); map.setView(ll, Math.max(17, map.getZoom())); if (targetMarker) map.removeLayer(targetMarker); targetMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup('<div class="stopname">' + esc(p.name) + '</div><div class="sub">' + esc(p.kind) + '</div>').openPopup(); };
+      if (p) el.onclick = () => { showMap(); const ll = L.latLng(p.lat, p.lng); map.setView(ll, Math.max(placeZoom(), map.getZoom())); if (targetMarker) map.removeLayer(targetMarker); targetMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup('<div class="stopname">' + esc(p.name) + '</div><div class="sub">' + esc(p.kind) + '</div>').openPopup(); };
     });
     if (follow) tlFeed.scrollTop = tlFeed.scrollHeight;
     saveTimeline();

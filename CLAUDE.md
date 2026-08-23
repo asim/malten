@@ -140,6 +140,12 @@ server (no network, no key).
   vendored rail station dataset is ODbL — keep its attribution too.
 - **Great Britain only.** The OS National Grid and OS Maps API cover England,
   Scotland and Wales. `osgrid.FromWGS84` returns ok=false outside GB; handle it.
+- **Don't hard-code the deepest zoom.** How far the OS Maps API zooms depends on
+  the plan behind the key: the OpenData plan answers 403 on the detailed levels,
+  Premium serves them. The UI learns the limit from repeated tile errors, sets
+  Leaflet's `maxNativeZoom` and scales up, so an over-zoomed map goes soft rather
+  than blank (and the server logs the 403 once, since nothing else tells the
+  operator). Keep that adaptive — a constant would break one plan or the other.
 - **Single binary, no external runtime deps.** Keep the UI and Leaflet embedded
   (`//go:embed`); no cgo, no CDN. Vendor new assets, don't link them remotely.
 - **Grid math is tested, both ways.** `internal/osgrid` converts WGS84↔BNG;

@@ -82,7 +82,7 @@ present; the UI hides features whose key is absent (via `/api/health`).
 
 | Variable | File | Enables | Notes |
 |---|---|---|---|
-| `OS_API_KEY` | `os_api_key` | Server-side tile proxy **and** place search | Optional. Without it, each visitor enters their own OS key in the UI (client-side only). |
+| `OS_API_KEY` | `os_api_key` | Server-side tile proxy **and** place search | Optional. Without it, each visitor enters their own OS key in the UI (client-side only). How deep the map zooms depends on the plan of the key's OS Data Hub project — the OpenData plan stops short of the detailed levels and answers 403 there (the server logs this once); the app discovers the limit and scales the deepest real level up rather than showing blank tiles. |
 | `ANTHROPIC_API_KEY` | `anthropic_key` | The ambient agent | Optionally set `MALTEN_MODEL` (default `claude-opus-4-8`). |
 | `NRE_LDBWS_TOKEN` | `nre_ldbws_token` | Live rail departures | Free "Live Departure Board (LDBWS) - Public" consumer key from the [Rail Data Marketplace](https://raildata.org.uk). |
 | `BODS_API_KEY` | `bods_api_key` | Nationwide live buses | Free key from the [Bus Open Data Service](https://www.bus-data.dft.gov.uk). |
