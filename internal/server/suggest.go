@@ -92,6 +92,9 @@ func (s *Server) handleSuggest(w http.ResponseWriter, r *http.Request) {
 // snapshotText renders an around snapshot as compact prose for the model.
 func snapshotText(a aroundSnapshot) string {
 	var b strings.Builder
+	if a.Weather != nil {
+		fmt.Fprintf(&b, "Weather: %s, %.0f°C, wind %.0f km/h.\n", a.Weather.Text, a.Weather.TempC, a.Weather.WindKph)
+	}
 	if a.Place != nil {
 		fmt.Fprintf(&b, "Location: near %s", a.Place.Name)
 		if a.Place.Type != "" {

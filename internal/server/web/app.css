@@ -16,6 +16,31 @@ body {
   overflow: hidden;
 }
 
+/* Timeline — the default front door: time, place, weather, and a feed of what's
+   around you that grows as you move. The map lives behind a button. */
+.timeline { position: fixed; inset: 0; z-index: 700; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
+.timeline[hidden] { display: none; }
+.tl-head { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 12px; padding: calc(16px + env(safe-area-inset-top)) 18px 14px; border-bottom: 1px solid var(--border); }
+.tl-now { flex: 1; min-width: 0; }
+.tl-time { font-size: 13px; color: var(--muted); letter-spacing: 0.01em; }
+.tl-place { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin-top: 2px; line-height: 1.2; }
+.tl-weather { font-size: 14px; color: var(--muted); margin-top: 5px; }
+.tl-map { flex: 0 0 auto; align-self: center; background: var(--fg); color: var(--bg); border: 0; border-radius: 10px; padding: 9px 15px; font: inherit; font-weight: 600; cursor: pointer; }
+.tl-feed { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px 14px calc(28px + env(safe-area-inset-bottom)); }
+.tl-block { padding: 6px 0 10px; }
+.tl-block + .tl-block { border-top: 1px dashed var(--border); margin-top: 6px; }
+.tl-when { font-size: 12px; color: var(--muted); margin: 8px 2px 8px; }
+.tl-entry { display: flex; gap: 10px; align-items: flex-start; padding: 10px 11px; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; background: var(--panel); }
+.tl-entry .ic { font-size: 18px; line-height: 1.3; flex: 0 0 auto; }
+.tl-entry .bd { min-width: 0; }
+.tl-entry .t { font-size: 15px; line-height: 1.4; word-wrap: break-word; }
+.tl-entry .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.tl-entry .s a { color: var(--fg); cursor: pointer; text-decoration: underline; }
+.tl-entry.idea { background: color-mix(in srgb, var(--fg) 6%, var(--panel)); border-color: color-mix(in srgb, var(--fg) 14%, var(--border)); }
+.tl-entry.poi { cursor: pointer; }
+.tl-entry.muted { border-style: dashed; background: transparent; color: var(--muted); }
+.tl-entry.loading { color: var(--muted); font-style: italic; }
+
 /* App shell: slim bar, then the map fills the rest of the visible viewport. */
 .app { position: fixed; inset: 0; display: flex; flex-direction: column; height: 100dvh; }
 .topbar {
@@ -147,10 +172,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 /* "Look around" — full-screen camera with tags placed by compass bearing. */
 .look { position: fixed; inset: 0; z-index: 900; background: #000; overflow: hidden; }
 .look[hidden] { display: none; }
-/* Noir: desaturated, punchy contrast over the live camera. */
-#look-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; filter: grayscale(1) contrast(1.22) brightness(0.96); }
-.look::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.62) 100%); }
-/* Everything sits above the vignette. */
+#look-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+/* Everything sits above the camera. */
 .look-scene, .look-head, .look-hint, .look-cred, .look-reticle, .look-arrow { z-index: 2; }
 .look-guide, .look-x { z-index: 3; }
 .look-scene { position: absolute; inset: 0; pointer-events: none; }

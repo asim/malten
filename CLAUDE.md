@@ -60,8 +60,11 @@ content**:
 - **A live "around me" snapshot** (`/api/around`, `internal/server/around.go`).
   Fans out across every feed above concurrently and folds them into one compact
   view (nearest place, nearest stations + next trains, buses moving nearby,
-  London stops). It's what makes the app feel alive on open, and the agent has
-  it too (`around_me`). Composes existing feeds only — no new keys.
+  London stops, and current **weather** from Open-Meteo — free/keyless,
+  `internal/server/weather.go`). It powers the **timeline** — the app's front
+  door, a live feed of time/place/weather/what's-nearby that grows as you move,
+  with the map behind a button. The agent has the same snapshot (`around_me`).
+  Composes existing feeds only — no new keys.
 
 `/api/gridref` (WGS84 lat/lng → National Grid reference) is still a pure helper.
 The one opt-in exception to statelessness is the out-of-coverage **waitlist**

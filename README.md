@@ -17,6 +17,10 @@ the spatial memory, not the map data.
 
 ## What it does
 
+- **A timeline front door.** The app opens on a live feed — date, place, weather,
+  and what's around you (nearest station and next trains, buses moving, nearby
+  cafés/parks, a nudge from the agent). It grows into a trail as you move. The
+  map is a button away.
 - **Live OS map.** Ordnance Survey tiles, centred on you. If the operator sets a
   shared OS key the server proxies tiles so visitors need no key of their own.
 - **Finds.** Tap the map (or a place) to drop a note anchored to its OS National

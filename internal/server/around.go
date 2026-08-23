@@ -31,6 +31,7 @@ type aroundSnapshot struct {
 	Place       *Place          `json:"place,omitempty"`
 	GridRef     string          `json:"grid_ref,omitempty"`
 	InGB        bool            `json:"in_gb"`
+	Weather     *Weather        `json:"weather,omitempty"`
 	BusesNearby int             `json:"buses_nearby"`
 	StopsNearby int             `json:"stops_nearby"` // London (TfL) bus/tram/tube stops
 	Stations    []aroundStation `json:"stations,omitempty"`
@@ -51,8 +52,12 @@ func (s *Server) snapshot(ctx context.Context, lat, lng float64) aroundSnapshot 
 		wg             sync.WaitGroup
 		place          *Place
 		stations       []aroundStation
+		wx             *Weather
 		busesN, stopsN int
 	)
+
+	wg.Add(1)
+	go func() { defer wg.Done(); wx = fetchWeather(ctx, lat, lng) }()
 
 	if s.searchEnabled() {
 		wg.Add(1)
@@ -105,7 +110,7 @@ func (s *Server) snapshot(ctx context.Context, lat, lng float64) aroundSnapshot 
 	}()
 
 	wg.Wait()
-	snap.Place, snap.Stations, snap.BusesNearby, snap.StopsNearby = place, stations, busesN, stopsN
+	snap.Place, snap.Stations, snap.Weather, snap.BusesNearby, snap.StopsNearby = place, stations, wx, busesN, stopsN
 	return snap
 }
 

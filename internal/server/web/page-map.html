@@ -19,8 +19,23 @@
     <button class="fab" id="buses" title="Live buses (Great Britain)" hidden>🚍</button>
     <button class="fab" id="live" title="Bus & tube arrivals (London)">🚌</button>
     <button class="fab" id="look" title="Look around (camera)" hidden>📷</button>
+    <button class="fab" id="tl-open" title="Timeline">🕒</button>
     <button class="fab" id="locate" title="Find my location">◎</button>
   </div>
+
+  <!-- The front door: a live timeline of where you are and what's around you. -->
+  <div class="timeline" id="timeline">
+    <div class="tl-head">
+      <div class="tl-now">
+        <div class="tl-time" id="tl-time"></div>
+        <div class="tl-place" id="tl-place">Finding you…</div>
+        <div class="tl-weather" id="tl-weather"></div>
+      </div>
+      <button class="tl-map" id="tl-map">Map</button>
+    </div>
+    <div class="tl-feed" id="tl-feed"></div>
+  </div>
+
   <div class="look" id="look-view" hidden>
     <video id="look-cam" playsinline muted autoplay></video>
     <div class="look-scene" id="look-scene"></div>
@@ -828,6 +843,139 @@
       t.el.style.pointerEvents = op < 0.15 ? 'none' : 'auto';
     }
     if (lookTarget) updateGuide();
+  }
+
+  // --- Timeline (the front door) --------------------------------------------
+  const timelineEl = document.getElementById('timeline');
+  const tlTime = document.getElementById('tl-time');
+  const tlPlace = document.getElementById('tl-place');
+  const tlWeather = document.getElementById('tl-weather');
+  const tlFeed = document.getElementById('tl-feed');
+  let tlBlocks = [], tlWatch = null;
+
+  function showMap() { timelineEl.hidden = true; document.body.classList.add('map-open'); setTimeout(() => map.invalidateSize(), 60); }
+  function showTimeline() { timelineEl.hidden = false; document.body.classList.remove('map-open'); }
+  document.getElementById('tl-map').onclick = showMap;
+  document.getElementById('tl-open').onclick = showTimeline;
+
+  function tickClock() {
+    const d = new Date();
+    tlTime.textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) +
+      ' · ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+  tickClock(); setInterval(tickClock, 20000);
+
+  function wxEmoji(code, day) {
+    if (code === 0 || code === 1) return day ? '☀️' : '🌙';
+    if (code === 2) return '🌤️'; if (code === 3) return '☁️';
+    if (code >= 45 && code <= 48) return '🌫️';
+    if (code >= 51 && code <= 67) return '🌧️';
+    if (code >= 71 && code <= 77) return '🌨️';
+    if (code >= 80 && code <= 82) return '🌦️';
+    if (code >= 85 && code <= 86) return '🌨️';
+    if (code >= 95) return '⛈️';
+    return '🌡️';
+  }
+
+  function tlHeader(a) {
+    if (!a) return;
+    if (a.place) tlPlace.textContent = a.place.name + (a.place.county ? ' · ' + a.place.county : '');
+    else if (a.grid_ref) tlPlace.textContent = a.grid_ref;
+    else tlPlace.textContent = a.in_gb ? 'Here' : 'Outside Great Britain';
+    if (a.weather) tlWeather.innerHTML = wxEmoji(a.weather.code, a.weather.is_day) + ' ' + Math.round(a.weather.temp_c) + '° · ' + esc(a.weather.text) +
+      (a.weather.wind_kph >= 20 ? ' · breezy' : '');
+  }
+
+  const tlEntry = (icon, title, sub, cls, data) =>
+    '<div class="tl-entry ' + (cls || '') + '"' + (data || '') + '>' +
+    (icon ? '<span class="ic">' + icon + '</span>' : '') +
+    '<div class="bd"><div class="t">' + title + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div></div>';
+
+  function blockHtml(b, current) {
+    const a = b.around;
+    const placeName = (a && (a.place && a.place.name)) || (a && a.grid_ref) || 'Here';
+    const when = b.time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    let parts = ['<div class="tl-when">' + when + ' · ' + esc(placeName) + '</div>'];
+
+    if (a && a.in_gb === false) {
+      parts.push(tlEntry('🌍', 'Malten is Great Britain, for now', '<a class="tl-city">Request your city</a>', 'muted'));
+      return '<div class="tl-block' + (current ? ' current' : '') + '">' + parts.join('') + '</div>';
+    }
+    if (!a) { parts.push(tlEntry('', 'Looking around you…', '', 'loading')); return '<div class="tl-block current">' + parts.join('') + '</div>'; }
+
+    if (current) {
+      if (b.suggestion) parts.push(tlEntry('💡', esc(b.suggestion), '<a class="tl-reroll">Something else</a>', 'idea'));
+      else if (askAvail) parts.push(tlEntry('💡', 'Thinking of something for you…', '', 'idea loading'));
+      const st = (a.stations || [])[0];
+      if (st) {
+        const nx = st.next || [];
+        const sub = nx.length ? nx.slice(0, 2).map(d => esc(d.scheduled) + ' → ' + esc(d.destination)).join(' · ') : (st.miles + ' mi away');
+        parts.push(tlEntry('🚆', esc(st.name), sub));
+      }
+      if (a.buses_nearby) parts.push(tlEntry('🚍', a.buses_nearby + ' bus' + (a.buses_nearby === 1 ? '' : 'es') + ' moving nearby', ''));
+      (b.pois || []).forEach((p, i) => parts.push(
+        tlEntry(kindEmoji(p.kind), esc(p.name), esc(p.kind) + ' · ' + prettyDist(distM(b.lat, b.lng, p.lat, p.lng)), 'poi', ' data-i="' + i + '"')));
+    } else {
+      const bits = [];
+      const st = (a.stations || [])[0];
+      if (st) bits.push('🚆 ' + esc(st.name));
+      if (a.buses_nearby) bits.push('🚍 ' + a.buses_nearby);
+      (b.pois || []).slice(0, 3).forEach(p => bits.push(kindEmoji(p.kind) + ' ' + esc(p.name)));
+      if (bits.length) parts.push(tlEntry('', bits.join(' · '), '', 'muted'));
+    }
+    return '<div class="tl-block' + (current ? ' current' : '') + '">' + parts.join('') + '</div>';
+  }
+
+  function renderTimeline() {
+    tlFeed.innerHTML = tlBlocks.map((b, i) => blockHtml(b, i === 0)).join('');
+    const top = tlBlocks[0];
+    const reroll = tlFeed.querySelector('.tl-reroll');
+    if (reroll && top) reroll.onclick = () => rerollBlock(top);
+    const city = tlFeed.querySelector('.tl-city');
+    if (city) city.onclick = () => { if (myLoc) openInterest(myLoc); };
+    // POIs only exist in the current (first) block.
+    if (top && top.pois) tlFeed.querySelectorAll('.tl-block.current .tl-entry.poi').forEach(el => {
+      const p = top.pois[+el.dataset.i];
+      if (p) el.onclick = () => { showMap(); const ll = L.latLng(p.lat, p.lng); map.setView(ll, Math.max(17, map.getZoom())); if (targetMarker) map.removeLayer(targetMarker); targetMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup('<div class="stopname">' + esc(p.name) + '</div><div class="sub">' + esc(p.kind) + '</div>').openPopup(); };
+    });
+  }
+
+  async function rerollBlock(b) {
+    const el = tlFeed.querySelector('.tl-reroll'); if (el) { el.textContent = '…'; }
+    try {
+      const r = await fetch('/api/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat: b.lat, lng: b.lng, mode: 'different', last: b.suggestion, avoid: [b.suggestion] }) });
+      const d = await r.json();
+      if (d.suggestion) b.suggestion = d.suggestion;
+      renderTimeline();
+    } catch (_) { renderTimeline(); }
+  }
+
+  // Create a fresh block for a location (throttled: a new block only when you've
+  // moved to a new area, so the feed reads as a trail of where you've been).
+  async function timelineFix(latlng) {
+    const top = tlBlocks[0];
+    if (top && distM(latlng.lat, latlng.lng, top.lat, top.lng) < 180) return;
+    const block = { time: new Date(), lat: latlng.lat, lng: latlng.lng, around: null, pois: [], suggestion: '' };
+    tlBlocks.unshift(block);
+    if (tlBlocks.length > 25) tlBlocks.pop();
+    renderTimeline();
+    try { const r = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng); block.around = await r.json(); } catch (_) {}
+    tlHeader(block.around);
+    try { const r = await fetch('/api/poi?lat=' + latlng.lat + '&lng=' + latlng.lng + '&radius=500'); block.pois = ((await r.json()).pois || []).slice(0, 6); } catch (_) {}
+    renderTimeline();
+    if (askAvail && block.around && block.around.in_gb) {
+      try { const r = await fetch('/api/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat: latlng.lat, lng: latlng.lng, mode: 'fresh' }) }); block.suggestion = (await r.json()).suggestion || ''; renderTimeline(); } catch (_) {}
+    }
+  }
+
+  // A gentle location watch drives the timeline (independent of the map).
+  if (navigator.geolocation) {
+    tlWatch = navigator.geolocation.watchPosition(pos => {
+      if (pos.coords.accuracy > 80) return;
+      const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      myLoc = ll;
+      timelineFix(ll);
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
   }
 
   // --- wire it up ------------------------------------------------------------
