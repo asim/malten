@@ -43,10 +43,12 @@ content**:
   timeline posts to `/api/ask` (SSE) — the bounded tool-use loop, with the
   live-data calls above plus `/api/gridref` exposed as tools — and the streamed
   answer lands as an entry in the feed, so the timeline stays the surface. It's a
-  conversation: the browser replays the exchange so far with each question
-  (`history`), because the server remembers nothing between turns. Both are
-  enabled only when `ANTHROPIC_API_KEY` is set; the question, history and
-  location are used per-turn and forgotten.
+  conversation with a memory of the day: the browser replays the exchange so far
+  (`history`) **and the trail** (`trail` — where you've been, what was around you
+  there, what was already suggested) with each question, because the server
+  remembers nothing between turns. Both are enabled only when
+  `ANTHROPIC_API_KEY` is set; the question, history, trail and location are used
+  per-turn and forgotten.
 
 - **Place search & reverse geocoding** (`/api/search`, `/api/nearest`,
   `internal/server/search.go`). Proxies the **OS Names** gazetteer with the
@@ -124,8 +126,11 @@ server (no network, no key).
   (place fixes and the whole conversation) live client-side and never touch the
   server; the live-data proxy and the agent hold no user content, and Ask
   Malten's questions/history/locations are used per-turn and forgotten. The
-  browser is the only memory the conversation has — that's why history travels
-  with each request. The only disk write is the opt-in waitlist. Don't add
+  browser is the only memory the conversation has — that's why history and the
+  trail travel with each request. Keep the stored timeline **structural** (typed
+  events, not markup): it's read back to feed the agent, not just to redraw.
+  `web/app.js` documents the schema and versions it (`v`); bump the version when
+  the shape changes rather than migrating in place. The only disk write is the opt-in waitlist. Don't add
   server-side persistence of user content — that's the privacy model.
 - **The per-user OS key stays the user's.** When entered in the browser it's
   sent straight to the OS APIs — never route that per-user key through, log, or

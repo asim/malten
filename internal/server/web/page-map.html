@@ -1115,9 +1115,35 @@
     return turns.slice(-12);
   }
 
+  // The trail, folded up for the agent: where you've been, what was around you
+  // there, and what it already suggested. This is why the log is stored as typed
+  // events rather than markup — it's the app's memory of the day, and the agent
+  // gets to use it ("that café you mentioned", "somewhere I haven't been").
+  function askTrail() {
+    const stops = [];
+    tlEvents.forEach(ev => {
+      switch (ev.k) {
+        case 'when':
+          stops.push({ t: ev.t, place: ev.place || '', lat: ev.lat, lng: ev.lng, saw: [], nudges: [] });
+          break;
+        case 'place':
+          if (stops.length) stops[stops.length - 1].saw.push(ev.poi.name);
+          break;
+        case 'idea':
+          if (stops.length && ev.text) stops[stops.length - 1].nudges.push(ev.text);
+          break;
+      }
+    });
+    return stops.slice(-8).map(s => ({
+      at: new Date(s.t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+      place: s.place, lat: s.lat, lng: s.lng,
+      saw: s.saw.slice(0, 6), suggested: s.nudges.slice(-2),
+    }));
+  }
+
   async function askQuestion(text) {
     if (asking || !text) return;
-    const history = askHistory();
+    const history = askHistory(), trail = askTrail();
     push({ k: 'q', text: text });
     const ans = push({ k: 'a', text: '', note: 'Thinking…' });
     asking = true; askInput.value = ''; askSend.disabled = true;
@@ -1129,7 +1155,7 @@
     try {
       const res = await fetch('/api/ask', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
-        body: JSON.stringify({ message: text, history: history, lat: loc ? loc.lat : 0, lng: loc ? loc.lng : 0, has_loc: !!loc }),
+        body: JSON.stringify({ message: text, history: history, trail: trail, lat: loc ? loc.lat : 0, lng: loc ? loc.lng : 0, has_loc: !!loc }),
       });
       if (!res.ok || !res.body) throw new Error('no stream');
       const reader = res.body.getReader(), dec = new TextDecoder();
@@ -1216,7 +1242,7 @@
     fixing = true;
     lastFix = { t: Date.now(), lat: latlng.lat, lng: latlng.lng };
 
-    const when = push({ k: 'when', place: '' });
+    const when = push({ k: 'when', place: '', lat: latlng.lat, lng: latlng.lng });
     let around = null;
     try { const r = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng); around = await r.json(); } catch (_) {}
     tlHeader(around);

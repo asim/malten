@@ -38,8 +38,10 @@ the spatial memory, not the map data.
   *I did it → next* — and a composer at the foot of the timeline lets you ask
   about where you are ("when's the next train to Leeds?", "is the Lion Gate Café
   open?"). The answer streams in as an entry in the feed, using live transport,
-  places (including OSM opening hours) and weather as tools. It's a conversation:
-  follow-ups carry the thread, and it's all still there after a reload.
+  places (including OSM opening hours) and weather as tools. It's a conversation
+  with a memory of your day: follow-ups carry the thread, and the trail travels
+  with the question, so it knows where you've been, what you passed and what it
+  already suggested. All still there after a reload.
 - **Look around (camera).** Point your phone; POIs, stations and your finds are
   tagged in view by real compass bearing. Tap one to lock a navigation beacon
   with a live-updating arrow and distance.
@@ -55,7 +57,9 @@ the spatial memory, not the map data.
   over `net/http`.
 - **Stateless and anonymous.** The server stores nothing about users. Your finds,
   your timeline (including the conversation) and, in per-user mode, your OS key
-  live in the browser — which is why each question carries its own history. Live-data endpoints
+  live in the browser — which is why each question carries its own history and
+  trail. The timeline is stored as a versioned log of typed events, so it can be
+  replayed as context rather than merely redrawn. Live-data endpoints
   proxy public feeds and hold no user content. The one opt-in exception is the
   out-of-coverage waitlist (a local JSONL file).
 - **Great Britain only** (for now) — the OS National Grid and OS Maps API cover
