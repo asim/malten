@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	_ "time/tzdata" // embed the zone database: British local time without a zoneinfo on the box
 
 	"github.com/asim/malten/internal/server"
 )

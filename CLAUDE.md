@@ -42,9 +42,11 @@ content**:
   timeline and the "Around you" card. On demand: a composer at the foot of the
   timeline posts to `/api/ask` (SSE) — the bounded tool-use loop, with the
   live-data calls above plus `/api/gridref` exposed as tools — and the streamed
-  answer lands as an entry in the feed, so the timeline stays the surface. Both
-  are enabled only when `ANTHROPIC_API_KEY` is set; the question and location are
-  used per-turn and forgotten.
+  answer lands as an entry in the feed, so the timeline stays the surface. It's a
+  conversation: the browser replays the exchange so far with each question
+  (`history`), because the server remembers nothing between turns. Both are
+  enabled only when `ANTHROPIC_API_KEY` is set; the question, history and
+  location are used per-turn and forgotten.
 
 - **Place search & reverse geocoding** (`/api/search`, `/api/nearest`,
   `internal/server/search.go`). Proxies the **OS Names** gazetteer with the
@@ -55,8 +57,10 @@ content**:
 
 - **Nearby points of interest** (`/api/poi`, `internal/server/poi.go`). Proxies
   the OpenStreetMap **Overpass** API (free, keyless) for named features near a
-  point — pubs, parks, landmarks, viewpoints. It's what the camera "look around"
-  mode tags in view. Override the instance with `MALTEN_OVERPASS_URL`. OSM is
+  point — pubs, parks, landmarks, viewpoints — with their opening hours, website
+  and phone where OSM has them. It's what the camera "look around" mode tags in
+  view, and what lets the agent answer "is that café open?" (`nearby_places`)
+  rather than deflect. Override the instance with `MALTEN_OVERPASS_URL`. OSM is
   ODbL — the UI attributes it.
 
 - **A live "around me" snapshot** (`/api/around`, `internal/server/around.go`).
@@ -113,11 +117,13 @@ server (no network, no key).
 
 ## Conventions & invariants (do not break these)
 
-- **The server stores nothing about users.** Finds and the OS key live client-
-  side and never touch the server; the live-data proxy and the agent hold no
-  user content, and Ask Malten's questions/locations are used per-turn and
-  forgotten. The only disk write is the opt-in waitlist. Don't add server-side
-  persistence of user content — that's the privacy model.
+- **The server stores nothing about users.** Finds, the OS key and the timeline
+  (place fixes and the whole conversation) live client-side and never touch the
+  server; the live-data proxy and the agent hold no user content, and Ask
+  Malten's questions/history/locations are used per-turn and forgotten. The
+  browser is the only memory the conversation has — that's why history travels
+  with each request. The only disk write is the opt-in waitlist. Don't add
+  server-side persistence of user content — that's the privacy model.
 - **The per-user OS key stays the user's.** When entered in the browser it's
   sent straight to the OS APIs — never route that per-user key through, log, or
   store it server-side. The one exception is an operator-supplied shared

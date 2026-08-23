@@ -917,24 +917,27 @@
     (icon ? '<span class="ic">' + icon + '</span>' : '') +
     '<div class="bd"><div class="t">' + title + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div></div>';
 
+  // Questions and answers, in the order they happened, at the foot of the block
+  // they were asked in — so a new exchange pushes the trail up, like a chat.
+  function asksHtml(b) {
+    return (b.asks || []).map(q =>
+      tlEntry('💬', esc(q.q), '', 'ask') +
+      tlEntry('✦', q.a ? multiline(q.a) : esc(q.note || 'Thinking…'),
+        '', 'ans' + (q.a ? '' : ' loading'), ' data-ask="' + q.id + '"')).join('');
+  }
+
   function blockHtml(b, current) {
     const a = b.around;
     const placeName = (a && (a.place && a.place.name)) || (a && a.grid_ref) || 'Here';
     const when = b.time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     let parts = ['<div class="tl-when">' + when + ' · ' + esc(placeName) + '</div>'];
-
-    // Questions you asked here stay in the trail, newest first.
-    (b.asks || []).forEach(q => {
-      parts.push(tlEntry('💬', esc(q.q), '', 'ask'));
-      parts.push(tlEntry('✦', q.a ? multiline(q.a) : esc(q.note || 'Thinking…'),
-        '', 'ans' + (q.a ? '' : ' loading'), ' data-ask="' + q.id + '"'));
-    });
+    const close = () => '<div class="tl-block' + (current ? ' current' : '') + '">' + parts.join('') + asksHtml(b) + '</div>';
 
     if (a && a.in_gb === false) {
       parts.push(tlEntry('🌍', 'Malten is Great Britain, for now', '<a class="tl-city">Request your city</a>', 'muted'));
-      return '<div class="tl-block' + (current ? ' current' : '') + '">' + parts.join('') + '</div>';
+      return close();
     }
-    if (!a) { parts.push(tlEntry('', 'Looking around you…', '', 'loading')); return '<div class="tl-block current">' + parts.join('') + '</div>'; }
+    if (!a) { parts.push(tlEntry('', 'Looking around you…', '', 'loading')); return close(); }
 
     if (current) {
       if (b.suggestion) parts.push(tlEntry('💡', esc(b.suggestion), '<a class="tl-reroll">Something else</a>', 'idea'));
@@ -956,21 +959,56 @@
       (b.pois || []).slice(0, 3).forEach(p => bits.push(kindEmoji(p.kind) + ' ' + esc(p.name)));
       if (bits.length) parts.push(tlEntry('', bits.join(' · '), '', 'muted'));
     }
-    return '<div class="tl-block' + (current ? ' current' : '') + '">' + parts.join('') + '</div>';
+    return close();
   }
 
-  function renderTimeline() {
-    tlFeed.innerHTML = tlBlocks.map((b, i) => blockHtml(b, i === 0)).join('');
-    const top = tlBlocks[0];
+  // The feed reads forwards: oldest at the top, now at the bottom, next to the
+  // composer. New places and new answers land at the end and push it up.
+  const nowBlock = () => tlBlocks[tlBlocks.length - 1];
+  const atBottom = () => tlFeed.scrollHeight - tlFeed.scrollTop - tlFeed.clientHeight < 90;
+
+  function renderTimeline(stick) {
+    const follow = stick === undefined ? atBottom() : stick;
+    tlFeed.innerHTML = tlBlocks.map((b, i) => blockHtml(b, i === tlBlocks.length - 1)).join('');
+    const now = nowBlock();
     const reroll = tlFeed.querySelector('.tl-reroll');
-    if (reroll && top) reroll.onclick = () => rerollBlock(top);
+    if (reroll && now) reroll.onclick = () => rerollBlock(now);
     const city = tlFeed.querySelector('.tl-city');
     if (city) city.onclick = () => { if (myLoc) openInterest(myLoc); };
-    // POIs only exist in the current (first) block.
-    if (top && top.pois) tlFeed.querySelectorAll('.tl-block.current .tl-entry.poi').forEach(el => {
-      const p = top.pois[+el.dataset.i];
+    // POIs are only listed in full for the block you're standing in.
+    if (now && now.pois) tlFeed.querySelectorAll('.tl-block.current .tl-entry.poi').forEach(el => {
+      const p = now.pois[+el.dataset.i];
       if (p) el.onclick = () => { showMap(); const ll = L.latLng(p.lat, p.lng); map.setView(ll, Math.max(17, map.getZoom())); if (targetMarker) map.removeLayer(targetMarker); targetMarker = L.marker(ll, { icon: pinIcon }).addTo(map).bindPopup('<div class="stopname">' + esc(p.name) + '</div><div class="sub">' + esc(p.kind) + '</div>').openPopup(); };
     });
+    if (follow) tlFeed.scrollTop = tlFeed.scrollHeight;
+    saveTimeline();
+  }
+
+  // Persist the trail so a reload picks up where you left off. Times go out as
+  // epoch millis and come back as Dates; nothing here ever reaches the server.
+  let saveTimer = null;
+  function saveNow() {
+    clearTimeout(saveTimer); saveTimer = null;
+    Malten.setTimeline(tlBlocks.map(b => ({
+      t: +b.time, lat: b.lat, lng: b.lng, around: b.around, pois: b.pois,
+      suggestion: b.suggestion, asks: (b.asks || []).filter(q => q.a),
+    })));
+  }
+  function saveTimeline() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 400); }
+  // A reload or a swipe away shouldn't drop the last few seconds of the trail.
+  addEventListener('pagehide', saveNow);
+  addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+
+  function restoreTimeline() {
+    const saved = Malten.getTimeline();
+    if (!saved.length) return;
+    tlBlocks = saved.map(b => ({
+      time: new Date(b.t || Date.now()), lat: b.lat, lng: b.lng, around: b.around || null,
+      pois: b.pois || [], suggestion: b.suggestion || '', asks: (b.asks || []).map(q => ({ ...q, id: ++askSeq })),
+    }));
+    const last = nowBlock();
+    if (last && last.around) tlHeader(last.around);
+    renderTimeline(true);
   }
 
   // --- asking about where you are --------------------------------------------
@@ -991,23 +1029,37 @@
   function paintAsk(q) {
     const el = tlFeed.querySelector('[data-ask="' + q.id + '"]');
     if (!el) { renderTimeline(); return; }
+    const follow = atBottom();
     el.className = 'tl-entry ans' + (q.a ? '' : ' loading');
     el.querySelector('.t').innerHTML = q.a ? multiline(q.a) : esc(q.note || 'Thinking…');
+    if (follow) tlFeed.scrollTop = tlFeed.scrollHeight; // let the answer grow into view
+  }
+
+  // The conversation the server replays: it keeps nothing between turns, so the
+  // history travels with each question. Answers only — the trail's place fixes
+  // aren't part of the dialogue.
+  function askHistory() {
+    const turns = [];
+    tlBlocks.forEach(b => (b.asks || []).forEach(q => {
+      if (!q.a) return;
+      turns.push({ role: 'user', text: q.q }, { role: 'assistant', text: q.a });
+    }));
+    return turns.slice(-12);
   }
 
   async function askQuestion(text) {
     if (asking || !text) return;
-    let block = tlBlocks[0];
+    let block = nowBlock();
     if (!block) {
       block = { time: new Date(), lat: myLoc ? myLoc.lat : 0, lng: myLoc ? myLoc.lng : 0, around: null, pois: [], suggestion: '', asks: [] };
-      tlBlocks.unshift(block);
+      tlBlocks.push(block);
     }
     if (!block.asks) block.asks = [];
+    const history = askHistory();
     const q = { id: ++askSeq, q: text, a: '', note: 'Thinking…' };
-    block.asks.unshift(q);
+    block.asks.push(q);
     asking = true; askInput.value = ''; askSend.disabled = true;
-    renderTimeline();
-    tlFeed.scrollTop = 0;
+    renderTimeline(true); // follow the new exchange to the bottom
 
     const loc = myLoc || (block.lat ? { lat: block.lat, lng: block.lng } : null);
     const ctrl = new AbortController();
@@ -1015,7 +1067,7 @@
     try {
       const res = await fetch('/api/ask', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
-        body: JSON.stringify({ message: text, lat: loc ? loc.lat : 0, lng: loc ? loc.lng : 0, has_loc: !!loc }),
+        body: JSON.stringify({ message: text, history: history, lat: loc ? loc.lat : 0, lng: loc ? loc.lng : 0, has_loc: !!loc }),
       });
       if (!res.ok || !res.body) throw new Error('no stream');
       const reader = res.body.getReader(), dec = new TextDecoder();
@@ -1043,6 +1095,7 @@
     if (!q.a) q.a = 'No answer came back.';
     q.note = ''; asking = false; askSend.disabled = false;
     paintAsk(q);
+    saveNow(); // the finished exchange is part of the trail now
   }
 
   askForm.onsubmit = e => { e.preventDefault(); askQuestion(askInput.value.trim()); };
@@ -1072,15 +1125,34 @@
 
   // Create a fresh block for a location (throttled: a new block only when you've
   // moved to a new area, so the feed reads as a trail of where you've been).
+  const TL_MOVED_M = 180;         // far enough away to count as somewhere new
+  const TL_STALE_MS = 12 * 60e3;  // a fix this old is worth refreshing
+  const TL_RESUME_MS = 45 * 60e3; // …but come back after this long and it's a new visit
+
   async function timelineFix(latlng) {
-    const top = tlBlocks[0];
-    if (top && distM(latlng.lat, latlng.lng, top.lat, top.lng) < 180) return;
-    const block = { time: new Date(), lat: latlng.lat, lng: latlng.lng, around: null, pois: [], suggestion: '', asks: [] };
-    tlBlocks.unshift(block);
-    if (tlBlocks.length > 25) tlBlocks.pop();
-    renderTimeline();
+    const now = nowBlock();
+    let block = null;
+    if (now && distM(latlng.lat, latlng.lng, now.lat, now.lng) < TL_MOVED_M) {
+      const age = Date.now() - +now.time;
+      // Nothing new to say: don't interrupt a conversation with a duplicate.
+      if (age < TL_STALE_MS && now.around) return;
+      // A reload or a long pause in the same spot refreshes the fix in place,
+      // rather than stacking a second entry for where you already are.
+      if (age < TL_RESUME_MS) {
+        block = now;
+        block.time = new Date(); block.lat = latlng.lat; block.lng = latlng.lng;
+      }
+    }
+    if (!block) {
+      block = { time: new Date(), lat: latlng.lat, lng: latlng.lng, around: null, pois: [], suggestion: '', asks: [] };
+      tlBlocks.push(block);
+      if (tlBlocks.length > 25) tlBlocks.shift();
+      renderTimeline();
+    }
+    const fresh = () => block === nowBlock(); // a later fix may have moved on
+
     try { const r = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng); block.around = await r.json(); } catch (_) {}
-    tlHeader(block.around);
+    if (fresh()) tlHeader(block.around);
     try { const r = await fetch('/api/poi?lat=' + latlng.lat + '&lng=' + latlng.lng + '&radius=500'); block.pois = ((await r.json()).pois || []).slice(0, 6); } catch (_) {}
     renderTimeline();
     if (askAvail && block.around && block.around.in_gb) {
@@ -1099,6 +1171,7 @@
   }
 
   // --- wire it up ------------------------------------------------------------
+  restoreTimeline(); // pick the trail back up where the last visit left it
   document.getElementById('settings').onclick = askForKey;
   map.on('click', e => { if (!sheet || !sheet.classList.contains('logsheet')) openLog(e.latlng); });
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/asim/malten/internal/llm"
 	"github.com/asim/malten/internal/osgrid"
@@ -26,6 +27,8 @@ You help people understand where they are and how to move through it right now: 
 Guidance:
 - Be concise and practical. Lead with the answer. Prefer short sentences and small lists.
 - When asked about getting somewhere or what's nearby, use the tools to fetch live data rather than guessing. Use the user's current location (provided below) as the default point of reference.
+- Asked about a specific named place ("is the Lion Gate Café open?"), look it up with nearby_places before saying you can't help. Where OSM has opening hours, work out the answer against the current local time given below, and say the hours came from OpenStreetMap and may be out of date. If it has a phone or website, pass them on. If the place isn't mapped, say so plainly — that it isn't in OpenStreetMap near here, not that you have no way to know.
+- This is a conversation: earlier turns are yours to build on. When the user says "it" or "that one", they mean what you were just talking about.
 - For trains, find the nearest station with nearby_stations, then read its board with train_departures. Give real times and destinations from the tool results — don't invent them.
 - Only use the tools you have been given; don't promise data you can't fetch. If a London-only tool returns nothing, the area is likely outside London.
 - You can mention the OS National Grid reference for a spot when it's relevant.
@@ -37,6 +40,7 @@ Guidance:
 func (s *Server) capabilities() string {
 	lines := []string{
 		"- around_me: one-call live snapshot of the surroundings (place, nearest stations + next trains, buses moving nearby, London stops). Start here for 'what's around me' or 'what should I do nearby'.",
+		"- nearby_places: named places from OpenStreetMap nearby — cafés, pubs, parks, museums, landmarks — with distance and, where mapped, opening hours, website and phone. Use it for questions about a specific named place, including whether somewhere is open.",
 		"- nearby_stations: nearest National Rail stations, all of Great Britain.",
 		"- nearby_stops / arrivals: stop-level bus, tram and tube arrivals — London only (Transport for London).",
 		"- grid_ref: OS National Grid reference for a point.",
@@ -55,16 +59,64 @@ func (s *Server) capabilities() string {
 	return "Live-data tools available to you right now:\n" + strings.Join(lines, "\n")
 }
 
-// askRequest is the browser's payload.
+// askRequest is the browser's payload. History is the conversation so far, held
+// by the browser and replayed each turn — the server keeps nothing between
+// requests, so the client is the only memory there is.
 type askRequest struct {
-	Message string  `json:"message"`
-	Lat     float64 `json:"lat"`
-	Lng     float64 `json:"lng"`
-	HasLoc  bool    `json:"has_loc"`
+	Message string    `json:"message"`
+	History []askTurn `json:"history"`
+	Lat     float64   `json:"lat"`
+	Lng     float64   `json:"lng"`
+	HasLoc  bool      `json:"has_loc"`
+}
+
+type askTurn struct {
+	Role string `json:"role"` // "user" | "assistant"
+	Text string `json:"text"`
+}
+
+// Bounds on the replayed history: enough for a real conversation, not enough
+// for an open-ended payload.
+const (
+	maxHistoryTurns = 12
+	maxTurnChars    = 4000
+)
+
+// turns builds the conversation to send: the trimmed history, then the new
+// question. llm.RunTurns normalises the roles.
+func (r askRequest) turns() []llm.Turn {
+	h := r.History
+	if len(h) > maxHistoryTurns {
+		h = h[len(h)-maxHistoryTurns:]
+	}
+	out := make([]llm.Turn, 0, len(h)+1)
+	for _, t := range h {
+		text := strings.TrimSpace(t.Text)
+		if text == "" {
+			continue
+		}
+		if len(text) > maxTurnChars {
+			text = text[:maxTurnChars]
+		}
+		out = append(out, llm.Turn{Role: t.Role, Text: text})
+	}
+	return append(out, llm.Turn{Role: "user", Text: r.Message})
 }
 
 // enabled reports whether the agent is configured.
 func (s *Server) askEnabled() bool { return s.llm != nil }
+
+// ukLoc is the clock Malten runs on — it covers Great Britain, so British time
+// is the local time. The zone database is embedded (time/tzdata, imported by
+// the binary) so this resolves in a container with no zoneinfo; UTC is the
+// fallback either way.
+var ukLoc = func() *time.Location {
+	loc, err := time.LoadLocation("Europe/London")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}()
 
 func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -110,8 +162,9 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	// Ground the model in the user's location.
+	// Ground the model in the here and now — the time matters for "is it open?".
 	var ground strings.Builder
+	fmt.Fprintf(&ground, "The current local time is %s.\n", time.Now().In(ukLoc).Format("Monday 2 January 2006, 15:04"))
 	if req.HasLoc {
 		fmt.Fprintf(&ground, "The user's current location is latitude %.6f, longitude %.6f.", req.Lat, req.Lng)
 		if ref, okRef := osgrid.FromWGS84(req.Lat, req.Lng); okRef {
@@ -124,7 +177,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	system := askSystem + "\n\n" + s.capabilities() + "\n\n" + ground.String()
 
-	if err := s.llm.Run(r.Context(), system, req.Message, s.askTools(req), send); err != nil {
+	if err := s.llm.RunTurns(r.Context(), system, req.turns(), s.askTools(req), send); err != nil {
 		send(llm.Event{Type: "error", Text: "Something went wrong reaching the guide."})
 	}
 	fmt.Fprint(w, "data: [DONE]\n\n")
@@ -232,6 +285,7 @@ func (s *Server) askTools(req askRequest) []llm.Tool {
 		},
 	}
 	tools = append(tools, s.aroundTool(req)...)
+	tools = append(tools, s.poiTools(req)...)
 	tools = append(tools, s.searchTools(req)...)
 	tools = append(tools, s.railTools(req)...)
 	tools = append(tools, s.busTools(req)...)

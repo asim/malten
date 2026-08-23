@@ -19,7 +19,8 @@ the spatial memory, not the map data.
 
 - **A timeline front door.** The app opens on a live feed — date, place, weather,
   and what's around you (nearest station and next trains, buses moving, nearby
-  cafés/parks, a nudge from the agent). It grows into a trail as you move. The
+  cafés/parks, a nudge from the agent). It reads forwards: oldest at the top, now
+  at the bottom, growing into a trail as you move. It survives a reload, and the
   map is a button away.
 - **Live OS map.** Ordnance Survey tiles, centred on you. If the operator sets a
   shared OS key the server proxies tiles so visitors need no key of their own.
@@ -35,11 +36,13 @@ the spatial memory, not the map data.
 - **A spatial agent ("Ask Malten").** No chat window. It works in the background
   and offers one concrete thing to go and do, with a loop — *something else* or
   *I did it → next* — and a composer at the foot of the timeline lets you ask
-  about where you are ("when's the next train to Leeds?"). The answer streams in
-  as an entry in the feed, using live transport, places and weather as tools.
+  about where you are ("when's the next train to Leeds?", "is the Lion Gate Café
+  open?"). The answer streams in as an entry in the feed, using live transport,
+  places (including OSM opening hours) and weather as tools. It's a conversation:
+  follow-ups carry the thread, and it's all still there after a reload.
 - **Look around (camera).** Point your phone; POIs, stations and your finds are
-  tagged in view by real compass bearing, over a noir camera treatment. Tap one
-  to lock a navigation beacon with a live-updating arrow and distance.
+  tagged in view by real compass bearing. Tap one to lock a navigation beacon
+  with a live-updating arrow and distance.
 - **Out of coverage?** Visitors outside Britain can **request their city**, so
   demand tells us where to expand.
 
@@ -50,8 +53,9 @@ the spatial memory, not the map data.
 - **No external Go dependencies.** `go.mod` has no `require` block. The Anthropic
   client, the National Rail (SOAP) client, and everything else are hand-rolled
   over `net/http`.
-- **Stateless and anonymous.** The server stores nothing about users. Your finds
-  and (in per-user mode) your OS key live in the browser. Live-data endpoints
+- **Stateless and anonymous.** The server stores nothing about users. Your finds,
+  your timeline (including the conversation) and, in per-user mode, your OS key
+  live in the browser — which is why each question carries its own history. Live-data endpoints
   proxy public feeds and hold no user content. The one opt-in exception is the
   out-of-coverage waitlist (a local JSONL file).
 - **Great Britain only** (for now) — the OS National Grid and OS Maps API cover

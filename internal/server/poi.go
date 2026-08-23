@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/asim/malten/internal/llm"
 )
 
 // poi.go proxies the OpenStreetMap Overpass API for named points of interest
@@ -33,12 +36,17 @@ var overpassClient = &http.Client{Timeout: 18 * time.Second}
 // for tests).
 var overpassEndpoint = envOr("MALTEN_OVERPASS_URL", "https://overpass-api.de/api/interpreter")
 
-// POI is a named point of interest.
+// POI is a named point of interest. The contact tags are what let the agent
+// answer "is it open?" — they're whatever OSM contributors have recorded, so
+// they can be missing or out of date.
 type POI struct {
-	Name string  `json:"name"`
-	Kind string  `json:"kind"`
-	Lat  float64 `json:"lat"`
-	Lng  float64 `json:"lng"`
+	Name  string  `json:"name"`
+	Kind  string  `json:"kind"`
+	Lat   float64 `json:"lat"`
+	Lng   float64 `json:"lng"`
+	Hours string  `json:"hours,omitempty"` // OSM opening_hours syntax, e.g. "Mo-Su 09:00-17:00"
+	Web   string  `json:"web,omitempty"`
+	Phone string  `json:"phone,omitempty"`
 }
 
 // --- bounding-box cache -----------------------------------------------------
@@ -189,9 +197,27 @@ func parsePOIs(body []byte) []POI {
 			continue
 		}
 		seen[name] = true
-		out = append(out, POI{Name: name, Kind: poiKind(e.Tags), Lat: lat, Lng: lng})
+		out = append(out, POI{
+			Name:  name,
+			Kind:  poiKind(e.Tags),
+			Lat:   lat,
+			Lng:   lng,
+			Hours: e.Tags["opening_hours"],
+			Web:   firstTag(e.Tags, "website", "contact:website", "url"),
+			Phone: firstTag(e.Tags, "phone", "contact:phone"),
+		})
 	}
 	return out
+}
+
+// firstTag returns the first of keys that is present and non-empty.
+func firstTag(tags map[string]string, keys ...string) string {
+	for _, k := range keys {
+		if v := tags[k]; v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // poiKind picks the most descriptive tag value for a feature.
@@ -202,6 +228,97 @@ func poiKind(tags map[string]string) string {
 		}
 	}
 	return "place"
+}
+
+// poiTools exposes OpenStreetMap's named places to the agent. It's what lets a
+// question like "is the café by the gate open?" be answered from data rather
+// than deflected — OSM carries opening hours, a website and a phone number for
+// a lot of places, patchily.
+func (s *Server) poiTools(req askRequest) []llm.Tool {
+	return []llm.Tool{{
+		Name: "nearby_places",
+		Description: "Named places from OpenStreetMap near a point — cafés, pubs, restaurants, parks, museums, landmarks, viewpoints. " +
+			"Each result has its kind, distance, and (where OSM has them) opening hours in opening_hours syntax, a website and a phone number. " +
+			"Use this for questions about a specific named place nearby, or what sort of place is around. " +
+			"Pass name to filter by name; omit lat/lng to use the user's current location.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name":     map[string]any{"type": "string", "description": "filter to places whose name contains this (case-insensitive)"},
+				"lat":      map[string]any{"type": "number", "description": "latitude; defaults to the user's location"},
+				"lng":      map[string]any{"type": "number", "description": "longitude; defaults to the user's location"},
+				"radius_m": map[string]any{"type": "integer", "description": "search radius in metres (default 800, max 2000)"},
+			},
+		},
+		Run: func(ctx context.Context, in json.RawMessage) (string, error) {
+			var a struct {
+				Name   string   `json:"name"`
+				Lat    *float64 `json:"lat"`
+				Lng    *float64 `json:"lng"`
+				Radius int      `json:"radius_m"`
+			}
+			_ = json.Unmarshal(in, &a)
+			lat, lng := req.Lat, req.Lng
+			if a.Lat != nil {
+				lat = *a.Lat
+			}
+			if a.Lng != nil {
+				lng = *a.Lng
+			}
+			if lat == 0 && lng == 0 {
+				return "No location available. Ask the user where they are, or use find_place.", nil
+			}
+			if a.Radius <= 0 {
+				a.Radius = 800
+			}
+			pois, err := fetchPOIs(lat, lng, a.Radius)
+			if err != nil {
+				return "The places service is unavailable right now.", nil
+			}
+			if q := strings.ToLower(strings.TrimSpace(a.Name)); q != "" {
+				var hit []POI
+				for _, p := range pois {
+					if strings.Contains(strings.ToLower(p.Name), q) {
+						hit = append(hit, p)
+					}
+				}
+				if len(hit) == 0 {
+					return fmt.Sprintf("Nothing named like %q is mapped within %dm. It may be there but unmapped, or further away — try a wider radius.", a.Name, a.Radius), nil
+				}
+				pois = hit
+			}
+			sort.Slice(pois, func(i, j int) bool {
+				return sq(pois[i].Lat-lat)+sq(pois[i].Lng-lng) < sq(pois[j].Lat-lat)+sq(pois[j].Lng-lng)
+			})
+			if len(pois) > 25 {
+				pois = pois[:25]
+			}
+			out := make([]map[string]any, 0, len(pois))
+			for _, p := range pois {
+				m := map[string]any{"name": p.Name, "kind": p.Kind, "metres": int(metresBetween(lat, lng, p.Lat, p.Lng))}
+				if p.Hours != "" {
+					m["opening_hours"] = p.Hours
+				}
+				if p.Web != "" {
+					m["website"] = p.Web
+				}
+				if p.Phone != "" {
+					m["phone"] = p.Phone
+				}
+				out = append(out, m)
+			}
+			b, _ := json.Marshal(out)
+			return string(b), nil
+		},
+	}}
+}
+
+// metresBetween is a small-distance approximation — fine at POI range.
+func metresBetween(lat1, lng1, lat2, lng2 float64) float64 {
+	const mPerDeg = 111320
+	dLat := (lat2 - lat1) * mPerDeg
+	dLng := (lng2 - lng1) * mPerDeg * math.Cos(lat1*math.Pi/180)
+	return math.Hypot(dLat, dLng)
 }
 
 func (s *Server) handlePOI(w http.ResponseWriter, r *http.Request) {

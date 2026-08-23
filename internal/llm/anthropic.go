@@ -99,10 +99,24 @@ type request struct {
 	Stream    bool       `json:"stream"`
 }
 
-// Run executes a bounded agent loop: it streams assistant text to emit, runs
-// any tools the model calls, and continues until the model stops asking for
-// tools (or a safety cap is hit).
+// Turn is one message in an exchange. A conversation is replayed as turns so
+// the model can answer follow-ups ("is it open?", "and the one after that?").
+type Turn struct {
+	Role string // "user" | "assistant"
+	Text string
+}
+
+// Run executes a bounded agent loop for a single question. It streams assistant
+// text to emit, runs any tools the model calls, and continues until the model
+// stops asking for tools (or a safety cap is hit).
 func (c *Client) Run(ctx context.Context, system, userMsg string, tools []Tool, emit func(Event)) error {
+	return c.RunTurns(ctx, system, []Turn{{Role: "user", Text: userMsg}}, tools, emit)
+}
+
+// RunTurns is Run over a conversation. The turns are normalised first — the
+// Messages API requires a user turn to start and roles to alternate, and the
+// history comes from a browser, so it can't be trusted to be either.
+func (c *Client) RunTurns(ctx context.Context, system string, turns []Turn, tools []Tool, emit func(Event)) error {
 	byName := map[string]Tool{}
 	specs := make([]toolSpec, 0, len(tools))
 	for _, t := range tools {
@@ -110,7 +124,10 @@ func (c *Client) Run(ctx context.Context, system, userMsg string, tools []Tool, 
 		specs = append(specs, toolSpec{Name: t.Name, Description: t.Description, InputSchema: t.Schema})
 	}
 
-	msgs := []message{{Role: "user", Content: []contentBlock{{Type: "text", Text: userMsg}}}}
+	msgs := normalise(turns)
+	if len(msgs) == 0 {
+		return fmt.Errorf("no message to send")
+	}
 
 	const maxTurns = 6
 	for turn := 0; turn < maxTurns; turn++ {
@@ -144,6 +161,36 @@ func (c *Client) Run(ctx context.Context, system, userMsg string, tools []Tool, 
 		msgs = append(msgs, message{Role: "user", Content: results})
 	}
 	return fmt.Errorf("stopped after %d turns", maxTurns)
+}
+
+// normalise turns a loose conversation into a valid message list: empty turns
+// dropped, any leading assistant turns dropped, consecutive same-role turns
+// merged, and anything that isn't "assistant" treated as a user turn.
+func normalise(turns []Turn) []message {
+	var msgs []message
+	for _, t := range turns {
+		text := strings.TrimSpace(t.Text)
+		if text == "" {
+			continue
+		}
+		role := "user"
+		if t.Role == "assistant" {
+			role = "assistant"
+		}
+		if len(msgs) == 0 && role == "assistant" {
+			continue // a conversation must open with the user
+		}
+		if n := len(msgs); n > 0 && msgs[n-1].Role == role {
+			msgs[n-1].Content[0].Text += "\n\n" + text
+			continue
+		}
+		msgs = append(msgs, message{Role: role, Content: []contentBlock{{Type: "text", Text: text}}})
+	}
+	// A trailing assistant turn would leave the model nothing to answer.
+	if n := len(msgs); n > 0 && msgs[n-1].Role == "assistant" {
+		msgs = msgs[:n-1]
+	}
+	return msgs
 }
 
 // stream performs one streaming request, emitting text tokens as they arrive.

@@ -18,6 +18,79 @@ func sse(w http.ResponseWriter, lines ...string) {
 	w.(http.Flusher).Flush()
 }
 
+// The conversation comes from a browser, so it can arrive in any shape. The
+// Messages API won't accept just any shape, hence normalise.
+func TestNormalise(t *testing.T) {
+	got := normalise([]Turn{
+		{Role: "assistant", Text: "dropped: nothing to answer"},
+		{Role: "user", Text: "where am I?"},
+		{Role: "", Text: "…and what's nearby?"}, // unknown role reads as user
+		{Role: "assistant", Text: "Near Hampton Court."},
+		{Role: "user", Text: "   "}, // empty turns vanish
+		{Role: "user", Text: "is the café open?"},
+	})
+	if len(got) != 3 {
+		t.Fatalf("got %d messages, want 3: %+v", len(got), got)
+	}
+	if got[0].Role != "user" || got[0].Content[0].Text != "where am I?\n\n…and what's nearby?" {
+		t.Errorf("consecutive user turns not merged: %+v", got[0])
+	}
+	if got[1].Role != "assistant" || got[2].Role != "user" {
+		t.Errorf("roles must alternate: %+v", got)
+	}
+	if got[2].Content[0].Text != "is the café open?" {
+		t.Errorf("last turn = %q", got[2].Content[0].Text)
+	}
+	// A trailing assistant turn leaves nothing to answer, so it goes.
+	if n := normalise([]Turn{{Role: "user", Text: "hi"}, {Role: "assistant", Text: "hello"}}); len(n) != 1 {
+		t.Errorf("trailing assistant turn kept: %+v", n)
+	}
+	if n := normalise(nil); len(n) != 0 {
+		t.Errorf("empty conversation = %+v", n)
+	}
+}
+
+// TestRunTurnsSendsHistory checks the whole conversation reaches the API, so a
+// follow-up like "how far is it?" has something to refer to.
+func TestRunTurnsSendsHistory(t *testing.T) {
+	var got request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		sse(w,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"300m north."}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+			`{"type":"message_stop"}`,
+		)
+	}))
+	defer srv.Close()
+
+	c := New("test-key", "")
+	c.URL = srv.URL
+	var out strings.Builder
+	err := c.RunTurns(context.Background(), "sys", []Turn{
+		{Role: "user", Text: "is the café open?"},
+		{Role: "assistant", Text: "Until 17:00."},
+		{Role: "user", Text: "how far is it?"},
+	}, nil, func(ev Event) {
+		if ev.Type == "text" {
+			out.WriteString(ev.Text)
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunTurns: %v", err)
+	}
+	if len(got.Messages) != 3 {
+		t.Fatalf("sent %d messages, want 3", len(got.Messages))
+	}
+	if got.Messages[1].Role != "assistant" || got.Messages[1].Content[0].Text != "Until 17:00." {
+		t.Errorf("prior answer not replayed: %+v", got.Messages[1])
+	}
+	if out.String() != "300m north." {
+		t.Errorf("streamed %q", out.String())
+	}
+}
+
 // TestRunToolLoop runs a two-turn conversation: the first response asks for a
 // tool, the second (after the tool result) streams a final answer. It verifies
 // the loop runs the tool, feeds the result back, and streams text to emit.
