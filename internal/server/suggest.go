@@ -31,13 +31,13 @@ type suggestRequest struct {
 }
 
 // ground is what the browser knows about where you've actually been: the OS grid
-// squares you've stood in. The server holds none of it — it arrives with the
+// squares you've been in. The server holds none of it — it arrives with the
 // request and leaves with the answer — but it's the strongest reason the agent
-// can give for going out, because "you have never stood there" is true and
+// can give for going out, because "you have never been there" is true and
 // specific in a way a recommendation isn't.
 type ground struct {
 	Here      string       `json:"here"`      // the square you're in, e.g. "TQ 15 68"
-	Visited   int          `json:"visited"`   // how many squares you've ever stood in
+	Visited   int          `json:"visited"`   // how many squares you've ever been in
 	New       bool         `json:"new"`       // …and whether this one is new today
 	Unvisited []groundNext `json:"unvisited"` // neighbouring squares you've never been in
 }
@@ -55,16 +55,18 @@ func (g *ground) text() string {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "\nNew ground: they're standing in OS grid square %s", g.Here)
+	fmt.Fprintf(&b, "\nNew ground: they're in OS grid square %s", g.Here)
 	if g.New {
 		b.WriteString(", which they've never been in before")
 	}
-	if g.Visited > 0 {
-		fmt.Fprintf(&b, ". They've stood in %d squares of the National Grid so far", g.Visited)
+	if g.Visited == 1 {
+		b.WriteString(". It's the first square of the National Grid they've been in")
+	} else if g.Visited > 1 {
+		fmt.Fprintf(&b, ". They've been in %d squares of the National Grid so far", g.Visited)
 	}
 	b.WriteString(".\n")
 	if len(g.Unvisited) > 0 {
-		b.WriteString("Squares next to them they have never set foot in: ")
+		b.WriteString("Squares next to them they have never been in: ")
 		parts := make([]string, 0, len(g.Unvisited))
 		for _, u := range g.Unvisited {
 			parts = append(parts, fmt.Sprintf("%s (%s)", u.Square, u.Dir))

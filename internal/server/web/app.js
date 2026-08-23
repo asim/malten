@@ -7,7 +7,7 @@
   const TIMELINE = 'malten_timeline2'; // the trail so far, so a reload isn't a fresh start
   const TIMELINE_TTL = 7 * 24 * 3600e3; // a week; older than that, start a fresh trail
   const TIMELINE_V = 1;                // schema version of the stored log
-  const SQUARES = 'malten_squares';    // OS grid squares you've stood in: {code: {t, place}}
+  const SQUARES = 'malten_squares';    // OS grid squares you've been in: {code: {t, place}}
 
   // Storage that degrades instead of throwing. localStorage is unavailable or
   // throws in some private-browsing modes, so fall back to sessionStorage (the
@@ -73,7 +73,7 @@
     },
     clearTimeline: () => S.removeItem(TIMELINE),
 
-    // New ground: the OS National Grid squares you've actually stood in, kept
+    // New ground: the OS National Grid squares you've actually been in, kept
     // forever (unlike the timeline, which ages out) because it's the map of
     // where you've been. { "TQ 15 68": {t, place} } — no score, no streak, just
     // the record. It never leaves the browser except as context for a nudge.

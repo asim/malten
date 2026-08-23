@@ -110,7 +110,7 @@ func TestNudgeSendsWhenThereIsAReason(t *testing.T) {
 	// What the agent was told matters as much as that it was asked.
 	for _, want := range []string{
 		"TQ 15 68",       // where they are
-		"never set",      // the unexplored squares around them
+		"never been in",  // the unexplored squares around them
 		"NOTHING AT ALL", // the instruction to stay quiet by default
 	} {
 		if !strings.Contains(prompt, want) {

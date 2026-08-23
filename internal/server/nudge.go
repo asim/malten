@@ -49,7 +49,7 @@ type subscriber struct {
 	Lat      float64           `json:"lat"` // centre of the 1 km square they were last in
 	Lng      float64           `json:"lng"`
 	Square   string            `json:"square"`
-	Squares  []string          `json:"squares"`   // squares they've stood in
+	Squares  []string          `json:"squares"`   // squares they've been in
 	TZOffset int               `json:"tz_offset"` // minutes, as JS getTimezoneOffset (west is positive)
 	Recent   []string          `json:"recent"`    // the last few nudges sent
 	LastSent time.Time         `json:"last_sent"`
@@ -227,7 +227,7 @@ const nudgeSystem = `You are Malten, a spatial guide for Great Britain. Someone 
 
 Reply with NOTHING AT ALL — an empty response — unless there is a specific, concrete, time-bound reason to go outside in the next hour or two. Staying silent is the normal outcome and costs nothing; a weak notification costs their trust.
 
-Reasons that are good enough: somewhere close by they have never set foot; weather that suits a particular walk right now; a train or bus that makes somewhere reachable and back; the last of the daylight. Reasons that are not: generic encouragement, exercise advice, anything you'd say on any day, anything you've said to them before.
+Reasons that are good enough: somewhere close by they have never been; weather that suits a particular walk right now; a train or bus that makes somewhere reachable and back; the last of the daylight. Reasons that are not: generic encouragement, exercise advice, anything you'd say on any day, anything you've said to them before.
 
 If you do reply, write one or two short sentences, warm and specific, naming the place and the direction, as if nudging a friend out the door. No greeting, no markdown, no emoji, no exclamation marks. Never mention points, badges, streaks or scores — the reward is the place.`
 

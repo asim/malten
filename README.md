@@ -46,9 +46,9 @@ the spatial memory, not the map data.
   tagged in view by real compass bearing. Tap one to lock a navigation beacon
   with a live-updating arrow and distance.
 - **New ground.** The National Grid divides Britain into 1 km squares; the ones
-  you've stood in are the map of where you've actually been. Walk into one for
-  the first time and the feed says so. No points, no streaks, nobody to compete
-  with — and the agent knows which squares near you you've never set foot in, so
+  you've been in are the map of where you've actually been. Enter one for the
+  first time and the feed says so. No points, no streaks, nobody to compete
+  with — and the agent knows which squares near you you've never been in, so
   it can send you somewhere genuinely new.
 - **Nudges (opt-in).** An hourly loop that usually says nothing. It notifies only
   when there's a specific, time-bound reason — somewhere new a short walk away,

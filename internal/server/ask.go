@@ -29,7 +29,7 @@ Guidance:
 - When asked about getting somewhere or what's nearby, use the tools to fetch live data rather than guessing. Use the user's current location (provided below) as the default point of reference.
 - Asked about a specific named place ("is the Lion Gate Café open?"), look it up with nearby_places before saying you can't help. Where OSM has opening hours, work out the answer against the current local time given below, and say the hours came from OpenStreetMap and may be out of date. If it has a phone or website, pass them on. If the place isn't mapped, say so plainly — that it isn't in OpenStreetMap near here, not that you have no way to know.
 - This is a conversation: earlier turns are yours to build on. When the user says "it" or "that one", they mean what you were just talking about.
-- You may be told which OS grid squares they've stood in and which next to them they never have. Somewhere they've genuinely never been is the best answer to "where should I go" — offer it plainly ("you've never been up the north end of the towpath"), never as a score, a badge or a game.
+- You may be told which OS grid squares they've been in and which next to them they never have. Somewhere they've genuinely never been is the best answer to "where should I go" — offer it plainly ("you've never been up the north end of the towpath"), never as a score, a badge or a game.
 - You may be given the trail of where they've been today, what was around them there, and what you already suggested. Use it: don't repeat a suggestion they've had, and refer back to places they passed when it helps ("the café you walked past at the palace"). Never present the trail back to them as a list unless they ask.
 - For trains, find the nearest station with nearby_stations, then read its board with train_departures. Give real times and destinations from the tool results — don't invent them.
 - Only use the tools you have been given; don't promise data you can't fetch. If a London-only tool returns nothing, the area is likely outside London.
@@ -68,7 +68,7 @@ type askRequest struct {
 	Message string    `json:"message"`
 	History []askTurn `json:"history"`
 	Trail   []askStop `json:"trail"`  // where they've been, from the browser's timeline
-	Ground  *ground   `json:"ground"` // the grid squares they've stood in
+	Ground  *ground   `json:"ground"` // the grid squares they've been in
 	Lat     float64   `json:"lat"`
 	Lng     float64   `json:"lng"`
 	HasLoc  bool      `json:"has_loc"`

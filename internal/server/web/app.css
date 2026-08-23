@@ -53,7 +53,7 @@ body.look-open .viewbtn { display: none; }
 .tl-entry.muted { border-style: dashed; background: transparent; color: var(--muted); }
 .tl-entry.loading { color: var(--muted); font-style: italic; }
 .tl-entry.ask { background: color-mix(in srgb, var(--fg) 8%, var(--panel)); border-color: transparent; }
-/* New ground — a square of Britain you'd never stood in. The one moment in the
+/* New ground — a square of Britain you'd never been in. The one moment in the
    feed worth marking, so it gets the only accent in the app. */
 .tl-entry.ground { border-color: var(--fg); border-width: 1.5px; }
 .tl-entry.ground .t { font-weight: 600; }

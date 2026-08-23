@@ -5,7 +5,7 @@
 // slow. API traffic is never cached.
 //
 // Bump VERSION whenever the shell changes; it wipes the old cache on activate.
-const VERSION = 'malten-v50';
+const VERSION = 'malten-v51';
 const SHELL = [
   '/',
   '/app.css', '/app.js', '/leaflet.js', '/leaflet.css', '/manifest.webmanifest',

@@ -83,7 +83,7 @@ content**:
   `internal/push`). The only part of Malten that reaches out rather than waiting
   to be opened: an hourly loop over opted-in devices that **usually decides to
   say nothing**. The agent is asked whether there's a specific, time-bound reason
-  to interrupt — somewhere they've never stood, the last of the light, a train
+  to interrupt — somewhere they've never been, the last of the light, a train
   back — and returns nothing if not. At most one a day, never outside 08:00–20:00
   local. Web Push is hand-rolled (VAPID/RFC 8292 + RFC 8291 aes128gcm), so no SDK;
   the payload is encrypted for the subscriber's browser and the push service
@@ -166,7 +166,7 @@ server (no network, no key).
   data © Crown copyright and database rights <year>"); keep it on the map. The
   vendored rail station dataset is ODbL — keep its attribution too.
 - **The reward is the place, never a score.** "New ground" (the 1 km grid
-  squares you've stood in, `Malten.getSquares`) is a record, not a game: no
+  squares you've been in, `Malten.getSquares`) is a record, not a game: no
   points, badges, streaks or leaderboards, and the prompts say so explicitly.
   Extrinsic rewards are exactly what made check-in apps hollow. Keep it a fact
   about where someone has been.

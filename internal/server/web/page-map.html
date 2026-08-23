@@ -1079,10 +1079,12 @@
         break;
       }
       case 'ground':
-        // The reward for going out: a square of Britain you had never stood in.
+        // The reward for going out: a square of Britain you had never been in.
         // Stated as a fact, not a score — no points, nothing to lose.
+        // "First time here" — not "first time you've stood here": you might have
+        // come through on a bus.
         el = entryEl('🧭', 'New ground' + (ev.place ? ' · ' + esc(ev.place) : ''),
-          esc(ev.square) + ' — first time you’ve stood here' + (ev.count > 1 ? ' · ' + ev.count + ' squares so far' : ''), 'ground');
+          esc(ev.square) + ' — first time here' + (ev.count > 1 ? ' · ' + ev.count + ' squares so far' : ''), 'ground');
         break;
       case 'q': el = entryEl('💬', esc(ev.text), '', 'ask'); break;
       case 'a':
@@ -1100,7 +1102,7 @@
   }
 
   // --- new ground -------------------------------------------------------------
-  // The National Grid divides Britain into 1 km squares. The ones you've stood
+  // The National Grid divides Britain into 1 km squares. The ones you've been
   // in are the map of where you've actually been — the quiet reward for going
   // out, and the agent's best reason to send you somewhere ("you've never been
   // up there"). Kept in this browser; only ever leaves as context for a nudge.
@@ -1116,7 +1118,7 @@
   }
 
   // What the agent gets: where you're standing, how much ground you've covered,
-  // and which squares next to you you've never set foot in.
+  // and which squares next to you you've never been in.
   function askGround() {
     if (!squareNow) return null;
     const been = Malten.getSquares();
@@ -1193,7 +1195,7 @@
     const bits = [];
     if (a.weather) bits.push(wxEmoji(a.weather.code, a.weather.is_day) + ' ' + Math.round(a.weather.temp_c) + '° · ' + esc(a.weather.text) +
       (a.weather.wind_kph >= 20 ? ' · breezy' : ''));
-    // How much of the grid you've stood in. Stated quietly, once — it's a fact
+    // How much of the grid you've covered. Stated quietly, once — it's a fact
     // about your life, not a score to chase.
     const n = Object.keys(Malten.getSquares()).length;
     if (n) bits.push('🧭 ' + n + ' square' + (n === 1 ? '' : 's'));
