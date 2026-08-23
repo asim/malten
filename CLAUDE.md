@@ -73,8 +73,10 @@ content**:
   door, an append-only log of what happened: arriving somewhere, what's around,
   a nudge, a question, an answer — each appended in the order it happened and
   never rewritten, so a conversation and the trail don't disturb each other. A
-  fix is appended when you move ~180m or reopen after a while; standing still
-  adds nothing. The map is behind a button. The agent has the same snapshot (`around_me`).
+  fix means *arriving somewhere*: one location watch drives the map (which
+  follows you) and the feed, and a fix is appended when you've covered ~400m at
+  walking pace or stopped after travelling — driving past somewhere at 60mph
+  isn't being there. Standing still adds nothing. The map is behind a button. The agent has the same snapshot (`around_me`).
   Composes existing feeds only — no new keys.
 
 - **Nudges you outdoors** (`/api/push/*`, `internal/server/nudge.go`,

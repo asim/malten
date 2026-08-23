@@ -33,13 +33,10 @@
         <div class="tl-place" id="tl-place">Finding you…</div>
         <div class="tl-weather" id="tl-weather"></div>
       </div>
+      <!-- Nudges: opt-in, off by default, and out of the composer's way. -->
+      <button class="bell" id="nudge-on" hidden title="Nudge me outdoors">🔔</button>
     </div>
     <div class="tl-feed" id="tl-feed"></div>
-    <!-- Nudges: opt-in, off by default, and honest about what it costs. -->
-    <div class="tl-nudge" id="tl-nudge" hidden>
-      <button class="ghost" id="nudge-on">Nudge me outdoors</button>
-      <span class="tl-nudge-note">Once a day at most, only when there's a reason. Roughly where you are is kept on the server so it can find one; turning it off deletes it.</span>
-    </div>
     <!-- Ask about where you are. The answer lands in the feed, not in a chat. -->
     <form class="tl-ask" id="tl-ask" hidden>
       <input id="tl-q" type="text" placeholder="Ask about here…" autocomplete="off" enterkeyhint="send">
@@ -279,29 +276,106 @@
   }
 
   // --- location --------------------------------------------------------------
-  let meMarker = null, meCircle = null;
-  document.getElementById('locate').onclick = () => { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); };
-  map.on('locationfound', e => {
-    myLoc = e.latlng;
-    if (typeof lookView !== 'undefined' && !lookView.hidden && !lookTargets.length) loadLookTargets(e.latlng);
-    if (meMarker) map.removeLayer(meMarker);
-    if (meCircle) map.removeLayer(meCircle);
-    meMarker = L.marker(e.latlng, { icon: meIcon }).addTo(map);
-    meCircle = L.circle(e.latlng, { radius: e.accuracy, color: '#2b7fff', weight: 1, fillOpacity: 0.08 }).addTo(map);
-    // Only recentre if you're within OS coverage (Great Britain). Otherwise the
-    // basemap would go blank — OS maps don't cover NI, Ireland or abroad.
-    fetch('/api/gridref?lat=' + e.latlng.lat + '&lng=' + e.latlng.lng)
-      .then(r => r.json())
-      .then(d => {
-        if (d.in_gb) { map.setView(e.latlng, Math.max(placeZoom(), map.getZoom())); hintEl.textContent = 'Tap the map to log a find'; goLive(e.latlng); }
+  // One watch drives everything: the marker on the map, the map following you,
+  // and the timeline's fixes. A single-shot locate would leave the app looking
+  // dead the moment you started moving.
+  let meMarker = null, meCircle = null, locWatch = null, locRestart = null;
+  let followMe = true;      // the map keeps up with you until you drag it away
+  let speedMps = 0;         // how fast you're moving, from the device or successive fixes
+  let lastFixAt = 0;        // when the last position arrived, for the live marker
+  let firstFix = true, checkedGB = false;
+
+  const locateBtn = document.getElementById('locate');
+  locateBtn.onclick = () => {
+    followMe = true;
+    locateBtn.classList.add('accent');
+    if (myLoc) map.setView(myLoc, Math.max(placeZoom(), map.getZoom()));
+    else hintEl.textContent = 'Finding your location…';
+    startLocation(); // and make sure the watch is actually running
+  };
+  // Dragging the map means you want to look somewhere else; stop chasing you.
+  map.on('dragstart', () => { followMe = false; locateBtn.classList.remove('accent'); });
+
+  function showMe(ll, accuracy) {
+    if (meMarker) { meMarker.setLatLng(ll); } else { meMarker = L.marker(ll, { icon: meIcon }).addTo(map); }
+    if (meCircle) { meCircle.setLatLng(ll).setRadius(accuracy); }
+    else { meCircle = L.circle(ll, { radius: accuracy, color: '#2b7fff', weight: 1, fillOpacity: 0.08 }).addTo(map); }
+  }
+
+  function onPosition(pos) {
+    const acc = pos.coords.accuracy || 0;
+    // Take what we're given: a rough fix is better than a dead app. Only reject
+    // a wild one when we already have something better.
+    if (acc > 200 && myLoc) return;
+    const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    // How fast you're going, so the timeline can tell walking from driving. The
+    // device's own speed if it has one, otherwise from the last position.
+    const now = Date.now();
+    if (typeof pos.coords.speed === 'number' && pos.coords.speed >= 0) {
+      speedMps = pos.coords.speed;
+    } else if (myLoc && lastFixAt) {
+      const dt = (now - lastFixAt) / 1000;
+      if (dt > 120) {
+        speedMps = 0; // long gap (backgrounded, or a fresh start): assume settled
+      } else if (dt >= 0.8) {
+        const v = distM(myLoc.lat, myLoc.lng, ll.lat, ll.lng) / dt;
+        if (v < 60) speedMps = v; // 200+ km/h is the GPS jumping, not you moving
+      }
+    }
+    myLoc = ll;
+    lastFixAt = now;
+    showMe(ll, acc);
+    if (followMe) map.setView(ll, Math.max(placeZoom(), map.getZoom()), { animate: true });
+    liveMark();
+
+    if (typeof lookView !== 'undefined' && !lookView.hidden && !lookTargets.length) loadLookTargets(ll);
+
+    // Check coverage once — the basemap is Great Britain only.
+    if (!checkedGB) {
+      checkedGB = true;
+      fetch('/api/gridref?lat=' + ll.lat + '&lng=' + ll.lng).then(r => r.json()).then(d => {
+        if (d.in_gb) { hintEl.textContent = 'Tap the map to log a find'; goLive(ll); }
         else {
           hintEl.textContent = 'You’re outside OS coverage — Great Britain only';
-          if (localStorage.getItem('malten_interest') !== 'done') openInterest(e.latlng);
+          if (localStorage.getItem('malten_interest') !== 'done') openInterest(ll);
         }
-      })
-      .catch(() => { map.setView(e.latlng, Math.max(placeZoom(), map.getZoom())); });
+      }).catch(() => {});
+    }
+
+    // Opening the app after a while is worth a fresh look even standing still —
+    // but a quick reload isn't, or the feed fills with repeats of here.
+    const reopened = firstFix && (!lastFix || Date.now() - lastFix.t > TL_REOPEN_MS);
+    firstFix = false;
+    timelineFix(ll, reopened);
+  }
+
+  function onPositionError(err) {
+    if (err && err.code === 1) { // permission denied — asking again won't help
+      hintEl.textContent = 'Location is off — turn it on to see what’s around you';
+      liveMark();
+      return;
+    }
+    // A timeout ends the watch on some browsers. Start it again rather than
+    // going quietly dead for the rest of the session.
+    clearTimeout(locRestart);
+    locRestart = setTimeout(startLocation, 5000);
+  }
+
+  function startLocation() {
+    if (!navigator.geolocation) return;
+    clearTimeout(locRestart);
+    if (locWatch !== null) navigator.geolocation.clearWatch(locWatch);
+    locWatch = navigator.geolocation.watchPosition(onPosition, onPositionError,
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+  }
+
+  // Coming back to the app: the watch was probably suspended in the background,
+  // so restart it and get a fresh fix straight away.
+  addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    startLocation();
+    liveMark();
   });
-  map.on('locationerror', () => { hintEl.textContent = 'Location unavailable — tap the map to log a find'; });
 
   // --- live transport overlay (TfL: London) ---------------------------------
   const stopLayer = L.layerGroup().addTo(map);
@@ -505,7 +579,7 @@
   // Tapping 💡 asks the background agent for a fresh idea about where you are.
   ideaBtn.onclick = () => {
     if (myLoc) showAround(myLoc);
-    else { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }
+    else { hintEl.textContent = 'Finding your location…'; startLocation(); }
   };
 
   let ideaHistory = [], currentIdea = '';
@@ -553,7 +627,10 @@
       clearTimeout(aroundTimer);
       // With a live suggestion loop the card stays; without the agent it self-dismisses.
       if (!askAvail) aroundTimer = setTimeout(closeAround, 30000);
-      if (askAvail) fetchIdea(latlng, seq, 'fresh');
+      // The feed has probably just asked for a nudge here. Show that one rather
+      // than paying for a second opinion on the same place.
+      else if (lastIdea && lastIdea.text && Date.now() - lastIdea.t < 20 * 60e3) renderIdea(lastIdea.text);
+      else fetchIdea(latlng, seq, 'fresh');
     } catch (_) {}
   }
 
@@ -676,7 +753,7 @@
       lookCam.srcObject = lookStream;
     } catch (_) { lookHint.textContent = 'Camera permission is needed to look around.'; }
     if (myLoc) loadLookTargets(myLoc);
-    else { lookHint.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }
+    else { lookHint.textContent = 'Finding your location…'; startLocation(); }
     startWatch();
   }
 
@@ -906,7 +983,6 @@
   const tlPlace = document.getElementById('tl-place');
   const tlWeather = document.getElementById('tl-weather');
   const tlFeed = document.getElementById('tl-feed');
-  let tlWatch = null;
 
   // The feed and the map are one view with two faces, so they share one button
   // in one place — it just changes what it says.
@@ -923,12 +999,24 @@
   }
   viewBtn.onclick = () => (timelineEl.hidden ? showTimeline() : showMap());
 
+  // The clock line doubles as the "is this thing on?" light: it says when the
+  // last fix arrived, so a feed that isn't moving is obviously the world being
+  // still rather than the app being dead.
   function tickClock() {
     const d = new Date();
-    tlTime.textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) +
-      ' · ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    let live = '';
+    if (!navigator.geolocation) live = ' · no location';
+    else if (!lastFixAt) live = ' · finding you…';
+    else {
+      const age = Math.round((Date.now() - lastFixAt) / 1000);
+      live = age < 90 ? ' · live' : age < 3600 ? ' · ' + Math.round(age / 60) + ' min ago' : '';
+    }
+    tlTime.innerHTML = esc(d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) +
+      ' · ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })) +
+      '<span class="tl-live' + (lastFixAt && Date.now() - lastFixAt < 90e3 ? ' on' : '') + '">' + esc(live) + '</span>';
   }
-  tickClock(); setInterval(tickClock, 20000);
+  const liveMark = () => tickClock();
+  tickClock(); setInterval(tickClock, 15000);
 
   function wxEmoji(code, day) {
     if (code === 0 || code === 1) return day ? '☀️' : '🌙';
@@ -1242,7 +1330,7 @@
   // a day, and only when the agent finds a real reason. Subscribing hands the
   // server your push endpoint, roughly where you are (a 1 km square, not a fix)
   // and which squares you've explored — turning it off deletes all of it.
-  const nudgeBox = document.getElementById('tl-nudge'), nudgeBtn = document.getElementById('nudge-on');
+  const nudgeBtn = document.getElementById('nudge-on');
   let vapidKey = '', pushSub = null;
 
   const b64ToBytes = (s) => {
@@ -1253,10 +1341,22 @@
     btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
   function nudgeUI() {
-    if (!vapidKey || !('serviceWorker' in navigator) || !('PushManager' in window)) { nudgeBox.hidden = true; return; }
-    nudgeBox.hidden = false;
-    nudgeBtn.textContent = pushSub ? 'Nudges on — turn off' : 'Nudge me outdoors';
-    nudgeBox.classList.toggle('on', !!pushSub);
+    if (!vapidKey || !('serviceWorker' in navigator) || !('PushManager' in window)) { nudgeBtn.hidden = true; return; }
+    nudgeBtn.hidden = false;
+    nudgeBtn.classList.toggle('on', !!pushSub);
+    nudgeBtn.title = pushSub ? 'Nudges on — tap to turn off' : 'Nudge me outdoors';
+  }
+
+  // The trade is explained where the choice is made, not in permanent chrome.
+  function nudgeExplain() {
+    return new Promise(resolve => {
+      openSheet('keycard', '<h2>Nudge me outdoors</h2>' +
+        '<p>At most once a day, and only when there’s a real reason — somewhere close by you’ve never been, the last of the light, a train that gets you back. Most days it stays quiet.</p>' +
+        '<p>To find a reason while the app is closed, the server keeps your notification address, roughly where you are (a 1 km grid square, not your exact position) and which squares you’ve explored. Turning nudges off deletes it.</p>' +
+        '<div class="row"><span class="spacer"></span><button class="ghost" id="nudge-no">Not now</button><button class="primary" id="nudge-yes">Turn on</button></div>');
+      sheet.querySelector('#nudge-no').onclick = () => { closeSheet(); resolve(false); };
+      sheet.querySelector('#nudge-yes').onclick = () => { closeSheet(); resolve(true); };
+    });
   }
 
   async function nudgeInit() {
@@ -1296,6 +1396,7 @@
           body: JSON.stringify({ endpoint }),
         }).catch(() => {});
       } else {
+        if (!await nudgeExplain()) return;
         if (await Notification.requestPermission() !== 'granted') return;
         const reg = await navigator.serviceWorker.ready;
         pushSub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(vapidKey) });
@@ -1348,13 +1449,28 @@
   // A fix is appended when you've moved somewhere new, or when you open the app
   // after a while. Standing still adds nothing: the feed stays put, so a
   // conversation isn't pushed around by a trickle of repeat entries.
-  const TL_MOVED_M = 180;        // far enough away to count as somewhere new
+  // The feed is a trail of places you were, not a GPS trace. So a fix is
+  // "arrived somewhere": you've covered ground on foot, or you've stopped after
+  // travelling. Driving past somewhere at 60mph isn't being there.
+  const TL_MOVED_M = 400;         // on foot, far enough to be somewhere else
   const TL_REOPEN_MS = 10 * 60e3; // reopening after this long is worth a fresh fix
+  const TL_FAST_MPS = 4;          // ~14 km/h and up: travelling, not exploring
+  const TL_FAR_M = 10000;         // …a long journey still leaves the odd mark
   let fixing = false, pendingFix = null;
 
   async function timelineFix(latlng, force) {
-    const moved = !lastFix || distM(latlng.lat, latlng.lng, lastFix.lat, lastFix.lng) >= TL_MOVED_M;
-    if (!force && !moved) return;
+    const gap = lastFix ? distM(latlng.lat, latlng.lng, lastFix.lat, lastFix.lng) : Infinity;
+    if (!force) {
+      if (speedMps >= TL_FAST_MPS) {
+        // Moving fast: say nothing until you stop, unless the journey is long
+        // enough that a silent hour would be stranger than an entry.
+        if (gap < TL_FAR_M) return;
+      } else if (gap < TL_MOVED_M) {
+        return; // you haven't gone anywhere yet
+      }
+      // No clock guard is needed: below walking-ish speed, covering TL_MOVED_M
+      // takes minutes anyway, and anything faster is caught above.
+    }
     if (fixing) return;
     // Don't move the ground under a question that's still being answered — hold
     // the fix and append it once the answer has landed.
@@ -1421,21 +1537,6 @@
     saveNow();
   }
 
-  // A gentle location watch drives the timeline (independent of the map).
-  if (navigator.geolocation) {
-    let firstFix = true;
-    tlWatch = navigator.geolocation.watchPosition(pos => {
-      if (pos.coords.accuracy > 80) return;
-      const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
-      myLoc = ll;
-      // Opening the app after a while is worth a fresh look even standing still
-      // — but a quick reload isn't, or the feed fills with repeats of here.
-      const reopened = firstFix && (!lastFix || Date.now() - lastFix.t > TL_REOPEN_MS);
-      firstFix = false;
-      timelineFix(ll, reopened);
-    }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
-  }
-
   // --- wire it up ------------------------------------------------------------
   restoreTimeline(); // pick the trail back up where the last visit left it
   document.getElementById('settings').onclick = askForKey;
@@ -1445,8 +1546,9 @@
   updateCount();
   setTiles(); // client-key path until /api/health confirms server-side tiles
 
-  // Auto-locate on load so the map opens where you are (and the agent knows
-  // your location). The locationfound handler only recentres inside GB.
-  setTimeout(() => { hintEl.textContent = 'Finding your location…'; map.locate({ enableHighAccuracy: true, timeout: 10000 }); }, 400);
+  // Start following straight away: the feed and the map are only alive if the
+  // location is.
+  hintEl.textContent = 'Finding your location…';
+  startLocation();
 </script>
 {{end}}
