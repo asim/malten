@@ -35,6 +35,39 @@
   function read(k, f) { try { return JSON.parse(S.getItem(k)) || f; } catch (_) { return f; } }
   function write(k, v) { S.setItem(k, JSON.stringify(v)); }
 
+  // A one-store IndexedDB for photos, opened on demand. Every failure resolves
+  // to null rather than rejecting: a browser with no IndexedDB (or a full disk)
+  // should cost you the photo, not the app.
+  const PHOTOS = 'malten_photos';
+  let dbPromise = null;
+  function db() {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise((resolve) => {
+      if (!window.indexedDB) return resolve(null);
+      let req;
+      try { req = indexedDB.open(PHOTOS, 1); } catch (_) { return resolve(null); }
+      req.onupgradeneeded = () => { try { req.result.createObjectStore('photos'); } catch (_) {} };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    });
+    return dbPromise;
+  }
+  async function idbDo(mode, fn) {
+    const d = await db();
+    if (!d) return null;
+    return new Promise((resolve) => {
+      let tx;
+      try { tx = d.transaction('photos', mode); } catch (_) { return resolve(null); }
+      const req = fn(tx.objectStore('photos'));
+      tx.onabort = tx.onerror = () => resolve(null);
+      // Resolve with the request's own result: a get that finds nothing must
+      // come back empty, not "true" — the caller hands it to createObjectURL.
+      if (req) { req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(null); }
+      else tx.oncomplete = () => resolve(true);
+    });
+  }
+
   window.Malten = {
     getFinds: () => read(FINDS, []),
     setFinds: (f) => write(FINDS, f),
@@ -53,6 +86,9 @@
     //       {id, t, k:'idea',  text}                     a nudge from the agent
     //       {id, t, k:'q',     text}                     you asked
     //       {id, t, k:'a',     text}                     the agent answered
+    //       {id, t, k:'hunt',  items:[{what,hint,done}], place
+    //       {id, t, k:'find',  findId, lat, lng, note, ref, photo}
+    //       {id, t, k:'ground',square, place, count}    a square you'd not been in
     //       {id, t, k:'city'}                            out of coverage
     //   ]}
     getTimeline: () => {
@@ -91,6 +127,15 @@
     getKidAge: () => +(S.getItem(KIDAGE) || 0) || 6,
     hasKidAge: () => !!S.getItem(KIDAGE),
     setKidAge: (n) => S.setItem(KIDAGE, String(n)),
+    // Photos of finds. They live in IndexedDB rather than localStorage — a
+    // photo is a Blob and far too big for a string store — but the rule is the
+    // same as everything else here: it stays on this device. Nothing uploads it,
+    // and there is nowhere on the server it could go.
+    putPhoto: (id, blob) => idbDo('readwrite', (st) => st.put(blob, id)), // resolves to the id, or null
+    getPhoto: (id) => idbDo('readonly', (st) => st.get(id)),
+    delPhoto: (id) => idbDo('readwrite', (st) => st.delete(id)),
+    photosAvailable: () => !!window.indexedDB,
+
     getKey: () => S.getItem(KEY) || '',
     setKey: (k) => k ? S.setItem(KEY, k) : S.removeItem(KEY),
     newId: () => { const a = new Uint8Array(6); crypto.getRandomValues(a); return 'F-' + Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); },

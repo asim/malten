@@ -148,6 +148,10 @@ server (no network, no key).
 
 ## Conventions & invariants (do not break these)
 
+- **Photos never leave the device.** A find can carry a photo; it's downscaled
+  in the browser and kept in IndexedDB (`Malten.putPhoto/getPhoto/delPhoto`),
+  never uploaded, and deleted with its find. There is no endpoint that accepts
+  an image and there must not be one.
 - **The server stores nothing about users.** Finds, the OS key and the timeline
   (place fixes and the whole conversation) live client-side and never touch the
   server; the live-data proxy and the agent hold no user content, and Ask

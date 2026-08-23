@@ -39,6 +39,10 @@
     <div class="tl-feed" id="tl-feed"></div>
     <!-- Ask about where you are. The answer lands in the feed, not in a chat. -->
     <form class="tl-ask" id="tl-ask" hidden>
+      <!-- Photograph what you found. It's saved here, on this device, at this
+           grid reference — nothing is uploaded. -->
+      <button class="tl-cam" id="tl-cam" type="button" title="Photograph a find">📷</button>
+      <input id="tl-photo" type="file" accept="image/*" capture="environment" hidden>
       <input id="tl-q" type="text" placeholder="Ask about here…" autocomplete="off" enterkeyhint="send">
       <button class="tl-send" id="tl-send" type="submit" aria-label="Ask">↑</button>
     </form>
@@ -257,15 +261,34 @@
   }
 
   function popupHtml(f) {
-    return '<div class="note">' + (f.note ? esc(f.note) : '<span class="sub">No note</span>') + '</div>' +
+    return (f.photo ? '<img class="find-photo pop" alt="">' : '') +
+      '<div class="note">' + (f.note ? esc(f.note) : '<span class="sub">No note</span>') + '</div>' +
       '<div class="sub gridref">' + esc(f.grid_ref || 'Outside GB') + '</div>' +
       '<div class="row"><span class="spacer"></span><button class="ghost del">Delete</button></div>';
   }
   function addFindMarker(f) {
     const m = L.marker([f.lat, f.lng], { icon: pinIcon }).addTo(map).bindPopup(popupHtml(f));
     m.on('popupopen', e => {
-      const btn = e.popup.getElement().querySelector('.del');
-      if (btn) btn.onclick = () => { Malten.removeFind(f.id); map.removeLayer(m); updateCount(); };
+      const el = e.popup.getElement();
+      const img = el.querySelector('.find-photo');
+      // The photo has a fixed height in CSS, so it can arrive late without the
+      // popup needing a re-layout — which would rebuild its contents and take
+      // the delete button's handler with it.
+      if (img) Malten.getPhoto(f.id).then(blob => {
+        if (!blob) { img.remove(); return; }
+        const url = URL.createObjectURL(blob);
+        img.onload = () => URL.revokeObjectURL(url);
+        img.src = url;
+      });
+      // Delegated, for the same reason. Deleting a find takes its photo with it,
+      // so nothing is left orphaned in the store.
+      el.onclick = (ev) => {
+        if (!ev.target.closest('.del')) return;
+        Malten.removeFind(f.id);
+        Malten.delPhoto(f.id);
+        map.removeLayer(m);
+        updateCount();
+      };
     });
     return m;
   }
@@ -1117,6 +1140,27 @@
         });
         break;
       }
+      case 'find': {
+        // What you found, where you found it. The photo is fetched from this
+        // device's own store when the entry is drawn.
+        el = entryEl('📷', ev.note ? esc(ev.note) : 'A find',
+          esc(ev.ref || '') || 'Saved here', 'found');
+        if (ev.photo) {
+          const img = document.createElement('img');
+          img.className = 'find-photo';
+          img.alt = ev.note || 'A find';
+          img.loading = 'lazy';
+          Malten.getPhoto(ev.findId).then(blob => {
+            if (!blob) { img.remove(); return; }
+            const url = URL.createObjectURL(blob);
+            img.onload = () => URL.revokeObjectURL(url); // decoded; the URL can go
+            img.src = url;
+          });
+          el.querySelector('.bd').prepend(img);
+        }
+        el.onclick = () => showPlaceOnMap({ name: ev.note || 'A find', kind: ev.ref || 'find', lat: ev.lat, lng: ev.lng });
+        break;
+      }
       case 'q': el = entryEl('💬', esc(ev.text), '', 'ask'); break;
       case 'a':
         el = entryEl('✦', ev.text ? multiline(ev.text) : esc(ev.note || 'Thinking…'), '', 'ans' + (ev.text ? '' : ' loading'));
@@ -1454,6 +1498,84 @@
     vv.addEventListener('resize', fitKeyboard);
     vv.addEventListener('scroll', fitKeyboard);
     fitKeyboard();
+  }
+
+  // --- finds with photos ------------------------------------------------------
+  // The other half of going out with a child: they find the thing, they take
+  // the picture, and it's anchored to the grid square they were standing in. The
+  // photo goes to IndexedDB on this device and nowhere else.
+  const camBtn = document.getElementById('tl-cam'), photoInput = document.getElementById('tl-photo');
+  if (!Malten.photosAvailable()) camBtn.hidden = true;
+  camBtn.onclick = () => photoInput.click();
+  photoInput.onchange = () => {
+    const file = photoInput.files && photoInput.files[0];
+    photoInput.value = ''; // so the same photo can be picked twice
+    if (file) logPhoto(file);
+  };
+
+  // A phone camera gives you four megapixels of JPEG; a browser store gives you
+  // a few megabytes in total. Downscale before saving, keeping the orientation
+  // the camera recorded.
+  async function shrink(file, max, quality) {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    bmp.close && bmp.close();
+    return new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+  }
+
+  async function logPhoto(file) {
+    const at = myLoc || (lastFix ? L.latLng(lastFix.lat, lastFix.lng) : null);
+    if (!at) return;
+    const find = {
+      id: Malten.newId(), lat: at.lat, lng: at.lng, note: '',
+      grid_ref: null, created_at: new Date().toISOString(), photo: true,
+    };
+    // findId, not id: push() assigns the event's own id and would clobber it.
+    const ev = push({ k: 'find', findId: find.id, lat: find.lat, lng: find.lng, note: '', ref: '', photo: true });
+    try {
+      const blob = await shrink(file, 1280, 0.82);
+      if (!blob) throw new Error('no image');
+      const saved = await Malten.putPhoto(find.id, blob);
+      if (!saved) { find.photo = false; ev.photo = false; }
+    } catch (_) {
+      find.photo = false; ev.photo = false;
+    }
+    try {
+      const d = await (await fetch('/api/gridref?lat=' + at.lat + '&lng=' + at.lng)).json();
+      if (d.in_gb) find.grid_ref = ev.ref = d.grid_ref;
+    } catch (_) {}
+    Malten.addFind(find);
+    addFindMarker(find);
+    updateCount();
+    patch(ev);
+    saveNow();
+    // Straight into naming it — that's the bit a six-year-old wants to do.
+    nameFind(find, ev);
+  }
+
+  function nameFind(find, ev) {
+    openSheet('keycard', '<h2>What did you find?</h2>' +
+      '<textarea id="find-note" rows="2" placeholder="A snail on the wall"></textarea>' +
+      '<div class="row"><span class="spacer"></span><button class="ghost" id="find-skip">Skip</button>' +
+      '<button class="primary" id="find-save">Save</button></div>');
+    const box = sheet.querySelector('#find-note');
+    box.focus();
+    const done = (text) => {
+      closeSheet();
+      if (text) {
+        find.note = ev.note = text;
+        const all = Malten.getFinds();
+        const i = all.findIndex(f => f.id === find.id);
+        if (i >= 0) { all[i] = find; Malten.setFinds(all); }
+        patch(ev); saveNow();
+      }
+    };
+    sheet.querySelector('#find-skip').onclick = () => done('');
+    sheet.querySelector('#find-save').onclick = () => done(box.value.trim());
   }
 
   // Asked once, then remembered: a hunt for a four-year-old and one for a
