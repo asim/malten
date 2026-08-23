@@ -18,14 +18,22 @@ body {
 
 /* Timeline — the default front door: time, place, weather, and a feed of what's
    around you that grows as you move. The map lives behind a button. */
-.timeline { position: fixed; inset: 0; z-index: 700; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
+/* Above Leaflet's controls (z-index 1000), or the map's zoom/attribution show through. */
+.timeline { position: fixed; inset: 0; z-index: 1200; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
 .timeline[hidden] { display: none; }
-.tl-head { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 12px; padding: calc(16px + env(safe-area-inset-top)) 18px 14px; border-bottom: 1px solid var(--border); }
+.tl-head { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 12px; padding: calc(12px + env(safe-area-inset-top)) 96px 14px 18px; border-bottom: 1px solid var(--border); }
 .tl-now { flex: 1; min-width: 0; }
 .tl-time { font-size: 13px; color: var(--muted); letter-spacing: 0.01em; }
 .tl-place { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin-top: 2px; line-height: 1.2; }
 .tl-weather { font-size: 14px; color: var(--muted); margin-top: 5px; }
-.tl-map { flex: 0 0 auto; align-self: center; background: var(--fg); color: var(--bg); border: 0; border-radius: 10px; padding: 9px 15px; font: inherit; font-weight: 600; cursor: pointer; }
+/* The feed/map toggle. One button, fixed in one corner, so switching views never
+   moves the control you switch with — it only changes what it says. */
+.viewbtn {
+  position: fixed; top: calc(12px + env(safe-area-inset-top)); right: 14px; z-index: 1300;
+  min-width: 68px; background: var(--fg); color: var(--bg); border: 0; border-radius: 10px;
+  padding: 9px 15px; font: inherit; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+}
+body.look-open .viewbtn { display: none; }
 .tl-feed { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px 14px calc(28px + env(safe-area-inset-bottom)); }
 .tl-block { padding: 6px 0 10px; }
 .tl-block + .tl-block { border-top: 1px dashed var(--border); margin-top: 6px; }
@@ -45,7 +53,8 @@ body {
 .app { position: fixed; inset: 0; display: flex; flex-direction: column; height: 100dvh; }
 .topbar {
   flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
-  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg); z-index: 500;
+  /* right padding leaves the corner free for the fixed feed/map toggle */
+  padding: 10px 96px 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg); z-index: 500;
 }
 .brand { font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
 .topbar .spacer { flex: 1; }
@@ -170,7 +179,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .around-actions .primary { padding: 8px 14px; font-size: 14px; }
 
 /* "Look around" — full-screen camera with tags placed by compass bearing. */
-.look { position: fixed; inset: 0; z-index: 900; background: #000; overflow: hidden; }
+.look { position: fixed; inset: 0; z-index: 1100; background: #000; overflow: hidden; } /* above Leaflet controls (1000) */
 .look[hidden] { display: none; }
 #look-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
 /* Everything sits above the camera. */

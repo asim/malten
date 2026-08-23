@@ -19,9 +19,11 @@
     <button class="fab" id="buses" title="Live buses (Great Britain)" hidden>🚍</button>
     <button class="fab" id="live" title="Bus & tube arrivals (London)">🚌</button>
     <button class="fab" id="look" title="Look around (camera)" hidden>📷</button>
-    <button class="fab" id="tl-open" title="Timeline">🕒</button>
     <button class="fab" id="locate" title="Find my location">◎</button>
   </div>
+
+  <!-- One button, one place: it flips between the feed and the map. -->
+  <button class="viewbtn" id="viewbtn">Map</button>
 
   <!-- The front door: a live timeline of where you are and what's around you. -->
   <div class="timeline" id="timeline">
@@ -31,7 +33,6 @@
         <div class="tl-place" id="tl-place">Finding you…</div>
         <div class="tl-weather" id="tl-weather"></div>
       </div>
-      <button class="tl-map" id="tl-map">Map</button>
     </div>
     <div class="tl-feed" id="tl-feed"></div>
   </div>
@@ -612,6 +613,7 @@
   async function openLook() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
     lookView.hidden = false;
+    document.body.classList.add('look-open'); // the camera has its own Done button
     lookScene.innerHTML = ''; lookEls.clear(); // fresh start; reconciler rebuilds
     lookHint.textContent = 'Starting camera…';
     // Ask for the compass FIRST — iOS only grants motion access when the request
@@ -628,6 +630,7 @@
 
   function closeLook() {
     lookView.hidden = true;
+    document.body.classList.remove('look-open');
     if (lookStream) { lookStream.getTracks().forEach(t => t.stop()); lookStream = null; }
     window.removeEventListener('deviceorientationabsolute', onOri, true);
     window.removeEventListener('deviceorientation', onOri, true);
@@ -853,10 +856,19 @@
   const tlFeed = document.getElementById('tl-feed');
   let tlBlocks = [], tlWatch = null;
 
-  function showMap() { timelineEl.hidden = true; document.body.classList.add('map-open'); setTimeout(() => map.invalidateSize(), 60); }
-  function showTimeline() { timelineEl.hidden = false; document.body.classList.remove('map-open'); }
-  document.getElementById('tl-map').onclick = showMap;
-  document.getElementById('tl-open').onclick = showTimeline;
+  // The feed and the map are one view with two faces, so they share one button
+  // in one place — it just changes what it says.
+  const viewBtn = document.getElementById('viewbtn');
+  function showMap() {
+    timelineEl.hidden = true; document.body.classList.add('map-open');
+    viewBtn.textContent = 'Feed';
+    setTimeout(() => map.invalidateSize(), 60);
+  }
+  function showTimeline() {
+    timelineEl.hidden = false; document.body.classList.remove('map-open');
+    viewBtn.textContent = 'Map';
+  }
+  viewBtn.onclick = () => (timelineEl.hidden ? showTimeline() : showMap());
 
   function tickClock() {
     const d = new Date();
