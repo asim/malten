@@ -854,7 +854,7 @@
     // Finds + stations are instant — render them straight away so the view is
     // never blocked waiting on Overpass (which can be slow or rate-limited).
     const base = [];
-    Malten.getFinds().forEach(f => base.push({ name: f.note || 'Your find', kind: 'find', lat: f.lat, lng: f.lng }));
+    Malten.getFinds().forEach(f => { if (f.lat != null) base.push({ name: f.note || 'Your find', kind: 'find', lat: f.lat, lng: f.lng }); });
     try { const d = await lookFetch('/api/stations?lat=' + loc.lat + '&lng=' + loc.lng, 6000); (d.stations || []).forEach(s => base.push({ name: s.name, kind: 'station', lat: s.lat, lng: s.lng })); } catch (_) {}
     renderLookTargets(base, loc);
     // POIs fold in when they arrive; a timeout keeps a slow Overpass from hanging.
@@ -1144,21 +1144,23 @@
         // What you found, where you found it. The photo is fetched from this
         // device's own store when the entry is drawn.
         el = entryEl('📷', ev.note ? esc(ev.note) : 'A find',
-          esc(ev.ref || '') || 'Saved here', 'found');
+          esc(ev.photoError || ev.ref || '') || 'Saved here', 'found' + (ev.photoError ? ' muted' : ''));
         if (ev.photo) {
           const img = document.createElement('img');
           img.className = 'find-photo';
           img.alt = ev.note || 'A find';
-          img.loading = 'lazy';
           Malten.getPhoto(ev.findId).then(blob => {
-            if (!blob) { img.remove(); return; }
+            // A photo that was saved and can't be read back is worth saying out
+            // loud — silently showing nothing looks like the app lost it.
+            if (!blob) { img.replaceWith(Object.assign(document.createElement('div'), { className: 'find-missing', textContent: 'Photo not available on this device' })); return; }
             const url = URL.createObjectURL(blob);
             img.onload = () => URL.revokeObjectURL(url); // decoded; the URL can go
+            img.onerror = () => { URL.revokeObjectURL(url); img.replaceWith(Object.assign(document.createElement('div'), { className: 'find-missing', textContent: 'Photo couldn’t be shown' })); };
             img.src = url;
           });
           el.querySelector('.bd').prepend(img);
         }
-        el.onclick = () => showPlaceOnMap({ name: ev.note || 'A find', kind: ev.ref || 'find', lat: ev.lat, lng: ev.lng });
+        if (ev.lat) el.onclick = () => showPlaceOnMap({ name: ev.note || 'A find', kind: ev.ref || 'find', lat: ev.lat, lng: ev.lng });
         break;
       }
       case 'q': el = entryEl('💬', esc(ev.text), '', 'ask'); break;
@@ -1513,43 +1515,77 @@
     if (file) logPhoto(file);
   };
 
-  // A phone camera gives you four megapixels of JPEG; a browser store gives you
-  // a few megabytes in total. Downscale before saving, keeping the orientation
-  // the camera recorded.
+  // Decoding a photo from a phone is the part most likely to fail: Safari's
+  // createImageBitmap doesn't take the orientation option everywhere, older
+  // browsers don't have it at all, and a 12-megapixel HEIC can simply refuse.
+  // Try each way in turn rather than losing the picture.
+  async function decodeImage(file) {
+    if (window.createImageBitmap) {
+      for (const opts of [{ imageOrientation: 'from-image' }, undefined]) {
+        try {
+          const bmp = await createImageBitmap(file, opts);
+          if (bmp && bmp.width) return bmp;
+        } catch (_) { /* next */ }
+      }
+    }
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
+      im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('cannot decode')); };
+      im.src = url;
+    });
+  }
+
+  // A phone camera gives you megapixels; a browser store gives you a few
+  // megabytes in total. Downscale before saving — but if any of it fails, keep
+  // the original file. A large photo beats no photo.
   async function shrink(file, max, quality) {
-    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
-    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
-    bmp.close && bmp.close();
-    return new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    try {
+      const src = await decodeImage(file);
+      const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight;
+      if (!w0 || !h0) return file;
+      const scale = Math.min(1, max / Math.max(w0, h0));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w0 * scale);
+      canvas.height = Math.round(h0 * scale);
+      canvas.getContext('2d').drawImage(src, 0, 0, canvas.width, canvas.height);
+      if (src.close) src.close();
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+      return blob && blob.size ? blob : file;
+    } catch (_) {
+      return file;
+    }
   }
 
   async function logPhoto(file) {
+    // No location yet (a first visit, or permission still pending) must not mean
+    // the photo is thrown away: keep it, say it has no place, and let it be.
     const at = myLoc || (lastFix ? L.latLng(lastFix.lat, lastFix.lng) : null);
-    if (!at) return;
     const find = {
-      id: Malten.newId(), lat: at.lat, lng: at.lng, note: '',
+      id: Malten.newId(), lat: at ? at.lat : null, lng: at ? at.lng : null, note: '',
       grid_ref: null, created_at: new Date().toISOString(), photo: true,
     };
     // findId, not id: push() assigns the event's own id and would clobber it.
-    const ev = push({ k: 'find', findId: find.id, lat: find.lat, lng: find.lng, note: '', ref: '', photo: true });
+    const ev = push({
+      k: 'find', findId: find.id, lat: find.lat, lng: find.lng, note: '', photo: true,
+      ref: at ? '' : 'Saved without a location — the fix hadn’t arrived',
+    });
     try {
       const blob = await shrink(file, 1280, 0.82);
-      if (!blob) throw new Error('no image');
       const saved = await Malten.putPhoto(find.id, blob);
-      if (!saved) { find.photo = false; ev.photo = false; }
+      if (!saved) { find.photo = false; ev.photo = false; ev.photoError = 'This browser wouldn’t store the photo.'; }
     } catch (_) {
-      find.photo = false; ev.photo = false;
+      find.photo = false; ev.photo = false; ev.photoError = 'The photo couldn’t be read on this device.';
     }
-    try {
-      const d = await (await fetch('/api/gridref?lat=' + at.lat + '&lng=' + at.lng)).json();
-      if (d.in_gb) find.grid_ref = ev.ref = d.grid_ref;
-    } catch (_) {}
+    if (at) {
+      try {
+        const d = await (await fetch('/api/gridref?lat=' + at.lat + '&lng=' + at.lng)).json();
+        if (d.in_gb) find.grid_ref = ev.ref = d.grid_ref;
+      } catch (_) {}
+    }
     Malten.addFind(find);
-    addFindMarker(find);
+    if (at) addFindMarker(find); // only a find with a place goes on the map
     updateCount();
     patch(ev);
     saveNow();
@@ -1730,7 +1766,7 @@
   document.getElementById('settings').onclick = askForKey;
   map.on('click', e => { if (!sheet || !sheet.classList.contains('logsheet')) openLog(e.latlng); });
 
-  Malten.getFinds().forEach(addFindMarker);
+  Malten.getFinds().forEach(f => { if (f.lat != null && f.lng != null) addFindMarker(f); });
   updateCount();
   setTiles(); // client-key path until /api/health confirms server-side tiles
 
