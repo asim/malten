@@ -162,8 +162,12 @@ func (s *Server) handleGridRef(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"in_gb":    true,
 		"grid_ref": ref.GridRef,
+		"square":   ref.Square, // the 1 km square, for "new ground"
 		"easting":  ref.Easting,
 		"northing": ref.Northing,
+		// The eight squares around it, so a client can tell which ones you've
+		// never been in. Pure geometry — the server doesn't know where you've been.
+		"neighbours": osgrid.Neighbours(lat, lng),
 	})
 }
 

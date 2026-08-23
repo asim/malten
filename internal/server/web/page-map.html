@@ -984,6 +984,12 @@
         }
         break;
       }
+      case 'ground':
+        // The reward for going out: a square of Britain you had never stood in.
+        // Stated as a fact, not a score — no points, nothing to lose.
+        el = entryEl('🧭', 'New ground' + (ev.place ? ' · ' + esc(ev.place) : ''),
+          esc(ev.square) + ' — first time you’ve stood here' + (ev.count > 1 ? ' · ' + ev.count + ' squares so far' : ''), 'ground');
+        break;
       case 'q': el = entryEl('💬', esc(ev.text), '', 'ask'); break;
       case 'a':
         el = entryEl('✦', ev.text ? multiline(ev.text) : esc(ev.note || 'Thinking…'), '', 'ans' + (ev.text ? '' : ' loading'));
@@ -997,6 +1003,36 @@
     }
     el.dataset.ev = ev.id;
     return el;
+  }
+
+  // --- new ground -------------------------------------------------------------
+  // The National Grid divides Britain into 1 km squares. The ones you've stood
+  // in are the map of where you've actually been — the quiet reward for going
+  // out, and the agent's best reason to send you somewhere ("you've never been
+  // up there"). Kept in this browser; only ever leaves as context for a nudge.
+  let squareNow = '', squareNeighbours = [];
+
+  function noteGround(around, place) {
+    if (!around || !around.square) return false;
+    squareNow = around.square;
+    squareNeighbours = around.neighbours || [];
+    if (!Malten.markSquare(around.square, place)) return false;
+    push({ k: 'ground', square: around.square, place: place || '', count: Object.keys(Malten.getSquares()).length });
+    return true;
+  }
+
+  // What the agent gets: where you're standing, how much ground you've covered,
+  // and which squares next to you you've never set foot in.
+  function askGround() {
+    if (!squareNow) return null;
+    const been = Malten.getSquares();
+    return {
+      here: squareNow,
+      visited: Object.keys(been).length,
+      new: !!(been[squareNow] && Date.now() - been[squareNow].t < 3600e3),
+      unvisited: squareNeighbours.filter(n => !been[n.square])
+        .map(n => ({ square: n.square, dir: n.dir, lat: n.lat, lng: n.lng })),
+    };
   }
 
   // Only the newest nudge offers another; the ones above it are history, so
@@ -1060,8 +1096,14 @@
     if (a.place) tlPlace.textContent = a.place.name + (a.place.county ? ' · ' + a.place.county : '');
     else if (a.grid_ref) tlPlace.textContent = a.grid_ref;
     else tlPlace.textContent = a.in_gb ? 'Here' : 'Outside Great Britain';
-    if (a.weather) tlWeather.innerHTML = wxEmoji(a.weather.code, a.weather.is_day) + ' ' + Math.round(a.weather.temp_c) + '° · ' + esc(a.weather.text) +
-      (a.weather.wind_kph >= 20 ? ' · breezy' : '');
+    const bits = [];
+    if (a.weather) bits.push(wxEmoji(a.weather.code, a.weather.is_day) + ' ' + Math.round(a.weather.temp_c) + '° · ' + esc(a.weather.text) +
+      (a.weather.wind_kph >= 20 ? ' · breezy' : ''));
+    // How much of the grid you've stood in. Stated quietly, once — it's a fact
+    // about your life, not a score to chase.
+    const n = Object.keys(Malten.getSquares()).length;
+    if (n) bits.push('🧭 ' + n + ' square' + (n === 1 ? '' : 's'));
+    tlWeather.innerHTML = bits.join('<span class="dot">·</span>');
   }
 
   // Persist the log so a reload continues the same trail. Nothing here ever
@@ -1143,7 +1185,7 @@
 
   async function askQuestion(text) {
     if (asking || !text) return;
-    const history = askHistory(), trail = askTrail();
+    const history = askHistory(), trail = askTrail(), ground = askGround();
     push({ k: 'q', text: text });
     const ans = push({ k: 'a', text: '', note: 'Thinking…' });
     asking = true; askInput.value = ''; askSend.disabled = true;
@@ -1155,7 +1197,7 @@
     try {
       const res = await fetch('/api/ask', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
-        body: JSON.stringify({ message: text, history: history, trail: trail, lat: loc ? loc.lat : 0, lng: loc ? loc.lng : 0, has_loc: !!loc }),
+        body: JSON.stringify({ message: text, history: history, trail: trail, ground: ground, lat: loc ? loc.lat : 0, lng: loc ? loc.lng : 0, has_loc: !!loc }),
       });
       if (!res.ok || !res.body) throw new Error('no stream');
       const reader = res.body.getReader(), dec = new TextDecoder();
@@ -1215,7 +1257,7 @@
     try {
       const r = await fetch('/api/suggest', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: at.lat, lng: at.lng, mode: 'different', last: ev.text, avoid: seen }),
+        body: JSON.stringify({ lat: at.lat, lng: at.lng, mode: 'different', last: ev.text, avoid: seen, ground: askGround() }),
       });
       fresh.text = (await r.json()).suggestion || 'Nothing else comes to mind right now.';
     } catch (_) {
@@ -1245,8 +1287,9 @@
     const when = push({ k: 'when', place: '', lat: latlng.lat, lng: latlng.lng });
     let around = null;
     try { const r = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng); around = await r.json(); } catch (_) {}
-    tlHeader(around);
     when.place = (around && ((around.place && around.place.name) || around.grid_ref)) || '';
+    noteGround(around, when.place); // before the header, so its count includes this square
+    tlHeader(around);
     patch(when);
 
     if (around && around.in_gb === false) {
@@ -1281,7 +1324,7 @@
         const seen = tlEvents.filter(e => e.k === 'idea' && e.text).map(e => e.text).slice(-6);
         const r = await fetch('/api/suggest', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lat: latlng.lat, lng: latlng.lng, mode: 'fresh', avoid: seen }),
+          body: JSON.stringify({ lat: latlng.lat, lng: latlng.lng, mode: 'fresh', avoid: seen, ground: askGround() }),
         });
         idea.text = (await r.json()).suggestion || '';
       } catch (_) {}

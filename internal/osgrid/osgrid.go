@@ -17,6 +17,7 @@ import (
 // Ref is a National Grid reference for a point.
 type Ref struct {
 	GridRef  string `json:"grid_ref"` // e.g. "TG 51409 13177"
+	Square   string `json:"square"`   // the 1 km square it falls in, e.g. "TG 51 13"
 	Easting  int    `json:"easting"`  // metres from the grid origin
 	Northing int    `json:"northing"`
 }
@@ -156,6 +157,7 @@ func enToRef(easting, northing float64) (Ref, bool) {
 	n := int(math.Floor(northing)) % 100000
 	return Ref{
 		GridRef:  fmt.Sprintf("%s %05d %05d", letters, e, n),
+		Square:   fmt.Sprintf("%s %02d %02d", letters, e/1000, n/1000),
 		Easting:  int(math.Round(easting)),
 		Northing: int(math.Round(northing)),
 	}, true

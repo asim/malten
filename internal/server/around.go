@@ -28,13 +28,15 @@ type aroundStation struct {
 }
 
 type aroundSnapshot struct {
-	Place       *Place          `json:"place,omitempty"`
-	GridRef     string          `json:"grid_ref,omitempty"`
-	InGB        bool            `json:"in_gb"`
-	Weather     *Weather        `json:"weather,omitempty"`
-	BusesNearby int             `json:"buses_nearby"`
-	StopsNearby int             `json:"stops_nearby"` // London (TfL) bus/tram/tube stops
-	Stations    []aroundStation `json:"stations,omitempty"`
+	Place       *Place             `json:"place,omitempty"`
+	GridRef     string             `json:"grid_ref,omitempty"`
+	Square      string             `json:"square,omitempty"`     // the 1 km grid square you're standing in
+	Neighbours  []osgrid.Neighbour `json:"neighbours,omitempty"` // the eight around it, for "new ground"
+	InGB        bool               `json:"in_gb"`
+	Weather     *Weather           `json:"weather,omitempty"`
+	BusesNearby int                `json:"buses_nearby"`
+	StopsNearby int                `json:"stops_nearby"` // London (TfL) bus/tram/tube stops
+	Stations    []aroundStation    `json:"stations,omitempty"`
 }
 
 // snapshot builds the "around me" view for a point, calling upstreams
@@ -45,7 +47,8 @@ func (s *Server) snapshot(ctx context.Context, lat, lng float64) aroundSnapshot 
 
 	var snap aroundSnapshot
 	if ref, ok := osgrid.FromWGS84(lat, lng); ok {
-		snap.InGB, snap.GridRef = true, ref.GridRef
+		snap.InGB, snap.GridRef, snap.Square = true, ref.GridRef, ref.Square
+		snap.Neighbours = osgrid.Neighbours(lat, lng)
 	}
 
 	var (

@@ -17,14 +17,62 @@ import (
 
 const suggestSystem = `You are Malten, a spatial guide for exploring Great Britain. Given a live snapshot of someone's surroundings right now, suggest ONE specific, appealing thing to do or place to go — ideally something that gets them outside and exploring nearby.
 
-Keep it to one or two short sentences, warm and concrete. If a train or bus in the snapshot helps them reach somewhere good, mention it with its real time. Don't greet, don't offer a list of options, don't use markdown — just the single suggestion, as if nudging a friend out the door.`
+Keep it to one or two short sentences, warm and concrete. If a train or bus in the snapshot helps them reach somewhere good, mention it with its real time. Don't greet, don't offer a list of options, don't use markdown — just the single suggestion, as if nudging a friend out the door.
+
+What makes someone actually leave the house is a specific small thing that is true right now: somewhere they've never been, a walk they can do before the light goes, a way back that's already running. Lead with that. Never use points, badges, streaks or scores — the reward is the place, not the app.`
 
 type suggestRequest struct {
-	Lat   float64  `json:"lat"`
-	Lng   float64  `json:"lng"`
-	Mode  string   `json:"mode"`  // "fresh" | "different" | "next"
-	Last  string   `json:"last"`  // the suggestion just shown (for "next"/"different")
-	Avoid []string `json:"avoid"` // recent suggestions to not repeat
+	Lat    float64  `json:"lat"`
+	Lng    float64  `json:"lng"`
+	Mode   string   `json:"mode"`  // "fresh" | "different" | "next"
+	Last   string   `json:"last"`  // the suggestion just shown (for "next"/"different")
+	Avoid  []string `json:"avoid"` // recent suggestions to not repeat
+	Ground *ground  `json:"ground,omitempty"`
+}
+
+// ground is what the browser knows about where you've actually been: the OS grid
+// squares you've stood in. The server holds none of it — it arrives with the
+// request and leaves with the answer — but it's the strongest reason the agent
+// can give for going out, because "you have never stood there" is true and
+// specific in a way a recommendation isn't.
+type ground struct {
+	Here      string       `json:"here"`      // the square you're in, e.g. "TQ 15 68"
+	Visited   int          `json:"visited"`   // how many squares you've ever stood in
+	New       bool         `json:"new"`       // …and whether this one is new today
+	Unvisited []groundNext `json:"unvisited"` // neighbouring squares you've never been in
+}
+
+type groundNext struct {
+	Square string  `json:"square"`
+	Dir    string  `json:"dir"`
+	Lat    float64 `json:"lat"`
+	Lng    float64 `json:"lng"`
+}
+
+// text renders the ground for the prompt, or "" when there's nothing to say.
+func (g *ground) text() string {
+	if g == nil || g.Here == "" {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "\nNew ground: they're standing in OS grid square %s", g.Here)
+	if g.New {
+		b.WriteString(", which they've never been in before")
+	}
+	if g.Visited > 0 {
+		fmt.Fprintf(&b, ". They've stood in %d squares of the National Grid so far", g.Visited)
+	}
+	b.WriteString(".\n")
+	if len(g.Unvisited) > 0 {
+		b.WriteString("Squares next to them they have never set foot in: ")
+		parts := make([]string, 0, len(g.Unvisited))
+		for _, u := range g.Unvisited {
+			parts = append(parts, fmt.Sprintf("%s (%s)", u.Square, u.Dir))
+		}
+		b.WriteString(strings.Join(parts, ", "))
+		b.WriteString(".\nA square is a kilometre across, so any of them is a walk of a few minutes. Prefer a suggestion that takes them into one — name the direction, and give them something to actually go and see there if you know of one. Never mention grid squares as a game or a score.\n")
+	}
+	return b.String()
 }
 
 func (s *Server) handleSuggest(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +96,7 @@ func (s *Server) handleSuggest(w http.ResponseWriter, r *http.Request) {
 	var msg strings.Builder
 	msg.WriteString("Here's what's live around me right now:\n")
 	msg.WriteString(snapshotText(snap))
+	msg.WriteString(req.Ground.text())
 
 	if len(req.Avoid) > 6 {
 		req.Avoid = req.Avoid[len(req.Avoid)-6:]

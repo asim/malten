@@ -26,6 +26,7 @@ body {
 .tl-time { font-size: 13px; color: var(--muted); letter-spacing: 0.01em; }
 .tl-place { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin-top: 2px; line-height: 1.2; }
 .tl-weather { font-size: 14px; color: var(--muted); margin-top: 5px; }
+.tl-weather .dot { margin: 0 7px; opacity: 0.5; }
 /* The feed/map toggle. One button, fixed in one corner, so switching views never
    moves the control you switch with — it only changes what it says. */
 .viewbtn {
@@ -49,6 +50,10 @@ body.look-open .viewbtn { display: none; }
 .tl-entry.muted { border-style: dashed; background: transparent; color: var(--muted); }
 .tl-entry.loading { color: var(--muted); font-style: italic; }
 .tl-entry.ask { background: color-mix(in srgb, var(--fg) 8%, var(--panel)); border-color: transparent; }
+/* New ground — a square of Britain you'd never stood in. The one moment in the
+   feed worth marking, so it gets the only accent in the app. */
+.tl-entry.ground { border-color: var(--fg); border-width: 1.5px; }
+.tl-entry.ground .t { font-weight: 600; }
 .tl-entry.ans .t { line-height: 1.5; }
 
 /* Ask about here. One composer, pinned under the feed. */
