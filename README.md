@@ -54,6 +54,17 @@ It's a conversation with a memory of your day: follow-ups carry the thread, and
 the trail travels with each question — where you've been, what you passed, what
 it already suggested — because the server remembers nothing between turns.
 
+### Notes
+
+One rule in the composer: what you type is a **note**, unless it ends in a
+question mark — then it's a question. Both land in the same feed.
+
+A note is kept with where and when you thought it. That's the whole point:
+place is the strongest index a person has, and it's the one thing every notes
+app throws away. Walk back within a couple of hundred metres and the note is
+waiting for you — *"you noted this here"*. Notes near you also travel with a
+question, so the agent can use what you told yourself, and then forgets them.
+
 ### New ground
 
 The National Grid divides Britain into 1 km squares. The ones you've been in are

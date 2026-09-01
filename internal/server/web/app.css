@@ -92,6 +92,12 @@ body.look-open .viewbtn { display: none; }
 .bell[hidden] { display: none; }
 .bell.on { opacity: 1; filter: none; border-color: var(--fg); }
 
+/* A note: something you thought, kept where you thought it. Recalled notes are
+   the same thing arriving from the past, so they're marked rather than restyled. */
+.tl-entry.note .t { line-height: 1.45; }
+.tl-entry.note .s a { margin-left: 10px; }
+.tl-entry.note.recalled { border-color: color-mix(in srgb, var(--fg) 22%, var(--border)); background: color-mix(in srgb, var(--fg) 4%, var(--panel)); }
+
 /* A find you photographed: the picture first, then what it was and where. */
 .tl-entry.found { cursor: pointer; }
 .find-photo {

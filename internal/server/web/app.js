@@ -9,6 +9,7 @@
   const TIMELINE_V = 1;                // schema version of the stored log
   const SQUARES = 'malten_squares';    // OS grid squares you've been in: {code: {t, place}}
   const KIDAGE = 'malten_kidage';      // who the hunts are written for
+  const NOTES = 'malten_notes';        // things you noted, indexed by where you were
 
   // Storage that degrades instead of throwing. localStorage is unavailable or
   // throws in some private-browsing modes, so fall back to sessionStorage (the
@@ -89,6 +90,8 @@
     //       {id, t, k:'hunt',  items:[{what,hint,done}], place
     //       {id, t, k:'find',  findId, lat, lng, note, ref, photo}
     //       {id, t, k:'ground',square, place, count}    a square you'd not been in
+    //       {id, t, k:'note',  noteId, text, place, ref}  something you thought
+    //       {id, t, k:'recall',noteId, text, when, place} …met again where you left it
     //       {id, t, k:'city'}                            out of coverage
     //   ]}
     getTimeline: () => {
@@ -122,6 +125,29 @@
       try { write(SQUARES, all); } catch (_) { return true; }
       return true;
     },
+    // Notes. Whatever was on your mind, kept with where and when you were when
+    // you thought it — because place is the strongest index a person has, and
+    // it's the one thing a notes app never captures. Durable, like the squares:
+    // the timeline ages out, these don't.
+    //   [{id, text, lat, lng, ref, place, t, seen}]
+    getNotes: () => read(NOTES, []),
+    addNote: (n) => {
+      const all = read(NOTES, []);
+      all.push(n);
+      while (all.length > 500) all.shift();
+      try { write(NOTES, all); } catch (_) { return null; }
+      return n;
+    },
+    updateNote: (id, patch) => {
+      const all = read(NOTES, []);
+      const i = all.findIndex(n => n.id === id);
+      if (i < 0) return null;
+      all[i] = { ...all[i], ...patch };
+      try { write(NOTES, all); } catch (_) {}
+      return all[i];
+    },
+    removeNote: (id) => write(NOTES, read(NOTES, []).filter(n => n.id !== id)),
+
     // Hunts are written for whoever's actually along; remembered so it's asked
     // once, not every time you go out.
     getKidAge: () => +(S.getItem(KIDAGE) || 0) || 6,

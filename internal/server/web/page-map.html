@@ -43,7 +43,7 @@
            grid reference — nothing is uploaded. -->
       <button class="tl-cam" id="tl-cam" type="button" title="Photograph a find">📷</button>
       <input id="tl-photo" type="file" accept="image/*" capture="environment" hidden>
-      <input id="tl-q" type="text" placeholder="Ask about here…" autocomplete="off" enterkeyhint="send">
+      <input id="tl-q" type="text" placeholder="Note this, or end with ? to ask" autocomplete="off" enterkeyhint="send">
       <button class="tl-send" id="tl-send" type="submit" aria-label="Ask">↑</button>
     </form>
   </div>
@@ -1163,6 +1163,17 @@
         if (ev.lat) el.onclick = () => showPlaceOnMap({ name: ev.note || 'A find', kind: ev.ref || 'find', lat: ev.lat, lng: ev.lng });
         break;
       }
+      case 'note':
+        el = entryEl('📝', esc(ev.text),
+          esc([ev.place, ev.ref].filter(Boolean).join(' · ')) + '<a class="tl-askthis">Ask about this</a>', 'note');
+        el.querySelector('.tl-askthis').onclick = () => askQuestion('About my note “' + ev.text + '” — what should I know?');
+        break;
+      case 'recall': {
+        // You wrote this here before.
+        const ago = ev.when ? new Date(ev.when).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' }) : '';
+        el = entryEl('🔖', esc(ev.text), 'You noted this here' + (ago ? ' · ' + esc(ago) : ''), 'note recalled');
+        break;
+      }
       case 'q': el = entryEl('💬', esc(ev.text), '', 'ask'); break;
       case 'a':
         el = entryEl('✦', ev.text ? multiline(ev.text) : esc(ev.note || 'Thinking…'), '', 'ans' + (ev.text ? '' : ' loading'));
@@ -1358,7 +1369,7 @@
 
   async function askQuestion(text) {
     if (asking || !text) return;
-    const history = askHistory(), trail = askTrail(), ground = askGround();
+    const history = askHistory(), trail = askTrail(), ground = askGround(), notes = askNotes();
     push({ k: 'q', text: text });
     const ans = push({ k: 'a', text: '', note: 'Thinking…' });
     asking = true; askInput.value = ''; askSend.disabled = true;
@@ -1370,7 +1381,7 @@
     try {
       const res = await fetch('/api/ask', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
-        body: JSON.stringify({ message: text, history: history, trail: trail, ground: ground, lat: loc ? loc.lat : 0, lng: loc ? loc.lng : 0, has_loc: !!loc }),
+        body: JSON.stringify({ message: text, history: history, trail: trail, ground: ground, notes: notes, lat: loc ? loc.lat : 0, lng: loc ? loc.lng : 0, has_loc: !!loc }),
       });
       if (!res.ok || !res.body) throw new Error('no stream');
       const reader = res.body.getReader(), dec = new TextDecoder();
@@ -1402,7 +1413,16 @@
     if (pendingFix) { const p = pendingFix; pendingFix = null; timelineFix(p, true); }
   }
 
-  askForm.onsubmit = e => { e.preventDefault(); askQuestion(askInput.value.trim()); };
+  // One rule for the composer: what you type is a note, unless it ends in a
+  // question mark — then it's a question. Both land in the same feed, and a note
+  // can be turned into a question with one tap if the rule guesses wrong.
+  askForm.onsubmit = e => {
+    e.preventDefault();
+    const text = askInput.value.trim();
+    if (!text) return;
+    if (text.endsWith('?')) askQuestion(text);
+    else saveNote(text);
+  };
 
   // --- nudges -----------------------------------------------------------------
   // The one thing that reaches out to you. Off until you ask for it, at most one
@@ -1500,6 +1520,60 @@
     vv.addEventListener('resize', fitKeyboard);
     vv.addEventListener('scroll', fitKeyboard);
     fitKeyboard();
+  }
+
+  // --- notes ------------------------------------------------------------------
+  // A thought, kept with where you were when you had it. Place is the strongest
+  // index a person has, and it's the one thing a notes app throws away: this is
+  // the whole reason to write it down here rather than anywhere else.
+  function hereName() {
+    for (let i = tlEvents.length - 1; i >= 0; i--) if (tlEvents[i].k === 'when' && tlEvents[i].place) return tlEvents[i].place;
+    return '';
+  }
+
+  async function saveNote(text) {
+    const at = myLoc || (lastFix ? L.latLng(lastFix.lat, lastFix.lng) : null);
+    const note = {
+      id: Malten.newId(), text: text, t: Date.now(), place: hereName(),
+      lat: at ? at.lat : null, lng: at ? at.lng : null, ref: '', seen: Date.now(),
+    };
+    askInput.value = '';
+    const ev = push({ k: 'note', noteId: note.id, text: text, place: note.place, ref: '' });
+    if (at) {
+      try {
+        const d = await (await fetch('/api/gridref?lat=' + at.lat + '&lng=' + at.lng)).json();
+        if (d.in_gb) note.ref = ev.ref = d.grid_ref;
+      } catch (_) {}
+    }
+    Malten.addNote(note);
+    patch(ev);
+    saveNow();
+  }
+
+  // Coming back to where you left a note is the payoff. Surface it once per
+  // visit, and never the one you wrote a minute ago.
+  const NOTE_NEAR_M = 250, NOTE_QUIET_MS = 45 * 60e3;
+  function recallNotes(latlng) {
+    const now = Date.now();
+    Malten.getNotes().forEach(n => {
+      if (n.lat == null) return;
+      if (now - n.t < NOTE_QUIET_MS) return;              // you've only just written it
+      if (now - (n.seen || 0) < NOTE_QUIET_MS) return;    // already brought up recently
+      if (distM(latlng.lat, latlng.lng, n.lat, n.lng) > NOTE_NEAR_M) return;
+      Malten.updateNote(n.id, { seen: now });
+      push({ k: 'recall', noteId: n.id, text: n.text, when: n.t, place: n.place });
+    });
+  }
+
+  // The notes near you travel with a question, so the agent can use what you
+  // told yourself. Like everything else, per-turn and then forgotten.
+  function askNotes() {
+    const at = myLoc || (lastFix ? lastFix : null);
+    if (!at) return [];
+    return Malten.getNotes()
+      .filter(n => n.lat != null && distM(at.lat, at.lng, n.lat, n.lng) < 1000)
+      .slice(-5)
+      .map(n => ({ text: n.text, place: n.place || '', when: new Date(n.t).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }));
   }
 
   // --- finds with photos ------------------------------------------------------
@@ -1707,6 +1781,7 @@
     try { const r = await fetch('/api/around?lat=' + latlng.lat + '&lng=' + latlng.lng); around = await r.json(); } catch (_) {}
     when.place = (around && ((around.place && around.place.name) || around.grid_ref)) || '';
     noteGround(around, when.place); // before the header, so its count includes this square
+    recallNotes(latlng);            // anything you left here before
     if (pushSub) sendSubscription(pushSub); // nudges follow you, coarsely
     tlHeader(around);
     patch(when);

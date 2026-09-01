@@ -103,6 +103,47 @@ func TestTrailText(t *testing.T) {
 	}
 }
 
+// A note is the person talking to themselves. It has to reach the model as
+// context — and be bounded, like everything else the browser sends.
+func TestNotesText(t *testing.T) {
+	req := askRequest{Notes: []askNote{
+		{Text: "That bakery on the corner opens at 7", Place: "Hampton Court", When: "Tue 08:12"},
+		{Text: "  ", Place: "nowhere"},
+		{Text: "Ask about the allotment waiting list"},
+	}}
+	got := req.notesText()
+	for _, want := range []string{
+		`"That bakery on the corner opens at 7" (at Hampton Court, Tue 08:12)`,
+		`"Ask about the allotment waiting list"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("notes missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "nowhere") {
+		t.Errorf("an empty note was rendered:\n%s", got)
+	}
+	if s := (askRequest{}).notesText(); s != "" {
+		t.Errorf("no notes rendered %q", s)
+	}
+
+	// Only the most recent few travel.
+	var many askRequest
+	for i := 0; i < 20; i++ {
+		many.Notes = append(many.Notes, askNote{Text: fmt.Sprintf("note %d", i)})
+	}
+	got = many.notesText()
+	if strings.Contains(got, "note 3\"") {
+		t.Errorf("old notes not trimmed:\n%s", got)
+	}
+	if !strings.Contains(got, "note 19") {
+		t.Errorf("newest note dropped:\n%s", got)
+	}
+	if n := strings.Count(got, "\n- "); n > maxNotes {
+		t.Errorf("rendered %d notes, want at most %d", n, maxNotes)
+	}
+}
+
 // The whole conversation and the trail must reach the model in one turn.
 func TestAskSendsHistoryAndTrail(t *testing.T) {
 	var got struct {
@@ -136,6 +177,7 @@ func TestAskSendsHistoryAndTrail(t *testing.T) {
 	body := `{"message":"anywhere new to go?",
 	          "history":[{"role":"user","text":"is the café open?"},{"role":"assistant","text":"Until 17:00."}],
 	          "trail":[{"at":"13:40","place":"Hampton Court","saw":["Lion Gate Café"],"suggested":["Walk the maze."]}],
+	          "notes":[{"text":"Try the bakery on the corner","place":"Hampton Court","when":"Tue 08:12"}],
 	          "lat":51.4036,"lng":-0.3378,"has_loc":true}`
 	s.handleAsk(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/ask", strings.NewReader(body)))
 
@@ -146,10 +188,11 @@ func TestAskSendsHistoryAndTrail(t *testing.T) {
 		t.Errorf("last message = %q", got.Messages[2].Content[0].Text)
 	}
 	for _, want := range []string{
-		"Hampton Court",             // the trail
-		"Walk the maze.",            // …including what was already suggested
-		"OS National Grid",          // the location grounding
-		"The current local time is", // and the clock
+		"Hampton Court",                // the trail
+		"Walk the maze.",               // …including what was already suggested
+		"Try the bakery on the corner", // and the notes they left nearby
+		"OS National Grid",             // the location grounding
+		"The current local time is",    // and the clock
 	} {
 		if !strings.Contains(got.System, want) {
 			t.Errorf("system prompt missing %q:\n%s", want, got.System)

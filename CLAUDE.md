@@ -92,6 +92,15 @@ content**:
   isn't being there. Standing still adds nothing. The map is behind a button. The agent has the same snapshot (`around_me`).
   Composes existing feeds only — no new keys.
 
+- **Notes** (client-side; the agent gets them via `/api/ask`'s `notes`). The
+  composer's rule is one line: what you type is a **note** unless it ends in a
+  question mark, in which case it's a question. A note is kept with where and
+  when you wrote it (`Malten.getNotes`, durable like the squares — the timeline
+  ages out, notes don't), because place is the strongest index a person has and
+  it's the one thing a notes app throws away. Come back within 250m and the note
+  resurfaces in the feed, once per visit. Notes within 1km travel with a question
+  so the agent can use what you told yourself — per-turn, then forgotten.
+
 - **A hunt for going out with a child** (`/api/hunt`, `internal/server/hunt.go`).
   One call, no tools: the live snapshot plus the real named places within 500m,
   and five things to find, returned as JSON the client renders as a tickable
