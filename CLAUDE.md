@@ -5,10 +5,23 @@ carries engineering invariants, not product docs.
 
 ## What this is
 
-Malten is a **spatial-exploration** app for Great Britain: a map you move
-through, where you drop "finds" (a note anchored to its Ordnance Survey National
-Grid reference) as you explore. It ships as a single Go binary with the UI — and
-a vendored copy of Leaflet — embedded.
+**Malten is a mental model for the world.** Not a map of it — a model *for* it,
+built in the user's head, because from where someone is standing the world is the
+few hundred metres around them.
+
+That sentence is the design test, and it settles arguments: **the product is the
+user's model of the world, not the app's.** Does a feature build their model, or
+replace it? Turn-by-turn navigation replaces it (and is why there is none);
+naming a place and a direction builds it. The app should hold what human memory
+is bad at — exact times, opening hours, grid references, what's round the corner
+— and refuse to hold what it's good at: the shape of the place, the route, which
+way the river is. The measure is that someone can put the phone away and still
+know where they are.
+
+Concretely it's a **spatial-exploration** app for Great Britain: a timeline you
+move through, where you drop "finds" (a note or photo anchored to its Ordnance
+Survey National Grid reference) as you explore. It ships as a single Go binary
+with the UI — and a vendored copy of Leaflet — embedded.
 
 Ordnance Survey (OS) is the authoritative substrate: the map tiles come from the
 **OS Maps API**. Malten is the experience layer on top. The moat is the

@@ -99,7 +99,7 @@ func TestNudgeSendsWhenThereIsAReason(t *testing.T) {
 	s.subs.upsert(&subscriber{
 		Sub: sub, Lat: 51.4036, Lng: -0.3378,
 		Squares:  []string{"TQ 15 68"},
-		TZOffset: -(time.Now().UTC().Hour() - 12) * 60, // makes localHour == 12
+		TZOffset: tzForNoon(),
 	})
 
 	s.runNudges(context.Background())
@@ -146,7 +146,7 @@ func TestNudgeStaysQuiet(t *testing.T) {
 	sub.Endpoint = pushSrv.URL + "/push/quiet"
 	sub.Keys.P256dh = validP256dh(t)
 	sub.Keys.Auth = "BTBZMqHH6r4Tts7J_aSIgg"
-	s.subs.upsert(&subscriber{Sub: sub, Lat: 51.4036, Lng: -0.3378, TZOffset: -(time.Now().UTC().Hour() - 12) * 60})
+	s.subs.upsert(&subscriber{Sub: sub, Lat: 51.4036, Lng: -0.3378, TZOffset: tzForNoon()})
 
 	s.runNudges(context.Background())
 	if sent != 0 {
@@ -154,6 +154,24 @@ func TestNudgeStaysQuiet(t *testing.T) {
 	}
 	if list := s.subs.snapshot(); !list[0].LastSent.IsZero() {
 		t.Errorf("silence counted as a send")
+	}
+}
+
+// The nudge window is the subscriber's own wall clock, so this has to hold at
+// every hour of the day — including the hour the test suite happens to run in.
+func TestNudgeWindowEveryHour(t *testing.T) {
+	for h := 0; h < 24; h++ {
+		now := time.Date(2026, 8, 23, h, 0, 0, 0, time.UTC)
+		for local := 0; local < 24; local++ {
+			sub := subscriber{Lat: 51.4, Lng: -0.3, TZOffset: (h - local) * 60}
+			if got := sub.localHour(now); got != local {
+				t.Fatalf("UTC %02d:00, offset %d → local %d, want %d", h, sub.TZOffset, got, local)
+			}
+			want := local >= nudgeFromHour && local < nudgeToHour
+			if dueForNudge(sub, now) != want {
+				t.Errorf("UTC %02d:00, local %02d:00: due = %v, want %v", h, local, !want, want)
+			}
+		}
 	}
 }
 
@@ -213,6 +231,11 @@ func TestUnsubscribeForgets(t *testing.T) {
 		t.Errorf("%d subscribers came back from disk", n)
 	}
 }
+
+// tzForNoon is the offset (JS getTimezoneOffset semantics: west is positive)
+// that puts the subscriber at midday local, whenever the test happens to run.
+// localHour = UTC hour - offset/60, so offset = (UTC hour - 12) * 60.
+func tzForNoon() int { return (time.Now().UTC().Hour() - 12) * 60 }
 
 // validP256dh returns a well-formed subscriber public key.
 func validP256dh(t *testing.T) string {

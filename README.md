@@ -1,18 +1,28 @@
 # Malten
 
-**A reason to go outside, for Great Britain. Built on Ordnance Survey.**
+**Malten is a mental model for the world.**
 
-Malten opens on a **timeline** — where you are, what the weather's doing, what's
-around you, and one concrete thing worth walking to. As you move, it grows into a
-trail of the day. The map is a button away.
+Not a map of it. A model *for* it — because from where you're standing, the world
+is the few hundred metres you're in, right now. We all occupy different points on
+the map.
+
+Malten opens on a **timeline**: where you are, what the weather's doing, what's
+around you, and one concrete thing worth walking to. As you move it grows into a
+trail of the day. The map is a button away, and deliberately not the front door —
+the point isn't to look at a map, it's to end up knowing the place.
+
+So the thing being built isn't the app's model of the world — it's **yours**.
+Every feature is judged on one test: does it build your model, or replace it?
+Turn-by-turn directions replace it, which is why there are none. Naming a place
+and a direction builds it. The measure of success is that Malten leaves you
+knowing where you are when your phone is dead.
 
 It's a single self-contained Go binary serving a web app (and installable PWA),
 with **no external Go dependencies** and **no database**. Your trail, your finds
 and your photos live in your browser. The server holds none of it.
 
 The substrate is the **Ordnance Survey** — the OS Maps API for tiles, the OS
-National Grid for addressing, OS Names for search. The moat is the experience and
-the spatial memory, not the map data.
+National Grid for addressing, OS Names for search.
 
 ---
 
