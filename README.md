@@ -1,5 +1,7 @@
 # Malten
 
+Streams of consciousness.
+
 Malten is an open-source tool for building a personal mental model from the
 things you think, notice, experience and record.
 
