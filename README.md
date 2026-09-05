@@ -80,12 +80,12 @@ This leads to a few principles:
 
 ## The current experiment
 
-The application opens on an empty spatial plane. Captured thoughts and
-observations become nodes; relationships between them become edges. This is not
-a diagram of the physical world. It is a space in which the person can gradually
-form their own model.
+The application opens on a spatial view of a personal network. Captured thoughts
+and observations become points in that network, joined by meaningful
+relationships. The open plane is not a diagram of the physical world. It is one
+way to move through and gradually form a mental model.
 
-The graph can be panned, zoomed and rearranged. Select a node to inspect it or
+The spatial view can be panned, zoomed and rearranged. Select a point to inspect it or
 choose **Continue from here** before capturing another thought. That creates an
 explicit relationship rather than connecting everything into an arbitrary
 chronological chain.
@@ -94,14 +94,14 @@ Place remains useful context without becoming the interface. With permission,
 the phone attaches location to a capture. Observations made near one another can
 gain a subtle place relationship, and Malten can indicate which thoughts were
 recorded near the person's current position. Geographic coordinates never
-determine where nodes sit on the mental plane.
+determine where points sit on the mental plane.
 
 The current application deliberately contains no map, nearby-data feed,
 transport dashboard or chat window. Existing server integrations remain in the
 codebase as experiments that may later provide context in the background. Their
 existence does not require them to occupy the interface.
 
-The first version of the graph keeps connection-making partly deliberate. Later
+The first version of the network keeps connection-making partly deliberate. Later
 work can explore ambient semantic connections and resurfacing, but the standard
 is not how much a model can generate. It is whether Malten helps the person see a
 relationship they can understand and act upon.
@@ -111,9 +111,9 @@ relationship they can understand and act upon.
 Malten is a single self-contained Go binary serving an installable web app. It
 has no external Go dependencies and no database.
 
-The server is stateless and anonymous. Nodes, edges and their context live in
-the browser as structural data under `malten_graph1`. Existing notes and finds
-from earlier versions are imported into the graph on first use. Browser storage
+The server is stateless and anonymous. Points, connections and their context live in
+the browser as structural data under `malten_network1`. Existing notes and finds
+from earlier versions are imported into the network on first use. Browser storage
 degrades to session storage and then memory rather than breaking the app.
 
 The UI is embedded with `//go:embed`. The dormant Anthropic, Ordnance Survey,
@@ -128,12 +128,12 @@ go test ./...
 go run ./cmd/malten
 ```
 
-Open <http://localhost:8080>. The mental map works immediately and requires no
+Open <http://localhost:8080>. The mental network works immediately and requires no
 API key. Allowing browser location adds place context to new captures.
 
 ## Configuration
 
-The current graph interface requires no server-side configuration. The retained
+The current network interface requires no server-side configuration. The retained
 experimental endpoints read secrets from an environment variable or, failing
 that, a file of the same name beside the binary.
 
@@ -193,7 +193,7 @@ internal/nrail      National Rail station data and LDBWS client
 internal/bods       Bus Open Data Service SIRI-VM client
 internal/push       VAPID and encrypted Web Push
 internal/server     stateless HTTP handlers and embedded web application
-internal/server/web mental-map graph, local browser storage and PWA assets
+internal/server/web spatial network view, local browser storage and PWA assets
 ```
 
 Grid conversion is tested against Ordnance Survey's worked example to
