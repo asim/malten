@@ -1,6 +1,6 @@
 # Malten
 
-Anonymous ephemeral streams for reflection.
+A timeline for thoughts, photos and reflection.
 
 ## Overview
 
