@@ -30,13 +30,13 @@
   let network=Malten.getNetwork(), currentLocation=null, photo=null;
 
   const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:new Date(t).getFullYear()===new Date().getFullYear()?undefined:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
-  function metres(a,b){if(!a||!b)return Infinity;const r=6371000,p1=a.lat*Math.PI/180,p2=b.lat*Math.PI/180,dp=(b.lat-a.lat)*Math.PI/180,dl=(b.lng-a.lng)*Math.PI/180,x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*r*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
 
+  function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase();}catch(_){return "";}}
   function render(){
     stream.replaceChildren();
-    const active=decodeURIComponent(window.location.hash.slice(1)).toLowerCase();
+    const active=activeStream();
     document.getElementById('current-stream').textContent=active?'#'+active:'';
-    [...network.points].filter(point=>!active||tags(point.text).includes(active)).sort((a,b)=>b.created_at-a.created_at).forEach(point=>{
+    [...network.points].filter(point=>(point.stream || "")===active).sort((a,b)=>b.created_at-a.created_at).forEach(point=>{
       const entry=document.createElement('article');entry.className='reflection';
       const text=document.createElement('div');text.className='reflection-text';appendText(text,point.text);
       entry.appendChild(text);
@@ -47,12 +47,10 @@
       stream.appendChild(entry);
     });
   }
-  function tags(text){return [...text.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu)].map(match=>match[2].toLowerCase());}
   function appendText(element,text){let at=0;for(const match of text.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu)){const start=match.index+match[1].length;element.append(document.createTextNode(text.slice(at,start)));const link=document.createElement('a');link.className='stream-link';link.href='/#'+encodeURIComponent(match[2].toLowerCase());link.textContent='#'+match[2];element.append(link);at=start+match[2].length+1;}element.append(document.createTextNode(text.slice(at)));}
 
   function addThought(text){
-    const point={id:Malten.newId(),text,photo,created_at:Date.now(),location:currentLocation?{lat:currentLocation.lat,lng:currentLocation.lng,accuracy:currentLocation.accuracy,name:currentLocation.name||null}:null};
-    if(point.location){const nearby=[...network.points].reverse().find(p=>p.location&&metres(point.location,p.location)<180);if(nearby)network.connections.push({id:Malten.newId(),from:nearby.id,to:point.id,kind:'place'});}
+    const point={id:Malten.newId(),stream:activeStream(),text,photo,created_at:Date.now(),location:currentLocation?{lat:currentLocation.lat,lng:currentLocation.lng,accuracy:currentLocation.accuracy,name:currentLocation.name||null}:null};
     network.points.push(point);Malten.setNetwork(network);clearPhoto();render();
   }
 

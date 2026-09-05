@@ -14,7 +14,6 @@ import (
 
 var (
 	nominatimEndpoint = envOr("MALTEN_NOMINATIM_URL", "https://nominatim.openstreetmap.org")
-	osrmEndpoint      = envOr("MALTEN_OSRM_URL", "https://router.project-osrm.org")
 	locationClient    = &http.Client{Timeout: 12 * time.Second}
 	locationCache     = struct {
 		sync.Mutex
@@ -28,10 +27,6 @@ type locationPlace struct {
 	Country string `json:"country,omitempty"`
 }
 
-type routeContext struct {
-	DistanceMetres  float64 `json:"distance_metres"`
-	DurationSeconds float64 `json:"duration_seconds"`
-}
 
 func coordinates(r *http.Request, names ...string) ([]float64, error) {
 	values := make([]float64, len(names))
@@ -91,23 +86,7 @@ func reverseLocation(lat, lng float64) (locationPlace, error) {
 	return locationPlace{Name: name, Locality: locality, Country: raw.Address["country"]}, nil
 }
 
-func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
-	coords, err := coordinates(r, "from_lat", "from_lng", "to_lat", "to_lng")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "from_lat, from_lng, to_lat and to_lng are required"})
-		return
-	}
-	path := fmt.Sprintf("/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=false", coords[1], coords[0], coords[3], coords[2])
-	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(osrmEndpoint, "/")+path, nil)
-	req.Header.Set("User-Agent", "Malten/1.0 (+https://malten.ai)")
-	resp, err := locationClient.Do(req)
-	if err != nil { writeJSON(w, http.StatusBadGateway, map[string]string{"error": "route context is unavailable"}); return }
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK { writeJSON(w, http.StatusBadGateway, map[string]string{"error": "route context is unavailable"}); return }
-	var raw struct { Routes []struct { Distance float64 `json:"distance"`; Duration float64 `json:"duration"` } `json:"routes"` }
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil || len(raw.Routes) == 0 {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "route context is unavailable"})
-		return
-	}
-	writeJSON(w, http.StatusOK, routeContext{DistanceMetres: raw.Routes[0].Distance, DurationSeconds: raw.Routes[0].Duration})
+func firstNonEmpty(values ...string) string {
+ for _, value := range values { if value != "" { return value } }
+ return ""
 }
