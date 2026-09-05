@@ -1,8 +1,8 @@
 :root {
   --paper:#f4f1ea;--ink:#191814;--muted:#767168;--line:#c9c1b3;--card:rgba(252,250,245,.94);
-  --node:#fffdf8;--accent:#c05b38;--near:#5f7968;--shadow:0 16px 45px rgba(44,37,27,.14);
+  --point:#fffdf8;--accent:#c05b38;--near:#5f7968;--shadow:0 16px 45px rgba(44,37,27,.14);
 }
-@media(prefers-color-scheme:dark){:root{--paper:#11100e;--ink:#eeeae1;--muted:#9c968b;--line:#3b3731;--card:rgba(28,26,23,.95);--node:#23201c;--accent:#e08260;--near:#86aa91;--shadow:0 16px 48px rgba(0,0,0,.42)}}
+@media(prefers-color-scheme:dark){:root{--paper:#11100e;--ink:#eeeae1;--muted:#9c968b;--line:#3b3731;--card:rgba(28,26,23,.95);--point:#23201c;--accent:#e08260;--near:#86aa91;--shadow:0 16px 48px rgba(0,0,0,.42)}}
 *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}
 body{color:var(--ink);background:var(--paper);font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 button,textarea{font:inherit}button{color:inherit}[hidden]{display:none!important}
@@ -11,9 +11,9 @@ button,textarea{font:inherit}button{color:inherit}[hidden]{display:none!importan
 .topbar{position:fixed;z-index:20;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:calc(18px + env(safe-area-inset-top)) 22px 16px;pointer-events:none}
 .brand{font-family:Georgia,"Times New Roman",serif;font-size:22px;font-weight:600;letter-spacing:-.02em}.purpose{margin-top:1px;color:var(--muted);font-size:12px;letter-spacing:.02em}
 .status{display:flex;align-items:center;gap:11px;color:var(--muted);font-size:12px;pointer-events:auto}.quiet{border:1px solid var(--line);border-radius:999px;background:var(--card);padding:7px 11px;cursor:pointer}
-#graph{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}#graph:active{cursor:grabbing}
-.edge{stroke:var(--line);stroke-width:1.35;vector-effect:non-scaling-stroke}.place-edge{stroke-dasharray:4 6}
-.node{cursor:pointer}.node circle{fill:var(--node);stroke:var(--line);stroke-width:1.5;vector-effect:non-scaling-stroke;transition:stroke .18s,fill .18s}.node text{fill:var(--ink);font-size:10.5px;font-weight:520;pointer-events:none}.node:hover circle,.node.selected circle{stroke:var(--accent);stroke-width:2.5}.node.near circle{stroke:var(--near)}.node.near.selected circle{stroke:var(--accent)}
+#network{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}#network:active{cursor:grabbing}
+.connection-line{stroke:var(--line);stroke-width:1.35;vector-effect:non-scaling-stroke}.place-connection{stroke-dasharray:4 6}
+.point{cursor:pointer}.point circle{fill:var(--point);stroke:var(--line);stroke-width:1.5;vector-effect:non-scaling-stroke;transition:stroke .18s,fill .18s}.point text{fill:var(--ink);font-size:10.5px;font-weight:520;pointer-events:none}.point:hover circle,.point.selected circle{stroke:var(--accent);stroke-width:2.5}.point.near circle{stroke:var(--near)}.point.near.selected circle{stroke:var(--accent)}
 .empty{position:absolute;z-index:4;left:50%;top:44%;transform:translate(-50%,-50%);width:min(420px,calc(100% - 44px));text-align:center;pointer-events:none}
 .empty h1{margin:22px 0 8px;font-family:Georgia,"Times New Roman",serif;font-size:clamp(27px,6vw,42px);font-weight:500;letter-spacing:-.025em}.empty p{margin:0 auto;max-width:340px;color:var(--muted);font-size:14px;line-height:1.55}
 .empty-mark{height:55px;position:relative}.empty-mark span{position:absolute;left:50%;top:50%;width:13px;height:13px;border:1.5px solid var(--line);border-radius:50%;background:var(--paper)}.empty-mark span:nth-child(1){transform:translate(-61px,-18px)}.empty-mark span:nth-child(2){transform:translate(-6px,9px);border-color:var(--accent)}.empty-mark span:nth-child(3){transform:translate(47px,-27px)}.empty-mark:before,.empty-mark:after{content:"";position:absolute;left:50%;top:50%;width:61px;border-top:1px solid var(--line);transform-origin:left}.empty-mark:before{transform:translate(-48px,-8px) rotate(26deg)}.empty-mark:after{transform:translate(7px,14px) rotate(-34deg)}
