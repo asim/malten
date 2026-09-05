@@ -46,3 +46,4 @@ Set `MALTEN_ADDR` to change the listen address. It defaults to `:8080`.
 
 ## License
 
+[GNU Affero General Public License v3.0](LICENSE)
