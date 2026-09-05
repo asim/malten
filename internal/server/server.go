@@ -177,6 +177,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/icon-192.png", staticAsset("icon-192.png", "image/png", "public, max-age=86400"))
 	mux.Handle("/icon-512.png", staticAsset("icon-512.png", "image/png", "public, max-age=86400"))
 	mux.Handle("/icon-maskable-512.png", staticAsset("icon-maskable-512.png", "image/png", "public, max-age=86400"))
+	mux.Handle("/favicon.svg", staticAsset("favicon.svg", "image/svg+xml", "public, max-age=86400"))
 	mux.HandleFunc("/", s.handleIndex)
 	return mux
 }
