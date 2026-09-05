@@ -1,17 +1,17 @@
 {{define "content"}}
 <main class="space">
   <header class="topbar">
-    <div><div class="brand">Malten</div><div class="purpose">Your mental map</div></div>
+    <div><div class="brand">Malten</div><div class="purpose">Your mental network</div></div>
     <div class="status"><span id="place-status">Finding your context…</span><button class="quiet" id="recenter" type="button">Centre</button></div>
   </header>
-  <svg id="graph" role="img" aria-label="Your connected thoughts">
+  <svg id="network" role="img" aria-label="A spatial view of your mental network">
     <defs><filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-opacity=".12"/></filter></defs>
-    <g id="viewport"><g id="edges"></g><g id="nodes"></g></g>
+    <g id="viewport"><g id="connections"></g><g id="points"></g></g>
   </svg>
   <section class="empty" id="empty">
     <div class="empty-mark"><span></span><span></span><span></span></div>
     <h1>What are you noticing?</h1>
-    <p>Capture a thought. Its place and relationships will become part of your map.</p>
+    <p>Capture a thought. Its place and relationships will become part of your network.</p>
   </section>
   <aside class="detail" id="detail" hidden>
     <button class="detail-close" id="detail-close" type="button" aria-label="Close">×</button>
@@ -22,7 +22,7 @@
   <div class="connection" id="connection" hidden><span>Connecting to</span><strong id="connection-text"></strong><button id="connection-clear" type="button">×</button></div>
   <form class="composer" id="composer">
     <textarea id="thought" rows="1" maxlength="1200" placeholder="Capture a thought or observation…" aria-label="Thought or observation"></textarea>
-    <button type="submit" aria-label="Add to your mental map">↑</button>
+    <button type="submit" aria-label="Add to your mental network">↑</button>
   </form>
 </main>
 {{end}}
@@ -30,13 +30,13 @@
 {{define "scripts"}}
 <script>
 (function () {
-  const svg = document.getElementById('graph'), viewport = document.getElementById('viewport');
-  const edgesEl = document.getElementById('edges'), nodesEl = document.getElementById('nodes');
+  const svg = document.getElementById('network'), viewport = document.getElementById('viewport');
+  const connectionsEl = document.getElementById('connections'), pointsEl = document.getElementById('points');
   const emptyEl = document.getElementById('empty'), form = document.getElementById('composer');
   const input = document.getElementById('thought'), detail = document.getElementById('detail');
   const connection = document.getElementById('connection'), connectionText = document.getElementById('connection-text');
   const placeStatus = document.getElementById('place-status'), NS = 'http://www.w3.org/2000/svg';
-  let graph = Malten.getGraph(), selected = null, connectFrom = null, location = null, pan = null, dragNode = null, moved = false;
+  let network = Malten.getNetwork(), selected = null, connectFrom = null, location = null, pan = null, dragPoint = null, moved = false;
   let view = { x: 0, y: 0, scale: 1 };
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const short = (s, n) => s.length > n ? s.slice(0, n - 1).trim() + '…' : s;
@@ -48,66 +48,66 @@
     return 2*r*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
   }
   function hash(s) { let h=2166136261; for (let i=0;i<s.length;i++) h=Math.imul(h^s.charCodeAt(i),16777619); return h>>>0; }
-  function position(node, i) {
-    if (Number.isFinite(node.x) && Number.isFinite(node.y)) return;
-    const edge=graph.edges.find(e=>e.to===node.id||e.from===node.id), parentId=edge&&(edge.to===node.id?edge.from:edge.to);
-    const parent=parentId&&graph.nodes.find(n=>n.id===parentId), angle=(hash(node.id)%360)*Math.PI/180;
-    if (parent && Number.isFinite(parent.x)) { node.x=parent.x+Math.cos(angle)*190; node.y=parent.y+Math.sin(angle)*140; }
-    else { const ring=Math.floor(Math.sqrt(i+1)); node.x=Math.cos(angle)*(100+ring*155); node.y=Math.sin(angle)*(80+ring*115); }
+  function position(point, i) {
+    if (Number.isFinite(point.x) && Number.isFinite(point.y)) return;
+    const connection=network.connections.find(e=>e.to===point.id||e.from===point.id), parentId=connection&&(connection.to===point.id?connection.from:connection.to);
+    const parent=parentId&&network.points.find(n=>n.id===parentId), angle=(hash(point.id)%360)*Math.PI/180;
+    if (parent && Number.isFinite(parent.x)) { point.x=parent.x+Math.cos(angle)*190; point.y=parent.y+Math.sin(angle)*140; }
+    else { const ring=Math.floor(Math.sqrt(i+1)); point.x=Math.cos(angle)*(100+ring*155); point.y=Math.sin(angle)*(80+ring*115); }
   }
   function applyView() { viewport.setAttribute('transform', 'translate('+view.x+' '+view.y+') scale('+view.scale+')'); }
-  function near(node) { return location && node.location && metres(location,node.location)<180; }
+  function near(point) { return location && point.location && metres(location,point.location)<180; }
   function render() {
-    graph.nodes.forEach(position); Malten.setGraph(graph); emptyEl.hidden=graph.nodes.length>0;
-    edgesEl.replaceChildren(); nodesEl.replaceChildren();
-    graph.edges.forEach(edge => {
-      const a=graph.nodes.find(n=>n.id===edge.from), b=graph.nodes.find(n=>n.id===edge.to); if(!a||!b)return;
+    network.points.forEach(position); Malten.setNetwork(network); emptyEl.hidden=network.points.length>0;
+    connectionsEl.replaceChildren(); pointsEl.replaceChildren();
+    network.connections.forEach(connection => {
+      const a=network.points.find(n=>n.id===connection.from), b=network.points.find(n=>n.id===connection.to); if(!a||!b)return;
       const line=document.createElementNS(NS,'line');
       for(const [k,v] of Object.entries({x1:a.x,y1:a.y,x2:b.x,y2:b.y})) line.setAttribute(k,v);
-      line.setAttribute('class','edge '+(edge.kind==='place'?'place-edge':'')); edgesEl.appendChild(line);
+      line.setAttribute('class','connection-line '+(connection.kind==='place'?'place-connection':'')); connectionsEl.appendChild(line);
     });
-    graph.nodes.forEach(node => {
-      const g=document.createElementNS(NS,'g'), links=graph.edges.filter(e=>e.from===node.id||e.to===node.id).length;
-      g.setAttribute('class','node'+(node.id===selected?' selected':'')+(near(node)?' near':''));
-      g.setAttribute('transform','translate('+node.x+' '+node.y+')');
+    network.points.forEach(point => {
+      const g=document.createElementNS(NS,'g'), links=network.connections.filter(e=>e.from===point.id||e.to===point.id).length;
+      g.setAttribute('class','point'+(point.id===selected?' selected':'')+(near(point)?' near':''));
+      g.setAttribute('transform','translate('+point.x+' '+point.y+')');
       const circle=document.createElementNS(NS,'circle'); circle.setAttribute('r',Math.min(46,31+links*2.5)); circle.setAttribute('filter','url(#shadow)'); g.appendChild(circle);
       const text=document.createElementNS(NS,'text'); text.setAttribute('text-anchor','middle');
-      const words=short(node.text,34).split(/\s+/), lines=[];
+      const words=short(point.text,34).split(/\s+/), lines=[];
       while(words.length&&lines.length<3){let line=words.shift();while(words.length&&(line+' '+words[0]).length<=13)line+=' '+words.shift();lines.push(line);}
       lines.forEach((line,i)=>{const t=document.createElementNS(NS,'tspan');t.setAttribute('x','0');t.setAttribute('dy',i?'1.12em':(-(lines.length-1)*.55)+'em');t.textContent=line;text.appendChild(t);});
       g.appendChild(text);
-      g.onpointerdown=e=>{e.stopPropagation();moved=false;dragNode={id:e.pointerId,node,sx:e.clientX,sy:e.clientY,ox:node.x,oy:node.y};svg.setPointerCapture(e.pointerId);};
-      g.onclick=e=>{e.stopPropagation();if(!moved)select(node.id);}; nodesEl.appendChild(g);
+      g.onpointerdown=e=>{e.stopPropagation();moved=false;dragPoint={id:e.pointerId,point,sx:e.clientX,sy:e.clientY,ox:point.x,oy:point.y};svg.setPointerCapture(e.pointerId);};
+      g.onclick=e=>{e.stopPropagation();if(!moved)select(point.id);}; pointsEl.appendChild(g);
     }); applyView();
   }
   function select(id) {
-    selected=id; const node=graph.nodes.find(n=>n.id===id); if(!node)return closeDetail();
-    document.getElementById('detail-time').textContent=when(node.created_at);
-    document.getElementById('detail-text').textContent=node.text;
-    const links=graph.edges.filter(e=>e.from===id||e.to===id).length, bits=[];
-    if(node.location)bits.push(near(node)?'Recorded near you':'Recorded with a place');
+    selected=id; const point=network.points.find(n=>n.id===id); if(!point)return closeDetail();
+    document.getElementById('detail-time').textContent=when(point.created_at);
+    document.getElementById('detail-text').textContent=point.text;
+    const links=network.connections.filter(e=>e.from===id||e.to===id).length, bits=[];
+    if(point.location)bits.push(near(point)?'Recorded near you':'Recorded with a place');
     bits.push(links+' connection'+(links===1?'':'s'));
     document.getElementById('detail-context').textContent=bits.join(' · '); detail.hidden=false; render();
   }
   function closeDetail(){selected=null;detail.hidden=true;render();}
   function setConnection(id){
-    connectFrom=id;const node=graph.nodes.find(n=>n.id===id);connectionText.textContent=node?short(node.text,48):'';
-    connection.hidden=!node;detail.hidden=true;input.placeholder='Continue this thought…';input.focus();
+    connectFrom=id;const point=network.points.find(n=>n.id===id);connectionText.textContent=point?short(point.text,48):'';
+    connection.hidden=!point;detail.hidden=true;input.placeholder='Continue this thought…';input.focus();
   }
   function clearConnection(){connectFrom=null;connection.hidden=true;input.placeholder='Capture a thought or observation…';}
-  function centre(node){const box=svg.getBoundingClientRect();view.x=box.width/2-node.x*view.scale;view.y=box.height/2-node.y*view.scale;applyView();}
+  function centre(point){const box=svg.getBoundingClientRect();view.x=box.width/2-point.x*view.scale;view.y=box.height/2-point.y*view.scale;applyView();}
   function fit(){
-    const box=svg.getBoundingClientRect(); if(!graph.nodes.length){view={x:box.width/2,y:box.height/2,scale:1};return applyView();}
-    const xs=graph.nodes.map(n=>n.x),ys=graph.nodes.map(n=>n.y),minX=Math.min(...xs)-90,maxX=Math.max(...xs)+90,minY=Math.min(...ys)-90,maxY=Math.max(...ys)+90;
+    const box=svg.getBoundingClientRect(); if(!network.points.length){view={x:box.width/2,y:box.height/2,scale:1};return applyView();}
+    const xs=network.points.map(n=>n.x),ys=network.points.map(n=>n.y),minX=Math.min(...xs)-90,maxX=Math.max(...xs)+90,minY=Math.min(...ys)-90,maxY=Math.max(...ys)+90;
     const scale=clamp(Math.min(box.width/(maxX-minX),(box.height-180)/(maxY-minY)),.35,1.25);
     view={x:box.width/2-(minX+maxX)/2*scale,y:box.height/2-(minY+maxY)/2*scale,scale};applyView();
   }
   function addThought(text){
-    const node={id:Malten.newId(),text,created_at:Date.now(),location:location?{lat:location.lat,lng:location.lng,accuracy:location.accuracy}:null};
-    const related=connectFrom&&graph.nodes.find(n=>n.id===connectFrom);
-    if(related)graph.edges.push({id:Malten.newId(),from:related.id,to:node.id,kind:'related'});
-    else if(node.location){const nearby=[...graph.nodes].reverse().find(n=>n.location&&metres(node.location,n.location)<180);if(nearby)graph.edges.push({id:Malten.newId(),from:nearby.id,to:node.id,kind:'place'});}
-    graph.nodes.push(node);position(node,graph.nodes.length-1);Malten.setGraph(graph);clearConnection();render();select(node.id);centre(node);
+    const point={id:Malten.newId(),text,created_at:Date.now(),location:location?{lat:location.lat,lng:location.lng,accuracy:location.accuracy}:null};
+    const related=connectFrom&&network.points.find(n=>n.id===connectFrom);
+    if(related)network.connections.push({id:Malten.newId(),from:related.id,to:point.id,kind:'related'});
+    else if(point.location){const nearby=[...network.points].reverse().find(n=>n.location&&metres(point.location,n.location)<180);if(nearby)network.connections.push({id:Malten.newId(),from:nearby.id,to:point.id,kind:'place'});}
+    network.points.push(point);position(point,network.points.length-1);Malten.setNetwork(network);clearConnection();render();select(point.id);centre(point);
   }
   form.onsubmit=e=>{e.preventDefault();const text=input.value.trim();if(!text)return;input.value='';input.style.height='';addThought(text);};
   input.oninput=()=>{input.style.height='';input.style.height=Math.min(input.scrollHeight,130)+'px';};
@@ -115,16 +115,16 @@
   document.getElementById('detail-close').onclick=closeDetail;
   document.getElementById('continue').onclick=()=>setConnection(selected);
   document.getElementById('connection-clear').onclick=clearConnection;
-  document.getElementById('remove').onclick=()=>{if(!selected)return;graph.nodes=graph.nodes.filter(n=>n.id!==selected);graph.edges=graph.edges.filter(e=>e.from!==selected&&e.to!==selected);Malten.setGraph(graph);closeDetail();fit();};
+  document.getElementById('remove').onclick=()=>{if(!selected)return;network.points=network.points.filter(n=>n.id!==selected);network.connections=network.connections.filter(e=>e.from!==selected&&e.to!==selected);Malten.setNetwork(network);closeDetail();fit();};
   document.getElementById('recenter').onclick=fit;
   svg.onpointerdown=e=>{moved=false;pan={id:e.pointerId,x:e.clientX,y:e.clientY,ox:view.x,oy:view.y};svg.setPointerCapture(e.pointerId);};
   svg.onpointermove=e=>{
-    if(dragNode&&dragNode.id===e.pointerId){const dx=e.clientX-dragNode.sx,dy=e.clientY-dragNode.sy;if(Math.abs(dx)+Math.abs(dy)>5)moved=true;dragNode.node.x=dragNode.ox+dx/view.scale;dragNode.node.y=dragNode.oy+dy/view.scale;render();return;}
+    if(dragPoint&&dragPoint.id===e.pointerId){const dx=e.clientX-dragPoint.sx,dy=e.clientY-dragPoint.sy;if(Math.abs(dx)+Math.abs(dy)>5)moved=true;dragPoint.point.x=dragPoint.ox+dx/view.scale;dragPoint.point.y=dragPoint.oy+dy/view.scale;render();return;}
     if(!pan||pan.id!==e.pointerId)return;const dx=e.clientX-pan.x,dy=e.clientY-pan.y;if(Math.abs(dx)+Math.abs(dy)>5)moved=true;view.x=pan.ox+dx;view.y=pan.oy+dy;applyView();
   };
-  svg.onpointerup=e=>{if(dragNode&&dragNode.id===e.pointerId){dragNode=null;Malten.setGraph(graph);}if(pan&&pan.id===e.pointerId)pan=null;if(!moved&&e.target===svg)closeDetail();};
+  svg.onpointerup=e=>{if(dragPoint&&dragPoint.id===e.pointerId){dragPoint=null;Malten.setNetwork(network);}if(pan&&pan.id===e.pointerId)pan=null;if(!moved&&e.target===svg)closeDetail();};
   svg.addEventListener('wheel',e=>{e.preventDefault();const b=svg.getBoundingClientRect(),px=e.clientX-b.left,py=e.clientY-b.top,old=view.scale,next=clamp(old*Math.exp(-e.deltaY*.001),.3,2.4);view.x=px-(px-view.x)*next/old;view.y=py-(py-view.y)*next/old;view.scale=next;applyView();},{passive:false});
-  if(navigator.geolocation)navigator.geolocation.watchPosition(pos=>{location={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};const n=graph.nodes.filter(near).length;placeStatus.textContent=n?n+' thought'+(n===1?'':'s')+' near you':'Place context on';render();},()=>placeStatus.textContent='Place context off',{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
+  if(navigator.geolocation)navigator.geolocation.watchPosition(pos=>{location={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};const n=network.points.filter(near).length;placeStatus.textContent=n?n+' thought'+(n===1?'':'s')+' near you':'Place context on';render();},()=>placeStatus.textContent='Place context off',{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
   else placeStatus.textContent='Place context unavailable';
   window.onresize=fit;render();requestAnimationFrame(fit);
 })();
