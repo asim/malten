@@ -5,11 +5,11 @@
 // slow. API traffic is never cached.
 //
 // Bump VERSION whenever the shell changes; it wipes the old cache on activate.
-const VERSION = 'malten-v58';
+const VERSION = 'malten-v59';
 const SHELL = [
   '/',
   '/app.css', '/app.js', '/manifest.webmanifest',
-  '/favicon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png',
+  '/favicon.svg', '/icon-192.png?v=tilde-1', '/icon-512.png?v=tilde-1', '/icon-maskable-512.png?v=tilde-1',
 ];
 
 self.addEventListener('install', (event) => {

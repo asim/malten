@@ -35,3 +35,6 @@ go.work.sum
 malten.db
 *.db
 /malten
+
+# Ephemeral stream snapshots
+/data/

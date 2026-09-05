@@ -6,7 +6,7 @@
 #   sudo systemctl enable --now malten
 #
 # The binary lives at /home/malten/malten and is run as the `malten` user with
-# working directory /home/malten. Shared reflections expire in server memory.
+# working directory /home/malten. Shared reflections persist in data/ with a 24-hour expiry.
 # Configuration is read from /home/malten/.env (see deploy/env.example).
 
 [Unit]

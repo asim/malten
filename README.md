@@ -28,8 +28,8 @@ go run .
 Open [localhost:8080](http://localhost:8080). Set `MALTEN_ADDR` to change the
 address (default `:8080`).
 
-Shared posts live in server memory: at most 500 posts, for up to 24 hours.
-Restarting the server clears them. “You” filters your public posts; it is not
+Shared posts are saved locally in `data/stream.json`: at most 500 posts, for up to
+24 hours from capture. Posts survive restarts without extending their expiry. “You” filters your public posts; it is not
 a private stream. Existing browser-only captures remain private under
 “Saved on this device”.
 

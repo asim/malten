@@ -20,7 +20,14 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	srv := server.New()
+	path := os.Getenv("MALTEN_DATA")
+	if path == "" {
+		path = "data/stream.json"
+	}
+	srv, err := server.Open(path)
+	if err != nil {
+		log.Fatalf("open stream: %v", err)
+	}
 	var agents sync.WaitGroup
 	start := func(run func(context.Context)) { agents.Add(1); go func() { defer agents.Done(); run(ctx) }() }
 	start(srv.Run)

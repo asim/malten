@@ -11,6 +11,7 @@ import (
 	"errors"
 	"image/jpeg"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -24,7 +25,7 @@ const lifetime = 24 * time.Hour
 const capacity = 500
 const maxPhoto = 400 * 1024
 
-// Posts and media live only in memory, for at most a day (or until restart).
+// Posts and media expire 24 hours after their original capture time.
 type Post struct {
 	ID       string `json:"id"`
 	Stream   string `json:"stream"`
@@ -39,6 +40,7 @@ type Post struct {
 }
 type streamStore struct {
 	sync.Mutex
+	path     string
 	posts    []Post
 	limits   map[string]time.Time
 	slots    chan struct{}
@@ -49,6 +51,7 @@ func newStreamStore() *streamStore {
 	return &streamStore{posts: []Post{}, limits: map[string]time.Time{}, slots: make(chan struct{}, 4), moderate: moderate}
 }
 func (b *streamStore) prune(now time.Time) {
+	before := len(b.posts)
 	keep := b.posts[:0]
 	for _, p := range b.posts {
 		if now.Sub(time.UnixMilli(p.Created)) < lifetime {
@@ -57,6 +60,11 @@ func (b *streamStore) prune(now time.Time) {
 	}
 	clear(b.posts[len(keep):])
 	b.posts = keep
+	if len(keep) != before {
+		if err := b.save(); err != nil {
+			log.Printf("stream expiry: %v", err)
+		}
+	}
 	for k, t := range b.limits {
 		if !now.Before(t) {
 			delete(b.limits, k)
@@ -167,11 +175,23 @@ func (b *streamStore) publish(ctx context.Context, p Post) error {
 	b.Lock()
 	defer b.Unlock()
 	b.prune(time.Now())
+	if p.Agent != "" {
+		for _, existing := range b.posts {
+			if existing.Agent == p.Agent && existing.Stream == p.Stream && existing.Text == p.Text {
+				return nil
+			}
+		}
+	}
+	before := append([]Post(nil), b.posts...)
 	if len(b.posts) >= capacity {
 		copy(b.posts, b.posts[1:])
 		b.posts = b.posts[:len(b.posts)-1]
 	}
 	b.posts = append(b.posts, p)
+	if err := b.save(); err != nil {
+		b.posts = before
+		return errors.New("could not save capture")
+	}
 	return nil
 }
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
@@ -279,6 +299,7 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		if p.ID != id {
 			continue
 		}
+		before := append([]Post(nil), b.posts...)
 		if action == "delete" {
 			if p.owner != who {
 				http.Error(w, "not yours", 403)
@@ -289,6 +310,11 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 			b.posts = b.posts[:len(b.posts)-1]
 		} else if !p.reviewed {
 			p.hidden = true
+		}
+		if err := b.save(); err != nil {
+			b.posts = before
+			http.Error(w, "Could not save this change. Please retry.", 503)
+			return
 		}
 		w.WriteHeader(204)
 		return
@@ -338,6 +364,7 @@ func (s *Server) review(ctx context.Context) {
 			continue
 		}
 		b.Lock()
+		before := append([]Post(nil), b.posts...)
 		for i := range b.posts {
 			if b.posts[i].ID == p.ID {
 				if ok {
@@ -348,6 +375,10 @@ func (s *Server) review(ctx context.Context) {
 				}
 				break
 			}
+		}
+		if err := b.save(); err != nil {
+			b.posts = before
+			log.Printf("stream review: %v", err)
 		}
 		b.prune(time.Now())
 		b.Unlock()
