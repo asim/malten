@@ -5,7 +5,7 @@
 //
 //	MALTEN_ADDR    listen address (default :8080)
 //
-// The server is stateless. It has no copy of the user's mental map.
+// The server is stateless. It has no copy of the user's mental network.
 package main
 
 import (
