@@ -15,7 +15,6 @@ into a map, feed or AI chat.
 - Create explicit connections between related points
 - Pan, zoom and arrange a personal spatial network
 - Attach optional location context to new captures
-- Revisit captures in a timeline
 - Store the network locally in the browser
 - Install as a progressive web app
 - Run as a self-contained Go server
