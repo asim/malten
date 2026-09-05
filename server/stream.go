@@ -123,15 +123,29 @@ func (b *streamStore) allow(r *http.Request) bool {
 		}
 	}
 	sum := sha256.Sum256([]byte(host))
-	key := hex.EncodeToString(sum[:])
+	key := "post:" + hex.EncodeToString(sum[:])
+	if strings.HasSuffix(r.URL.Path, "/report") {
+		key = "report:" + hex.EncodeToString(sum[:])
+	}
+	return b.allowAt(key, time.Now())
+}
+
+// Allow six consecutive requests, replenishing one every ten seconds.
+func (b *streamStore) allowAt(key string, now time.Time) bool {
 	b.Lock()
 	defer b.Unlock()
-	now := time.Now()
 	b.prune(now)
-	if now.Before(b.limits[key]) || len(b.limits) >= 10000 {
+	next, exists := b.limits[key]
+	if !exists && len(b.limits) >= 10000 {
 		return false
 	}
-	b.limits[key] = now.Add(10 * time.Second)
+	if next.Before(now) {
+		next = now
+	}
+	if next.Sub(now) > 50*time.Second {
+		return false
+	}
+	b.limits[key] = next.Add(10 * time.Second)
 	return true
 }
 func (b *streamStore) publish(ctx context.Context, p Post) error {
@@ -234,7 +248,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !b.allow(r) {
-		http.Error(w, "Please wait a moment before trying again.", 429)
+		w.Header().Set("Retry-After", "10")
+		http.Error(w, "Please wait a few seconds before trying again.", 429)
 		return
 	}
 	var p Post
@@ -288,7 +303,8 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "report" && !b.allow(r) {
-		http.Error(w, "Please wait a moment before trying again.", 429)
+		w.Header().Set("Retry-After", "10")
+		http.Error(w, "Please wait a few seconds before trying again.", 429)
 		return
 	}
 	b.Lock()
