@@ -1,7 +1,5 @@
-// Package server serves the Malten spatial-exploration UI and a couple of tiny
-// stateless helpers. It stores nothing: your finds and your OS API key live in
-// the browser. Map tiles are fetched by the client straight from the Ordnance
-// Survey APIs with your key; the server never sees it.
+// Package server serves Malten's local-first mental map and stateless helpers.
+// The graph and its location context live only in the browser.
 package server
 
 import (
@@ -38,7 +36,7 @@ var assetVer = computeAssetVer()
 
 func computeAssetVer() string {
 	h := crc32.NewIEEE()
-	for _, f := range []string{"web/app.css", "web/app.js", "web/leaflet.css", "web/leaflet.js", "web/base.html", "web/page-map.html"} {
+	for _, f := range []string{"web/app.css", "web/app.js", "web/base.html", "web/page-map.html"} {
 		if b, err := webFS.ReadFile(f); err == nil {
 			_, _ = h.Write(b)
 		}
@@ -172,8 +170,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/app.js", staticAsset("app.js", "text/javascript; charset=utf-8", "public, max-age=300"))
-	mux.Handle("/leaflet.js", staticAsset("leaflet.js", "text/javascript; charset=utf-8", "public, max-age=86400"))
-	mux.Handle("/leaflet.css", staticAsset("leaflet.css", "text/css; charset=utf-8", "public, max-age=86400"))
 	mux.Handle("/manifest.webmanifest", staticAsset("manifest.webmanifest", "application/manifest+json", "public, max-age=3600"))
 	mux.Handle("/sw.js", staticAsset("sw.js", "text/javascript; charset=utf-8", "no-cache"))
 	mux.Handle("/icon-192.png", staticAsset("icon-192.png", "image/png", "public, max-age=86400"))
