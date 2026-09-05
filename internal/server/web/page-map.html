@@ -1,10 +1,10 @@
 {{define "content"}}
 <main class="space">
   <header class="topbar">
-    <div><div class="brand">Malten</div><div class="purpose">Your mental network</div></div>
+    <div><div class="brand">Malten</div><div class="purpose">Build a personal mental model</div></div>
     <div class="status"><span id="place-status">Finding your context…</span><button class="quiet" id="timeline-toggle" type="button">Timeline</button><button class="quiet" id="recenter" type="button">Centre</button></div>
   </header>
-  <svg id="network" role="img" aria-label="A spatial view of your mental network">
+  <svg id="network" role="img" aria-label="A spatial view of your personal mental model">
     <defs><filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-opacity=".12"/></filter></defs>
     <g id="viewport"><g id="connections"></g><g id="points"></g></g>
   </svg>
