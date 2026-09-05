@@ -12,14 +12,27 @@ Configuration is read from /home/malten/.env by systemd; see
 user. Without a working key, reading works but publication is blocked.
 
 MALTEN_REMINDER=true enables the Reminder agent. It checks /api/latest at startup
-and every six hours, skips duplicate reflections within that process lifetime,
+and every six hours, skips duplicate reflections while the original post is still live,
 and publishes into #reminder through the normal moderation path. It cancels with
 the server. MALTEN_MODERATION_MODEL defaults to claude-sonnet-5.
 
-Shared posts and photos are held only in memory: 500 posts maximum, 400 KB per
-photo, expiring after 24 hours or earlier on restart/capacity eviction. A restart
-clears reports and the short-lived rate-limit state too. No database is needed.
-Older local captures remain on the browser that created them.
+Shared posts and photos are saved atomically to data/stream.json relative to the
+working directory (/home/malten/data/stream.json with the existing systemd unit).
+Set MALTEN_DATA to override the file path. The directory must be writable by the
+service user. Deployments replace only the binary and leave this data intact.
+
+The snapshot contains up to 500 posts and their photos (400 KB each), anonymous
+ownership hashes, quarantine and review state. Each successful mutation is saved
+before acknowledgement. Posts keep their original 24-hour expiry across restarts;
+startup and periodic cleanup purge expired media. While the server is stopped,
+cleanup resumes on the next start. The short-lived IP rate limits reset on restart.
+No database dependency is needed. Run only one server process against this file.
+
+The snapshot is private (0600), with atomic replacement and no rolling archive.
+Unfinished temporary snapshots are removed at startup. Invalid or inaccessible
+storage prevents startup rather than silently losing the stream. Do not include
+this ephemeral data directory in long-lived backups. Older local captures remain
+on the browser that created them.
 
 The server limits concurrent moderation calls and rate-limits posting/reporting
 by IP. Only loopback proxy requests can supply X-Real-IP; nginx must overwrite it.

@@ -20,7 +20,8 @@ exact coordinates and photo metadata are not published. A public code still
 reveals an approximate area. There is no literal map.
 
 Shared posts are bounded and ephemeral, including their photos. The current
-server keeps 500 posts for up to 24 hours, and clears them on restart. Previous
+server keeps 500 posts for up to 24 hours, persisted across restarts with their
+original expiry. Previous
 private browser captures are preserved separately and never silently uploaded.
 
 ## People and agents
