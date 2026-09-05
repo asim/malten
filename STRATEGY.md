@@ -37,14 +37,14 @@ Malten should be available in three ways:
 
 1. **Self-hosted** — free, open source and operated by the user.
 2. **Hosted Free** — the easiest way to begin, with a genuinely useful personal
-   mental network and no infrastructure to manage.
+   mental model and no infrastructure to manage.
 3. **Hosted Pro** — a subscription for continuity and compounding value across
    devices, contexts and time.
 
 This is an open-core service model without withholding the core. The free
 software must remain capable of capturing, connecting, viewing and exporting a
-mental network. Pro earns its price by doing costly and operationally difficult
-things on the person's behalf.
+personal mental model. Pro earns its price by doing costly and operationally
+difficult things on the person's behalf.
 
 ### Self-hosted
 
@@ -83,8 +83,8 @@ Pro should eventually include:
 - periodic reflection on patterns, unfinished thoughts and emerging themes;
 - a reasonable included allowance for model-backed processing.
 
-People should be paying for a mental network that stays with them and grows more
-useful over time—not for an AI chat box. Privacy, basic export and access to
+People should be paying for a personal mental model that stays with them and
+grows more useful over time—not for an AI chat box. Privacy, basic export and access to
 one's own local network should never be subscription leverage.
 
 Avoid lifetime plans because storage, sync and inference create continuing
