@@ -113,7 +113,7 @@
     document.getElementById('detail-text').textContent=point.text;
     const links=network.connections.filter(e=>e.from===id||e.to===id).length, bits=[];
     if(point.activity)bits.push(point.activity);
-    if(point.location)bits.push((near(point)?'Near you':'Location captured')+' · '+point.location.lat.toFixed(5)+', '+point.location.lng.toFixed(5));
+    if(point.location)bits.push(point.location.name||(near(point)?'Near you':'Location captured'));
     bits.push(links+' connection'+(links===1?'':'s'));
     const detailPhoto=document.getElementById('detail-photo');detailPhoto.hidden=!point.photo;detailPhoto.src=point.photo||'';
     document.getElementById('detail-context').textContent=bits.join(' · '); detail.hidden=false; render();
@@ -132,7 +132,7 @@
     view={x:box.width/2-(minX+maxX)/2*scale,y:box.height/2-(minY+maxY)/2*scale,scale};applyView();
   }
   function addThought(text){
-    const point={id:Malten.newId(),text,activity:activityInput.value.trim()||null,photo,created_at:Date.now(),location:location?{lat:location.lat,lng:location.lng,accuracy:location.accuracy}:null};
+    const point={id:Malten.newId(),text,activity:activityInput.value.trim()||null,photo,created_at:Date.now(),location:location?{lat:location.lat,lng:location.lng,accuracy:location.accuracy,name:location.name||null}:null};
     const related=connectFrom&&network.points.find(n=>n.id===connectFrom);
     if(related)network.connections.push({id:Malten.newId(),from:related.id,to:point.id,kind:'related'});
     else if(point.location){const nearby=[...network.points].reverse().find(n=>n.location&&metres(point.location,n.location)<180);if(nearby)network.connections.push({id:Malten.newId(),from:nearby.id,to:point.id,kind:'place'});}
@@ -171,7 +171,10 @@
   };
   svg.onpointerup=e=>{if(dragPoint&&dragPoint.id===e.pointerId){dragPoint=null;Malten.setNetwork(network);}if(pan&&pan.id===e.pointerId)pan=null;if(!moved&&e.target===svg)closeDetail();};
   svg.addEventListener('wheel',e=>{e.preventDefault();const b=svg.getBoundingClientRect(),px=e.clientX-b.left,py=e.clientY-b.top,old=view.scale,next=clamp(old*Math.exp(-e.deltaY*.001),.3,2.4);view.x=px-(px-view.x)*next/old;view.y=py-(py-view.y)*next/old;view.scale=next;applyView();},{passive:false});
-  if(navigator.geolocation)navigator.geolocation.watchPosition(pos=>{location={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};const n=network.points.filter(near).length;placeStatus.textContent=n?n+' thought'+(n===1?'':'s')+' near you':'Place context on';render();},()=>placeStatus.textContent='Place context off',{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
+  let locationKey='';
+  async function nameLocation(){const key=location.lat.toFixed(4)+','+location.lng.toFixed(4);if(key===locationKey)return;locationKey=key;
+    try{const response=await fetch('/api/location?lat='+encodeURIComponent(location.lat)+'&lng='+encodeURIComponent(location.lng));if(!response.ok)return;const place=await response.json();location.name=[place.name,place.locality].filter((v,i,a)=>v&&a.indexOf(v)===i).join(', ');if(location.name)placeStatus.textContent=location.name;}catch(_){}}
+  if(navigator.geolocation)navigator.geolocation.watchPosition(pos=>{location={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,name:null};const n=network.points.filter(near).length;placeStatus.textContent=n?n+' capture'+(n===1?'':'s')+' near you':'Location on';nameLocation();render();},()=>placeStatus.textContent='Location off',{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
   else placeStatus.textContent='Place context unavailable';
   window.onresize=fit;render();requestAnimationFrame(fit);
 })();
