@@ -28,7 +28,8 @@
 (function () {
   const $=id=>document.getElementById(id), input=$('thought'), form=$('composer');
   const saved=Malten.getNetwork().points;
-  let posts=[],photo=null,view='all',busy=false,revision='',request=0;
+  let posts=[],photo=null,view='all',sending=false,revision='',request=0;
+  let outbox=[];
   let token='',hidden=[],stayDefault=false;
   try {
     token=localStorage.getItem('malten_author')||'';
@@ -56,14 +57,20 @@
     $('current-stream').textContent=active?'#'+active:'';
     $('visibility').textContent=view==='saved'?'Private · saved on this device':'Public · disappears within 24 hours'+(active.startsWith('near-')?' · approximate area':'');
     for(const name of ['all','you','saved'])$(name).setAttribute('aria-pressed',String(view===name));
-    const entries=view==='saved'?saved.filter(p=>(p.stream||'')===active):posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine));
+    const entries=view==='saved'?saved.filter(p=>(p.stream||'')===active):[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
     [...entries].sort((a,b)=>b.created_at-a.created_at).forEach(p=>{
       const article=document.createElement('article');article.className='reflection';
       const text=document.createElement('div');text.className='reflection-text';appendText(text,p.text);article.appendChild(text);
       if(p.photo){const img=document.createElement('img');img.src=p.photo;img.alt='Shared photo';img.className='reflection-photo';img.loading='lazy';article.appendChild(img);}
       const event=document.createElement('div');event.className='reflection-event';
       event.textContent=[when(p.created_at),p.agent,view==='saved'&&p.location&&p.location.name].filter(Boolean).join(' · ');
-      if(view!=='saved'){
+      if(p.delivery){
+        event.textContent+=' · '+p.delivery;
+        if(p.failed){
+          const dismiss=document.createElement('button');dismiss.type='button';dismiss.className='post-action';dismiss.textContent='Dismiss';
+          dismiss.onclick=()=>{outbox=outbox.filter(x=>x!==p);render();};event.appendChild(dismiss);
+        }
+      }else if(view!=='saved'){
         const action=document.createElement('button');action.type='button';action.className='post-action';action.textContent=p.mine?'Delete':'Report';
         action.onclick=async()=>{
           if(!p.mine){hidden=[...hidden.slice(-499),p.id];try{localStorage.setItem('malten_hidden',JSON.stringify(hidden));}catch(_){}render();}
@@ -88,18 +95,42 @@
     }catch(_){if(n===request)$('status').textContent='Offline or unavailable. Your draft stays here.';}
   }
   function clearPhoto(){photo=null;$('photo-input').value='';$('photo-preview').removeAttribute('src');$('capture-preview').hidden=true;}
-  form.onsubmit=async e=>{
-    e.preventDefault();if(busy)return;
+  async function sendQueued(){
+    if(sending)return;
+    sending=true;
+    try {
+      for(const p of outbox.filter(p=>!p.failed)){
+        p.delivery='Checking…';render();
+        try {
+          let response;
+          do {
+            response=await fetch('/api/posts',{method:'POST',headers,body:JSON.stringify({stream:p.stream,text:p.text,photo:p.photo})});
+            if(response.status===429){
+              p.delivery='Waiting to send…';render();
+              await new Promise(resolve=>setTimeout(resolve,10000));
+            }
+          }while(response.status===429);
+          if(!response.ok)throw new Error('Not shared · '+(await response.text()).replace(/\. Your draft has been kept\./g,'').trim());
+          outbox=outbox.filter(x=>x!==p);
+          revision='';await refresh();render();
+        }catch(err){
+          p.failed=true;p.delivery=err.message?.startsWith('Not shared · ')?err.message:'Connection lost · delivery unconfirmed';
+          render();
+        }
+      }
+    }finally{
+      sending=false;
+      if(outbox.some(p=>!p.failed))sendQueued();
+    }
+  }
+  form.onsubmit=e=>{
+    e.preventDefault();
     const text=input.value.trim();if(!text&&!photo)return;
     if(view==='saved'){$('status').textContent='Choose All or You to share a new thought publicly.';return;}
     if(!token){$('status').textContent='Enable browser storage to share.';return;}
-    busy=true;for(const el of form.elements)el.disabled=true;$('status').textContent='Checking before sharing…';
-    try {
-      const response=await fetch('/api/posts',{method:'POST',headers,body:JSON.stringify({stream:activeStream(),text,photo})});
-      if(!response.ok)throw new Error(await response.text());
-      input.value='';input.style.height='';clearPhoto();$('status').textContent='';await refresh();
-    }catch(err){$('status').textContent=err.message||'Could not share. Your draft has been kept.';}
-    finally{busy=false;for(const el of form.elements)el.disabled=false;if(!SpeechRecognition)$('voice').disabled=true;}
+    outbox.push({text,photo,stream:activeStream(),created_at:Date.now(),mine:true,delivery:'Waiting to send…'});
+    input.value='';input.style.height='';clearPhoto();$('status').textContent='';
+    render();sendQueued();
   };
   input.oninput=()=>{input.style.height='';input.style.height=Math.min(input.scrollHeight,130)+'px';};
   input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();form.requestSubmit();}};
@@ -134,7 +165,7 @@
   window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
   // A coarse code selects a starting stream. Exact coordinates never leave JS.
   if(!window.location.hash&&navigator.geolocation)navigator.geolocation.getCurrentPosition(pos=>{
-    if(stayDefault||window.location.hash||input.value||photo||busy)return;
+    if(stayDefault||window.location.hash||input.value||photo||outbox.length||sending)return;
     const lat=Math.min(17999,Math.floor((pos.coords.latitude+90)*100)),lng=Math.min(35999,Math.floor((pos.coords.longitude+180)*100));
     window.location.hash='near-'+lat.toString(36)+'-'+lng.toString(36);
   },()=>{},{enableHighAccuracy:false,maximumAge:120000,timeout:12000});

@@ -7,28 +7,47 @@ function element(){return {children:[],value:'',style:{},elements:[],classList:{
 const document={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element,createTextNode:t=>({textContent:t})};
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
 const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
-let sent,fail=false;
+let sent,fail=false,hold=null;
+const shared=[];
 const storage=new Map();
-const context={document,window,navigator:{},Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},Malten:{getNetwork:()=>data},fetch:async(url,opts)=>{
- if(opts.method==='POST'){sent=JSON.parse(opts.body);return {ok:!fail,text:async()=> 'Moderation unavailable'};}
- return {ok:true,json:async()=>sent?[{id:'shared',...sent,created_at:2,mine:true}]:[]};
+const context={document,window,navigator:{},Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,Malten:{getNetwork:()=>data},fetch:async(url,opts)=>{
+ if(opts.method==='POST'){sent=JSON.parse(opts.body);if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,text:async()=> 'Moderation unavailable'};}
+ return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1]))};
 }};
 const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 (async()=>{
  vm.runInNewContext(source,context);await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,0,'private captures must not be public');
+ let release;hold=new Promise(resolve=>{release=resolve});
  elements.get('thought').value='a reflection';
- await elements.get('composer').onsubmit({preventDefault(){}});
- assert.equal(sent.stream,'x');assert.equal(sent.text,'a reflection');
+ elements.get('composer').onsubmit({preventDefault(){}});
+ assert.equal(elements.get('thought').value,'');
+ assert.equal(elements.get('stream').children.length,1,'pending message appears immediately');
+ elements.get('thought').value='another thought';
+ elements.get('composer').onsubmit({preventDefault(){}});
+ assert.equal(elements.get('stream').children.length,2,'can post again during moderation');
+ assert.equal(sent.text,'a reflection','requests are processed in order');
+ elements.get('thought').value='still typing';
+ release();hold=null;await new Promise(setImmediate);
+ assert.equal(sent.stream,'x');assert.equal(sent.text,'another thought');
  assert.equal(sent.location,undefined);assert.equal(sent.agent,undefined);
  assert.equal(data.points.length,1,'old data untouched');
- assert.equal(elements.get('stream').children.length,1);
- fail=true;elements.get('thought').value='keep my draft';
- await elements.get('composer').onsubmit({preventDefault(){}});
- assert.equal(elements.get('thought').value,'keep my draft');
- assert.equal(elements.get('status').textContent,'Moderation unavailable');
+ assert.equal(shared.length,2);
+ assert.equal(elements.get('stream').children.length,2,'no duplicate after approval');
+ assert.equal(elements.get('thought').value,'still typing','completion does not erase next draft');
+ fail=true;elements.get('thought').value='keep this failed thought';
+ elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ assert.equal(elements.get('thought').value,'');
+ assert.equal(elements.get('stream').children.length,3,'failure stays in own stream');
+ const failed=elements.get('stream').children.find(p=>p.children.some(c=>(c.textContent||'').includes('Not shared')));
+ assert(failed,'failure status is attached to the message');
+ assert(failed.children.some(c=>(c.textContent||'').includes('Moderation unavailable')));
+ window.location.hash='#elsewhere';listeners.hashchange();await new Promise(setImmediate);
+ assert.equal(elements.get('stream').children.length,0,'local captures stay in their original stream');
+ window.location.hash='#x';listeners.hashchange();await new Promise(setImmediate);
+ assert.equal(elements.get('stream').children.length,3);
  window.location.hash='#%';listeners.hashchange();await new Promise(setImmediate);
  assert(source.includes('for(let i=0;i<e.results.length;i++)'),'voice retains finalized segments');
  assert(!source.includes('/api/location'),'exact location is never sent');
- console.log('Shared streams, draft retention and private migration: passed');
+ console.log('Queued posting, moderation outcomes, stream isolation and private migration: passed');
 })().catch(err=>{console.error(err);process.exitCode=1;});
