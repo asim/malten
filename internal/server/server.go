@@ -1,4 +1,4 @@
-// Package server serves Malten's local-first mental network and stateless helpers.
+// Package server serves Malten's local-first spatial network and stateless helpers.
 // The network and its location context live only in the browser.
 package server
 
