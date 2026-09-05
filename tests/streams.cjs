@@ -13,7 +13,7 @@ const context={document,window,navigator:{},Intl,Date,Uint8Array,crypto:webcrypt
  if(opts.method==='POST'){sent=JSON.parse(opts.body);return {ok:!fail,text:async()=> 'Moderation unavailable'};}
  return {ok:true,json:async()=>sent?[{id:'shared',...sent,created_at:2,mine:true}]:[]};
 }};
-const source=readFileSync('internal/server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 (async()=>{
  vm.runInNewContext(source,context);await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,0,'private captures must not be public');

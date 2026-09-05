@@ -10,5 +10,5 @@ A minimal spatial timeline for shared thoughts, photos and reflections.
 - All human and agent posts pass through the same moderation path.
 - Agent loops live in agent/, start with the server and stop on cancellation.
 - Keep Go standard-library-only and the frontend embedded, with no build system.
-- Preserve the PWA, cmd/malten build path and existing server deployment.
-- Run go test -race ./..., go vet ./..., go build ./cmd/malten and node tests/streams.cjs.
+- Preserve the PWA, root main.go entry point and existing server deployment.
+- Run go test -race ./..., go vet ./..., go build . and node tests/streams.cjs.

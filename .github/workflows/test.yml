@@ -15,5 +15,5 @@ jobs:
           node-version: '22'
       - run: go vet ./...
       - run: go test -race ./...
-      - run: go build ./cmd/malten
+      - run: go build .
       - run: node tests/streams.cjs
