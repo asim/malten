@@ -12,7 +12,7 @@ quietly underneath that network to find relationships and resurface something
 when it becomes relevant. It should elevate human attention and understanding,
 not turn Malten into another assistant people must talk to.
 
-The valuable moment is not creating the first node. It is when Malten returns
+The valuable moment is not creating the first point. It is when Malten returns
 something the person had forgotten and it matters now.
 
 ## Open source
@@ -37,33 +37,33 @@ Malten should be available in three ways:
 
 1. **Self-hosted** — free, open source and operated by the user.
 2. **Hosted Free** — the easiest way to begin, with a genuinely useful personal
-   mental map and no infrastructure to manage.
+   mental network and no infrastructure to manage.
 3. **Hosted Pro** — a subscription for continuity and compounding value across
    devices, contexts and time.
 
 This is an open-core service model without withholding the core. The free
 software must remain capable of capturing, connecting, viewing and exporting a
-mental map. Pro earns its price by doing costly and operationally difficult
+mental network. Pro earns its price by doing costly and operationally difficult
 things on the person's behalf.
 
 ### Self-hosted
 
-- Complete local graph and capture experience.
+- Complete local network and capture experience.
 - Manual connections and place/time context.
 - Data export and documented deployment.
 - Bring-your-own storage and model credentials where supported.
-- No artificial node or usage ceiling imposed by the application.
+- No artificial point or usage ceiling imposed by the application.
 
 ### Hosted Free
 
 - No account required until a hosted capability needs identity.
-- Unlimited local text captures, nodes and manual connections.
+- Unlimited local text captures, points and manual connections.
 - Basic time and place context.
 - Local search and export.
 - A modest hosted allowance where server processing is required.
 
 The free tier should allow someone to discover whether Malten belongs in their
-life. An arbitrary node limit would make a personal archive feel unsafe and
+life. An arbitrary point limit would make a personal archive feel unsafe and
 would charge for storage that costs Malten almost nothing while it remains on
 the device.
 
@@ -83,9 +83,9 @@ Pro should eventually include:
 - periodic reflection on patterns, unfinished thoughts and emerging themes;
 - a reasonable included allowance for model-backed processing.
 
-People should be paying for a mental map that stays with them and grows more
+People should be paying for a mental network that stays with them and grows more
 useful over time—not for an AI chat box. Privacy, basic export and access to
-one's own local graph should never be subscription leverage.
+one's own local network should never be subscription leverage.
 
 Avoid lifetime plans because storage, sync and inference create continuing
 costs. Avoid multiple credit tiers, team plans and complex packaging until the
@@ -151,5 +151,5 @@ Commercial evidence:
 - retention and voluntary cancellation reasons;
 - storage and inference cost per active subscriber.
 
-Raw node counts and time spent staring at the app are not success measures.
+Raw point counts and time spent staring at the app are not success measures.
 Malten should help someone return to their life with a clearer understanding.
