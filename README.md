@@ -80,93 +80,45 @@ This leads to a few principles:
 
 ## The current experiment
 
-The current application is a location-first exploration of this larger idea. It
-uses walking, notes, movement and nearby places to test how software can help
-someone become more aware of where they are and connect thoughts to the places
-in which they occurred.
+The application opens on an empty spatial plane. Captured thoughts and
+observations become nodes; relationships between them become edges. This is not
+a diagram of the physical world. It is a space in which the person can gradually
+form their own model.
 
-It opens on a **timeline** rather than a map. As you move, it becomes a trail of
-the day: where you were, what was around you, what you noticed and what you
-thought. The map is available as one view, deliberately not the front door.
+The graph can be panned, zoomed and rearranged. Select a node to inspect it or
+choose **Continue from here** before capturing another thought. That creates an
+explicit relationship rather than connecting everything into an arbitrary
+chronological chain.
 
-This prototype is currently limited to Great Britain because it uses the
-Ordnance Survey National Grid and OS Maps. That is an implementation constraint,
-not the boundary of Malten.
+Place remains useful context without becoming the interface. With permission,
+the phone attaches location to a capture. Observations made near one another can
+gain a subtle place relationship, and Malten can indicate which thoughts were
+recorded near the person's current position. Geographic coordinates never
+determine where nodes sit on the mental plane.
 
-### Timeline
+The current application deliberately contains no map, nearby-data feed,
+transport dashboard or chat window. Existing server integrations remain in the
+codebase as experiments that may later provide context in the background. Their
+existence does not require them to occupy the interface.
 
-The timeline is an append-only log of what happened: arriving somewhere, a note,
-a question, an answer, a photo or a find. Oldest is at the top and now is at the
-bottom beside the composer. Nothing already on screen is rewritten, and a reload
-picks the day back up where it left off.
-
-A location fix becomes an arrival after meaningful movement or a stop following
-travel. Merely driving through somewhere does not mean you experienced it.
-
-### Notes in context
-
-What you type is treated as a note unless it ends in a question mark. Both notes
-and questions land in the same timeline.
-
-A note retains where and when it was made. Return near that location and Malten
-can resurface it. Nearby notes can also become context for a question. Place is
-one of the strongest human indexes for memory, and this prototype explores what
-happens when a notes system stops discarding it.
-
-### Ambient assistance
-
-There is no separate chat window. Assistance works in two ways:
-
-- **Ambiently** — Malten can occasionally surface something relevant to the
-  present context.
-- **On demand** — a question in the composer can use nearby places, live
-  transport and weather as tools, with the response appearing in the timeline.
-
-The long-term direction is not a more prominent agent. It is better judgement
-about when to remain silent, when to connect two fragments and when to return
-something useful to the person's attention.
-
-### Spatial views and exploration
-
-The current prototype includes several experiments built on the same underlying
-context:
-
-- **New ground** records which 1 km National Grid squares you have experienced.
-  There are no points, badges, streaks or competition.
-- **Look around** uses the camera and compass to place nearby locations and finds
-  in their real direction.
-- **Live map** provides a conventional geographic view when it is useful.
-- **Going out with children** creates a local hunt from things that are actually
-  nearby and lets a family photograph what they find.
-- **Live transport** provides rail, bus, tram and tube context without turning
-  Malten into a turn-by-turn navigation product.
-- **Nudges** are opt-in and deliberately scarce: an hourly check that usually
-  says nothing, with at most one notification a day and none at night.
-
-These are product experiments, not a fixed feature checklist. Each should be
-judged by the same question: does it help someone build their own model, or does
-it replace that model?
+The first version of the graph keeps connection-making partly deliberate. Later
+work can explore ambient semantic connections and resurfacing, but the standard
+is not how much a model can generate. It is whether Malten helps the person see a
+relationship they can understand and act upon.
 
 ## Privacy and architecture
 
 Malten is a single self-contained Go binary serving an installable web app. It
 has no external Go dependencies and no database.
 
-The server is stateless and anonymous. The timeline, notes, finds, explored
-squares and photos live in the browser. Photos are downscaled into IndexedDB and
-are not uploaded. The timeline is a versioned log of typed events rather than
-stored markup, allowing it to be replayed as context as well as redrawn.
+The server is stateless and anonymous. Nodes, edges and their context live in
+the browser as structural data under `malten_graph1`. Existing notes and finds
+from earlier versions are imported into the graph on first use. Browser storage
+degrades to session storage and then memory rather than breaking the app.
 
-There are two opt-in server-side exceptions:
-
-- The out-of-coverage waitlist.
-- Push subscribers, when nudges are enabled. A subscriber record contains the
-  push endpoint, a coarse 1 km grid square and explored squares. Turning nudges
-  off deletes it.
-
-The UI and a vendored copy of Leaflet are embedded with `//go:embed`. The
-Anthropic client, National Rail SOAP client, SIRI-VM bus feed and Web Push
-implementation are built directly over the Go standard library.
+The UI is embedded with `//go:embed`. The dormant Anthropic, Ordnance Survey,
+National Rail, bus and Web Push integrations remain built directly over the Go
+standard library.
 
 ## Quick start
 
@@ -176,16 +128,14 @@ go test ./...
 go run ./cmd/malten
 ```
 
-Open <http://localhost:8080>. The timeline works immediately. Opening the map
-asks for a free **OS Data Hub** key from
-[osdatahub.os.uk](https://osdatahub.os.uk) unless the operator has configured
-one. Other features become available as their keys are added.
+Open <http://localhost:8080>. The mental map works immediately and requires no
+API key. Allowing browser location adds place context to new captures.
 
 ## Configuration
 
-Server-side secrets are read from an environment variable or, failing that, a
-file of the same name beside the binary. Features switch on only when their
-configuration is present, and `/api/health` tells the UI what is available.
+The current graph interface requires no server-side configuration. The retained
+experimental endpoints read secrets from an environment variable or, failing
+that, a file of the same name beside the binary.
 
 | Variable | File | Enables | Notes |
 |---|---|---|---|
@@ -200,10 +150,7 @@ configuration is present, and `/api/health` tells the UI what is available.
 | `MALTEN_DATA` | — | Waitlist file path | Defaults to `interest.jsonl`. |
 | `MALTEN_ADDR` | — | Listen address | Defaults to `:8080`. |
 
-In per-user mode the OS key is sent directly from the browser to OS and never
-passes through Malten's server. A shared `OS_API_KEY` is used only by the
-server-side tile proxy. Anthropic, rail, bus and VAPID credentials remain
-server-side.
+Anthropic, OS, rail, bus and VAPID credentials remain server-side.
 
 ### Waitlist
 
@@ -245,8 +192,8 @@ internal/llm        Anthropic Messages client and bounded tool loop
 internal/nrail      National Rail station data and LDBWS client
 internal/bods       Bus Open Data Service SIRI-VM client
 internal/push       VAPID and encrypted Web Push
-internal/server     stateless HTTP handlers and ambient suggestion loop
-internal/server/web timeline UI, browser storage, Leaflet and PWA assets
+internal/server     stateless HTTP handlers and embedded web application
+internal/server/web mental-map graph, local browser storage and PWA assets
 ```
 
 Grid conversion is tested against Ordnance Survey's worked example to
@@ -255,8 +202,7 @@ a browser would. `go test ./...` requires no network access or credentials.
 
 ## Data sources and attribution
 
-- **Ordnance Survey** — “Contains OS data © Crown copyright and database
-  rights.” Attribution remains visible on the map.
+- **Ordnance Survey** — retained grid, place-search and tile experiments.
 - **National Rail** — station coordinates from a vendored dataset under the Open
   Database Licence.
 - **OpenStreetMap** — nearby places through Overpass, © OpenStreetMap
