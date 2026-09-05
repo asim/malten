@@ -41,15 +41,6 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           PORT: ${{ secrets.DEPLOY_PORT || '22' }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          # Optional server-side secrets. Each is provisioned as a file next to
-          # the binary; the app reads OS_API_KEY, ANTHROPIC_API_KEY,
-          # NRE_LDBWS_TOKEN and BODS_API_KEY from env-or-file, so setting the
-          # matching repo secret is all it takes to switch a feature on.
-          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
-          OS_API_KEY: ${{ secrets.OS_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          NRE_LDBWS_TOKEN: ${{ secrets.NRE_LDBWS_TOKEN }}
-          BODS_API_KEY: ${{ secrets.BODS_API_KEY }}
         run: |
           set -euo pipefail
 
@@ -72,33 +63,10 @@ jobs:
           # we avoid "Text file busy").
           scp -P "$PORT" -i ~/.ssh/id_deploy malten "$USER@$HOST:/home/malten/malten.new"
 
-          # Provision each server-side secret as a file next to the binary, but
-          # only when its repo secret is set. Filenames match what the app reads.
-          put_secret() {
-            local val="$1" dest="$2"
-            if [ -n "$val" ]; then
-              printf '%s' "$val" > secret.tmp
-              scp -P "$PORT" -i ~/.ssh/id_deploy secret.tmp "$USER@$HOST:/home/malten/$dest"
-              rm -f secret.tmp
-            fi
-          }
-          put_secret "${ADMIN_TOKEN:-}"       admin_token
-          put_secret "${OS_API_KEY:-}"        os_api_key
-          put_secret "${ANTHROPIC_API_KEY:-}" anthropic_key
-          put_secret "${NRE_LDBWS_TOKEN:-}"   nre_ldbws_token
-          put_secret "${BODS_API_KEY:-}"      bods_api_key
-
           $SSH 'bash -se' <<'REMOTE'
           set -euo pipefail
           chmod 0755 /home/malten/malten.new
           mv -f /home/malten/malten.new /home/malten/malten
-          # Lock down any secret files we just uploaded (owner read/write only).
-          for f in admin_token os_api_key anthropic_key nre_ldbws_token bods_api_key; do
-            [ -f "/home/malten/$f" ] && chmod 600 "/home/malten/$f" || true
-          done
-          # The server is now stateless and never writes a DB. Remove any
-          # legacy on-disk database so no old user content lingers.
-          rm -f /home/malten/malten.db /home/malten/malten.db-shm /home/malten/malten.db-wal
           sudo /usr/bin/systemctl restart malten
           sleep 1
           if systemctl is-active --quiet malten; then

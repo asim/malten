@@ -1,0 +1,24 @@
+const {readFileSync}=require('node:fs');
+const vm=require('node:vm');
+const assert=require('node:assert/strict');
+const elements=new Map();
+function element(){return {children:[],value:'',style:{},append(...v){this.children.push(...v)},appendChild(v){this.children.push(v)},replaceChildren(){this.children=[]},removeAttribute(){}}}
+const document={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element,createTextNode:t=>({textContent:t})};
+const data={v:1,points:[{id:'old',text:'visit #x',created_at:1}],connections:[]};
+const window={location:{hash:''},addEventListener(name,fn){this.change=fn}};
+const context={document,window,navigator:{},Intl,Date,Malten:{getNetwork:()=>data,newId:()=>String(data.points.length),setNetwork:()=>true}};
+const source=readFileSync('internal/server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+vm.runInNewContext(source,context);
+assert.equal(elements.get('stream').children.length,1);
+window.location.hash='#x';window.change();
+assert.equal(elements.get('stream').children.length,0);
+elements.get('thought').value='a reflection';
+elements.get('composer').onsubmit({preventDefault(){}});
+assert.equal(data.points[1].stream,'x');
+assert.equal(elements.get('stream').children.length,1);
+window.location.hash='';window.change();
+assert.equal(elements.get('stream').children.length,1);
+window.location.hash='#x';window.change();
+assert.equal(elements.get('stream').children.length,1);
+window.location.hash='#%';window.change();
+console.log('Independent streams: passed');

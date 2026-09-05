@@ -6,11 +6,11 @@
 #   sudo systemctl enable --now malten
 #
 # The binary lives at /home/malten/malten and is run as the `malten` user with
-# working directory /home/malten, so the SQLite database is /home/malten/malten.db.
+# working directory /home/malten. Reflections are stored in the browser.
 # Configuration is read from /home/malten/.env (see deploy/env.example).
 
 [Unit]
-Description=Malten conversational support agent
+Description=Malten reflection stream
 After=network-online.target
 Wants=network-online.target
 
@@ -24,14 +24,13 @@ WorkingDirectory=/home/malten
 # EnvironmentFile is read after these Environment= lines. Binding to localhost
 # keeps the app reachable only through nginx.
 Environment=MALTEN_ADDR=127.0.0.1:8080
-Environment=MALTEN_DB=/home/malten/malten.db
 EnvironmentFile=-/home/malten/.env
 
 ExecStart=/home/malten/malten
 Restart=on-failure
 RestartSec=2s
 
-# Hardening (kept moderate so /home/malten stays writable for the database).
+# Hardening (kept moderate so /home/malten stays writable for operational compatibility).
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
