@@ -2,6 +2,10 @@
 
 A timeline for thoughts, photos and reflection.
 
+![Malten timeline with sample reflections, trees and a beach sunrise](docs/timeline.jpg)
+
+[About this screenshot](docs/screenshot.md)
+
 ## Overview
 
 Malten is a timeline for thoughts, photos and reflections shared in the
