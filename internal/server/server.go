@@ -150,6 +150,8 @@ func secret(envKey, file string) string {
 // Handler returns the HTTP mux for the application.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/location", s.handleLocation)
+	mux.HandleFunc("/api/route", s.handleRoute)
 	mux.HandleFunc("/api/gridref", s.handleGridRef)
 	mux.HandleFunc("/api/stops", s.handleStops)
 	mux.HandleFunc("/api/arrivals", s.handleArrivals)
