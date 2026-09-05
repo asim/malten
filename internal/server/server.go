@@ -1,5 +1,5 @@
-// Package server serves Malten's local-first mental map and stateless helpers.
-// The graph and its location context live only in the browser.
+// Package server serves Malten's local-first mental network and stateless helpers.
+// The network and its location context live only in the browser.
 package server
 
 import (
