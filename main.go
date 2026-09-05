@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/asim/malten/agent"
-	"github.com/asim/malten/internal/server"
+	"github.com/asim/malten/server"
 )
 
 func main() {

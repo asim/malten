@@ -32,7 +32,7 @@ jobs:
           go test ./...
 
       - name: Build (static linux/amd64)
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o malten ./cmd/malten
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o malten .
 
       - name: Deploy over SSH
         env:

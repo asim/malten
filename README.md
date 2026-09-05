@@ -22,7 +22,7 @@ Requires Go 1.25 or later and an Anthropic API key for moderation.
 git clone https://github.com/asim/malten.git
 cd malten
 export ANTHROPIC_API_KEY=your-key
-go run ./cmd/malten
+go run .
 ```
 
 Open [localhost:8080](http://localhost:8080). Set `MALTEN_ADDR` to change the
@@ -43,7 +43,7 @@ from [Reminder](https://reminder.dev) in `#reminder`.
 
 ```sh
 go test -race ./...
-go build ./cmd/malten
+go build .
 node tests/streams.cjs
 ```
 

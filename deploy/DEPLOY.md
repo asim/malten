@@ -2,7 +2,7 @@
 
 Malten runs as one Go binary behind the existing nginx server.
 
-Pushes to main build and test ./cmd/malten, upload the binary over SSH and restart
+Pushes to main build and test ., upload the binary over SSH and restart
 the existing systemd service. The deployment path remains /home/malten/malten.
 No domain change or new service is required.
 
