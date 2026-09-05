@@ -1,8 +1,10 @@
-// Malten's mental map lives entirely in this browser. The server has no copy.
+// Malten's mental network lives entirely in this browser. The server has no copy.
 (function () {
-  const GRAPH = 'malten_graph1';
+  const NETWORK = 'malten_network1';
+  const PREVIOUS = 'malten_graph1';
   const memory = {};
-  let fallbackStorage = null, volatileGraph = null;
+  let fallbackStorage = null, volatileNetwork = null;
+
   function store() {
     for (const get of [() => localStorage, () => sessionStorage]) {
       try {
@@ -12,8 +14,24 @@
     return { getItem: k => memory[k] || null, setItem: (k, v) => { memory[k] = String(v); } };
   }
   const storage = store();
-  function legacy() {
-    const nodes = [], edges = [], seen = new Set();
+
+  function valid(network) {
+    return network && network.v === 1
+      && Array.isArray(network.points) && Array.isArray(network.connections);
+  }
+
+  function fromPrevious() {
+    try {
+      const previous = JSON.parse(storage.getItem(PREVIOUS));
+      if (previous && Array.isArray(previous.nodes) && Array.isArray(previous.edges)) {
+        return { v: 1, points: previous.nodes, connections: previous.edges };
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function fromLegacy() {
+    const points = [], connections = [], seen = new Set();
     for (const key of ['malten_notes', 'malten_finds']) {
       try {
         const items = JSON.parse(storage.getItem(key)) || [];
@@ -22,7 +40,7 @@
             || (key === 'malten_finds' ? 'A place I recorded' : '');
           if (!text || seen.has(item.id)) continue;
           seen.add(item.id);
-          nodes.push({
+          points.push({
             id: item.id || window.crypto.randomUUID(),
             text,
             created_at: item.t || Date.parse(item.created_at) || Date.now(),
@@ -35,42 +53,48 @@
         }
       } catch (_) {}
     }
-    return { v: 1, nodes, edges };
+    return { v: 1, points, connections };
   }
+
+  function readFrom(source) {
+    try {
+      const network = JSON.parse(source.getItem(NETWORK));
+      return valid(network) ? network : null;
+    } catch (_) { return null; }
+  }
+
   function read() {
-    if (volatileGraph) return volatileGraph;
+    if (volatileNetwork) return volatileNetwork;
     if (fallbackStorage) {
-      try {
-        const graph = JSON.parse(fallbackStorage.getItem(GRAPH));
-        if (graph && graph.v === 1 && Array.isArray(graph.nodes) && Array.isArray(graph.edges)) return graph;
-      } catch (_) {}
+      const network = readFrom(fallbackStorage);
+      if (network) return network;
     }
-    try {
-      const graph = JSON.parse(storage.getItem(GRAPH));
-      if (graph && graph.v === 1 && Array.isArray(graph.nodes) && Array.isArray(graph.edges)) return graph;
-    } catch (_) {}
-    const graph = legacy();
-    if (graph.nodes.length) write(graph);
-    return graph;
+    const stored = readFrom(storage);
+    if (stored) return stored;
+    const network = fromPrevious() || fromLegacy();
+    if (network.points.length) write(network);
+    return network;
   }
-  function write(graph) {
-    const value = JSON.stringify(graph);
+
+  function write(network) {
+    const value = JSON.stringify(network);
     try {
-      storage.setItem(GRAPH, value);
-      fallbackStorage = null; volatileGraph = null;
+      storage.setItem(NETWORK, value);
+      fallbackStorage = null; volatileNetwork = null;
       return true;
     } catch (_) {}
     try {
-      sessionStorage.setItem(GRAPH, value);
-      fallbackStorage = sessionStorage; volatileGraph = null;
+      sessionStorage.setItem(NETWORK, value);
+      fallbackStorage = sessionStorage; volatileNetwork = null;
       return true;
     } catch (_) {}
-    volatileGraph = graph;
+    volatileNetwork = network;
     return false;
   }
+
   window.Malten = {
-    getGraph: read,
-    setGraph: write,
+    getNetwork: read,
+    setNetwork: write,
     newId: () => {
       const bytes = new Uint8Array(6); crypto.getRandomValues(bytes);
       return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
