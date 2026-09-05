@@ -4,33 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>{{.Title}}</title>
-<link rel="stylesheet" href="/leaflet.css?v={{.Ver}}">
 <link rel="stylesheet" href="/app.css?v={{.Ver}}">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#0b0c0d" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#11100e" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Malten">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-{{block "head" .}}{{end}}
 </head>
 <body>
   {{block "content" .}}{{end}}
-  <script src="/leaflet.js?v={{.Ver}}"></script>
   <script src="/app.js?v={{.Ver}}"></script>
   {{block "scripts" .}}{{end}}
   <script>
-    // Register the service worker for offline/installability. We do NOT reload
-    // on controllerchange — the page is network-first and CSS/JS are version-
-    // stamped, so updates land on the next normal load without a jarring
-    // self-refresh.
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw.js').catch(function () {});
-      });
-    }
+    if ('serviceWorker' in navigator) window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/sw.js').catch(function () {});
+    });
   </script>
 </body>
 </html>
