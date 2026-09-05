@@ -1,33 +1,48 @@
-// Command malten runs the reflection app as a single self-contained HTTP
-// server with the UI baked in.
-//
-// Configuration (environment variables):
-//
-//	MALTEN_ADDR    listen address (default :8080)
-//
-// The server is stateless. It has no copy of the user's spatial network.
+// Command malten serves the stream and owns the agent lifecycle.
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
+	"github.com/asim/malten/agent"
 	"github.com/asim/malten/internal/server"
 )
 
 func main() {
-	addr := env("MALTEN_ADDR", ":8080")
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	srv := server.New()
+	var agents sync.WaitGroup
+	start := func(run func(context.Context)) { agents.Add(1); go func() { defer agents.Done(); run(ctx) }() }
+	start(srv.Run)
+	if os.Getenv("MALTEN_REMINDER") == "true" {
+		start(func(ctx context.Context) { agent.Reminder(ctx, srv.PublishAgent) })
+	}
+	addr := os.Getenv("MALTEN_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	httpServer := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second, BaseContext: func(_ net.Listener) context.Context { return ctx }}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdown)
+	}()
 	log.Printf("malten listening on %s", addr)
-	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
-		log.Fatal(err)
+	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Print(err)
+		stop()
 	}
-}
-
-func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
+	stop()
+	agents.Wait()
 }

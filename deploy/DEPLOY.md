@@ -1,29 +1,37 @@
-# Deploying Malten
+# Deployment
 
-The existing GitHub workflow builds ./cmd/malten, runs Go tests and vet, uploads
-the binary to /home/malten/malten.new, renames it to /home/malten/malten, and
-restarts the malten systemd service on pushes to main.
+Malten runs as one Go binary behind the existing nginx server.
 
-## Server setup
+Pushes to main build and test ./cmd/malten, upload the binary over SSH and restart
+the existing systemd service. The deployment path remains /home/malten/malten.
+No domain change or new service is required.
 
-Keep the malten user, /home/malten working directory, deploy/malten.service,
-and nginx configuration in deploy/nginx/malten.ai.conf. The service listens on
-127.0.0.1:8080 behind nginx and TLS. Install the unit under /etc/systemd/system,
-run systemctl daemon-reload, and enable malten. The deploy user needs permission
-to restart and inspect that service through sudo.
+Configuration is read from /home/malten/.env by systemd; see
+[env.example](env.example). Moderation reads ANTHROPIC_API_KEY or the existing
+/home/malten/anthropic_key file. Keep secret files readable only by the service
+user. Without a working key, reading works but publication is blocked.
 
-Configuration is optional in /home/malten/.env; see env.example. No AI, map,
-transport, or push credentials are needed. Reflections stay in the browser.
-There is no server database. Deployment does not delete existing server files.
+MALTEN_REMINDER=true enables the Reminder agent. It checks /api/latest at startup
+and every six hours, skips duplicate reflections within that process lifetime,
+and publishes into #reminder through the normal moderation path. It cancels with
+the server. MALTEN_MODERATION_MODEL defaults to claude-sonnet-5.
 
-## GitHub secrets
+Shared posts and photos are held only in memory: 500 posts maximum, 400 KB per
+photo, expiring after 24 hours or earlier on restart/capacity eviction. A restart
+clears reports and the short-lived rate-limit state too. No database is needed.
+Older local captures remain on the browser that created them.
 
-Preserve DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, DEPLOY_PORT (default 22), and
-DEPLOY_KNOWN_HOSTS. The known-hosts value pins the server SSH identity. Configure
-DNS and nginx TLS certificates before exposing the service publicly.
+The server limits concurrent moderation calls and rate-limits posting/reporting
+by IP. Only loopback proxy requests can supply X-Real-IP; nginx must overwrite it.
+HTTPS is needed for camera, microphone and location permissions. The existing
+1 MB nginx upload limit accommodates the capped JSON photo uploads.
 
-## Verify
+The local stream uses 0.01-degree cells (about 1.1 km north–south, narrower
+east–west depending on latitude). It is approximate, public and not proof of
+presence. Exact coordinates are never sent by the UI. Server-side JPEG
+re-encoding removes photo metadata. Voice recognition may use the browser's
+speech provider. Shared text and photos are sent to Anthropic for moderation.
 
-Run systemctl status malten and check /api/health through the public HTTPS URL.
-Use journalctl -u malten for startup failures. For a 502, check the service and
-MALTEN_ADDR. Verify PWA installation and an offline launch after deployment.
+The PWA shell works offline. Sharing requires a connection and never queues a
+private capture for later automatic publication. Moving domains changes browser
+storage and the installed PWA's origin; it does not require changing the server.
