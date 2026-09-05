@@ -158,7 +158,7 @@ func TestSonnetResponseValidation(t *testing.T) {
 }
 
 func TestReportReviewOutcomes(t *testing.T) {
-	for _,decision := range []string{"allow", "block", "unavailable"} {
+	for _, decision := range []string{"allow", "block", "unavailable"} {
 		t.Run(decision, func(t *testing.T) {
 			s := New()
 			s.stream.posts = []Post{{ID: "reported", Text: "reflection", Photo: "image", Created: time.Now().UnixMilli(), hidden: true}}
@@ -195,11 +195,55 @@ func TestRateLimitDoesNotTrustPublicForwardedHeader(t *testing.T) {
 	r := httptest.NewRequest("POST", "/api/posts", nil)
 	r.RemoteAddr = "198.51.100.1:1234"
 	r.Header.Set("X-Real-IP", "203.0.113.1")
-	if !s.stream.allow(r) {
-		t.Fatal("first request denied")
+	for i := 0; i < 6; i++ {
+		if !s.stream.allow(r) {
+			t.Fatal("burst request denied")
+		}
 	}
 	r.Header.Set("X-Real-IP", "203.0.113.2")
 	if s.stream.allow(r) {
 		t.Fatal("spoofed header bypassed rate limit")
+	}
+}
+
+func TestPostingBurstAndRecovery(t *testing.T) {
+	s := New()
+	s.stream.moderate = func(context.Context, Post) (bool, error) { return true, nil }
+	token := strings.Repeat("ab", 32)
+	for i := 0; i < 6; i++ {
+		w := request(t, s, "POST", "/api/posts", `{"text":"a thought"}`, token)
+		if w.Code != 201 {
+			t.Fatalf("post %d: %d", i+1, w.Code)
+		}
+	}
+	w := request(t, s, "POST", "/api/posts", `{"text":"too fast"}`, token)
+	if w.Code != 429 || w.Header().Get("Retry-After") != "10" {
+		t.Fatal("burst not bounded", w.Code)
+	}
+	w = request(t, s, "POST", "/api/posts/"+s.stream.posts[0].ID+"/report", "", token)
+	if w.Code != 204 {
+		t.Fatal("posting consumed report allowance", w.Code)
+	}
+
+	b := newStreamStore()
+	now := time.Now()
+	for i := 0; i < 6; i++ {
+		if !b.allowAt("test", now) {
+			t.Fatal("burst denied")
+		}
+	}
+	if b.allowAt("test", now.Add(9*time.Second)) {
+		t.Fatal("refilled too soon")
+	}
+	if !b.allowAt("test", now.Add(10*time.Second)) {
+		t.Fatal("did not refill")
+	}
+	if b.allowAt("test", now.Add(10*time.Second)) {
+		t.Fatal("refilled more than one request")
+	}
+	for i := 0; i < 6; i++ {
+		if !b.allowAt("test", now.Add(2*time.Minute)) {
+			t.Fatal("idle burst not restored")
+		}
 	}
 }
