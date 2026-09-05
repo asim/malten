@@ -1,12 +1,11 @@
-// Command malten runs the spatial-exploration app as a single self-contained
-// HTTP server with the UI (and a vendored map library) baked in.
+// Command malten runs the mental-map app as a single self-contained HTTP
+// server with the UI baked in.
 //
 // Configuration (environment variables):
 //
 //	MALTEN_ADDR    listen address (default :8080)
 //
-// The server is stateless: your finds and your Ordnance Survey API key live in
-// the browser. Map tiles are fetched by the client directly from the OS APIs.
+// The server is stateless. It has no copy of the user's mental map.
 package main
 
 import (
