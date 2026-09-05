@@ -13,14 +13,14 @@ import (
 // Disk-only fields never appear in public API responses.
 type storedPost struct {
 	Post
-	Owner string
-	Hidden bool
+	Owner    string
+	Hidden   bool
 	Reviewed bool
 }
 
 type snapshot struct {
 	Version int
-	Posts []storedPost
+	Posts   []storedPost
 }
 
 // Open restores the stream before accepting requests. Invalid or inaccessible
