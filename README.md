@@ -2,8 +2,8 @@
 
 Streams of consciousness.
 
-Malten is an open-source tool for building a personal mental model from the
-things you think, notice, experience and record.
+Malten is an open-source tool for building a personal mental model from your
+observations and reflections.
 
 Capture something as a point, connect it to what matters, and arrange it on an
 open spatial surface. Place and time add context without turning the experience
@@ -12,7 +12,7 @@ into a map, feed or AI chat.
 ## Features
 
 - Capture text, voice transcription and photos as points
-- Create explicit connections between related points
+- Link streams of thought with hashtags
 - Pan, zoom and arrange a personal spatial network
 - Attach optional location context to new captures
 - Store the network locally in the browser

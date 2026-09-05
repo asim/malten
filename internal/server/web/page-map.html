@@ -1,6 +1,6 @@
 {{define "content"}}
 <main class="page">
-  <header class="topbar"><div class="brand">Malten</div></header>
+  <header class="topbar"><a class="brand" href="/">Malten</a><span class="current-stream" id="current-stream"></span></header>
 
   <form class="composer" id="composer">
     <div class="capture-preview" id="capture-preview" hidden><img id="photo-preview" alt="Photo ready to capture"><button id="photo-clear" type="button" aria-label="Remove photo">×</button></div>
@@ -15,18 +15,8 @@
     <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
   </form>
 
-  <section class="stream" id="stream" aria-label="Your reflections"></section>
+  <section class="stream" id="stream" aria-label="Your observations and reflections"></section>
 
-  <aside class="detail" id="detail" hidden>
-    <button class="detail-close" id="detail-close" type="button" aria-label="Close">×</button>
-    <div class="detail-time" id="detail-time"></div>
-    <div class="detail-text" id="detail-text"></div>
-    <img class="detail-photo" id="detail-photo" alt="Captured with this reflection" hidden>
-    <div class="detail-context" id="detail-context"></div>
-    <div class="detail-actions"><button class="primary" id="continue" type="button">Continue from here</button><button class="danger" id="remove" type="button">Delete</button></div>
-  </aside>
-
-  <div class="connection" id="connection" hidden><span>Continuing from</span><strong id="connection-text"></strong><button id="connection-clear" type="button">×</button></div>
 </main>
 {{end}}
 
@@ -34,62 +24,41 @@
 <script>
 (function () {
   const form=document.getElementById('composer'), input=document.getElementById('thought');
-  const stream=document.getElementById('stream'), detail=document.getElementById('detail');
+  const stream=document.getElementById('stream');
   const photoInput=document.getElementById('photo-input'), photoPreview=document.getElementById('photo-preview');
-  const capturePreview=document.getElementById('capture-preview'), connection=document.getElementById('connection');
-  const connectionText=document.getElementById('connection-text');
-  let network=Malten.getNetwork(), selected=null, connectFrom=null, location=null, photo=null;
+  const capturePreview=document.getElementById('capture-preview');
+  let network=Malten.getNetwork(), currentLocation=null, photo=null;
 
-  const short=(s,n)=>s.length>n?s.slice(0,n-1).trim()+'…':s;
   const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:new Date(t).getFullYear()===new Date().getFullYear()?undefined:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
   function metres(a,b){if(!a||!b)return Infinity;const r=6371000,p1=a.lat*Math.PI/180,p2=b.lat*Math.PI/180,dp=(b.lat-a.lat)*Math.PI/180,dl=(b.lng-a.lng)*Math.PI/180,x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*r*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
 
   function render(){
     stream.replaceChildren();
-    [...network.points].sort((a,b)=>b.created_at-a.created_at).forEach(point=>{
-      const entry=document.createElement('article');entry.className='reflection';entry.tabIndex=0;
-      const head=document.createElement('div');head.className='reflection-context';
-      const time=document.createElement('time');time.textContent=when(point.created_at);head.appendChild(time);
-      if(point.location&&point.location.name){const place=document.createElement('span');place.textContent=point.location.name;head.appendChild(place);}
-      const text=document.createElement('div');text.className='reflection-text';text.textContent=point.text;
-      entry.appendChild(head);entry.appendChild(text);
+    const active=decodeURIComponent(window.location.hash.slice(1)).toLowerCase();
+    document.getElementById('current-stream').textContent=active?'#'+active:'';
+    [...network.points].filter(point=>!active||tags(point.text).includes(active)).sort((a,b)=>b.created_at-a.created_at).forEach(point=>{
+      const entry=document.createElement('article');entry.className='reflection';
+      const text=document.createElement('div');text.className='reflection-text';appendText(text,point.text);
+      entry.appendChild(text);
       if(point.photo){const image=document.createElement('img');image.className='reflection-photo';image.src=point.photo;image.alt='';entry.appendChild(image);}
-      entry.onclick=()=>select(point.id);entry.onkeydown=e=>{if(e.key==='Enter')select(point.id);};
+      const event=document.createElement('div');event.className='reflection-event';
+      event.textContent=[when(point.created_at),point.location&&point.location.name].filter(Boolean).join(' · ');
+      entry.appendChild(event);
       stream.appendChild(entry);
     });
   }
-
-  function select(id){
-    selected=id;const point=network.points.find(p=>p.id===id);if(!point)return closeDetail();
-    document.getElementById('detail-time').textContent=when(point.created_at);
-    document.getElementById('detail-text').textContent=point.text;
-    const links=network.connections.filter(c=>c.from===id||c.to===id).length,bits=[];
-    if(point.location)bits.push(point.location.name||'Location captured');
-    if(links)bits.push(links+' connection'+(links===1?'':'s'));
-    const image=document.getElementById('detail-photo');image.hidden=!point.photo;image.src=point.photo||'';
-    document.getElementById('detail-context').textContent=bits.join(' · ');
-    detail.hidden=false;
-  }
-  function closeDetail(){selected=null;detail.hidden=true;}
-  function setConnection(id){connectFrom=id;const point=network.points.find(p=>p.id===id);connectionText.textContent=point?short(point.text,48):'';connection.hidden=!point;detail.hidden=true;input.placeholder='Continue this thought…';input.focus();}
-  function clearConnection(){connectFrom=null;connection.hidden=true;input.placeholder="What's on your mind?";}
+  function tags(text){return [...text.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu)].map(match=>match[2].toLowerCase());}
+  function appendText(element,text){let at=0;for(const match of text.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu)){const start=match.index+match[1].length;element.append(document.createTextNode(text.slice(at,start)));const link=document.createElement('a');link.className='stream-link';link.href='/#'+encodeURIComponent(match[2].toLowerCase());link.textContent='#'+match[2];element.append(link);at=start+match[2].length+1;}element.append(document.createTextNode(text.slice(at)));}
 
   function addThought(text){
-    const point={id:Malten.newId(),text,photo,created_at:Date.now(),location:location?{lat:location.lat,lng:location.lng,accuracy:location.accuracy,name:location.name||null}:null};
-    const related=connectFrom&&network.points.find(p=>p.id===connectFrom);
-    if(related)network.connections.push({id:Malten.newId(),from:related.id,to:point.id,kind:'related'});
-    else if(point.location){const nearby=[...network.points].reverse().find(p=>p.location&&metres(point.location,p.location)<180);if(nearby)network.connections.push({id:Malten.newId(),from:nearby.id,to:point.id,kind:'place'});}
-    network.points.push(point);Malten.setNetwork(network);clearPhoto();clearConnection();render();
+    const point={id:Malten.newId(),text,photo,created_at:Date.now(),location:currentLocation?{lat:currentLocation.lat,lng:currentLocation.lng,accuracy:currentLocation.accuracy,name:currentLocation.name||null}:null};
+    if(point.location){const nearby=[...network.points].reverse().find(p=>p.location&&metres(point.location,p.location)<180);if(nearby)network.connections.push({id:Malten.newId(),from:nearby.id,to:point.id,kind:'place'});}
+    network.points.push(point);Malten.setNetwork(network);clearPhoto();render();
   }
 
   form.onsubmit=e=>{e.preventDefault();const text=input.value.trim();if(!text&&!photo)return;input.value='';input.style.height='';addThought(text||'Photo');};
   input.oninput=()=>{input.style.height='';input.style.height=Math.min(input.scrollHeight,130)+'px';};
   input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit();}};
-  document.getElementById('detail-close').onclick=closeDetail;
-  document.getElementById('continue').onclick=()=>setConnection(selected);
-  document.getElementById('connection-clear').onclick=clearConnection;
-  document.getElementById('remove').onclick=()=>{if(!selected)return;network.points=network.points.filter(p=>p.id!==selected);network.connections=network.connections.filter(c=>c.from!==selected&&c.to!==selected);Malten.setNetwork(network);closeDetail();render();};
-
   document.getElementById('camera').onclick=()=>photoInput.click();
   document.getElementById('photo-clear').onclick=clearPhoto;
   function clearPhoto(){photo=null;photoInput.value='';photoPreview.removeAttribute('src');capturePreview.hidden=true;}
@@ -105,9 +74,9 @@
   }else{voiceButton.disabled=true;voiceButton.title='Voice transcription is not supported by this browser';}
 
   let locationKey='';
-  async function nameLocation(){const key=location.lat.toFixed(4)+','+location.lng.toFixed(4);if(key===locationKey)return;locationKey=key;try{const response=await fetch('/api/location?lat='+encodeURIComponent(location.lat)+'&lng='+encodeURIComponent(location.lng));if(!response.ok)return;const place=await response.json();location.name=[place.name,place.locality].filter((v,i,a)=>v&&a.indexOf(v)===i).join(', ');}catch(_){}}
-  if(navigator.geolocation)navigator.geolocation.watchPosition(pos=>{location={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,name:null};nameLocation();},()=>{},{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
-  render();
+  async function nameLocation(){const key=currentLocation.lat.toFixed(4)+','+currentLocation.lng.toFixed(4);if(key===locationKey)return;locationKey=key;try{const response=await fetch('/api/location?lat='+encodeURIComponent(currentLocation.lat)+'&lng='+encodeURIComponent(currentLocation.lng));if(!response.ok)return;const place=await response.json();currentLocation.name=[place.name,place.locality].filter((v,i,a)=>v&&a.indexOf(v)===i).join(', ');}catch(_){}}
+  if(navigator.geolocation)navigator.geolocation.watchPosition(pos=>{currentLocation={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,name:null};nameLocation();},()=>{},{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
+  window.addEventListener('hashchange',render);render();
 })();
 </script>
 {{end}}
