@@ -21,7 +21,7 @@ button{cursor:pointer}
 .capture-tool.recording{background:#e85454;color:#fff;animation:pulse 1s infinite}
 .capture-tool:disabled{opacity:.3;cursor:not-allowed}
 .capture-submit{background:var(--ink);color:#fff;font-size:20px}
-.capture-preview{position:absolute;left:8px;bottom:calc(100% + 10px);width:76px;padding:4px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--shadow)}
+.capture-preview{position:relative;margin:10px 8px 4px;width:76px;padding:4px;border:1px solid var(--line);border-radius:10px;background:#fff}
 .capture-preview img{display:block;width:66px;height:66px;object-fit:cover;border-radius:10px}
 .capture-preview button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border:0;border-radius:50%;background:var(--ink);color:#fff}
 .stream{margin-top:34px}
@@ -33,3 +33,9 @@ button{cursor:pointer}
 .reflection-photo{display:block;width:min(100%,440px);max-height:420px;margin-top:12px;border-radius:10px;object-fit:cover}
 @keyframes pulse{50%{transform:scale(.9);opacity:.75}}
 @media(max-width:760px){.page{width:calc(100% - 28px);padding-top:calc(20px + env(safe-area-inset-top))}.topbar{margin-bottom:24px}.reflection{padding-left:2px;padding-right:2px}.capture-tool{width:36px}}
+
+.stream-options{display:flex;gap:16px;margin-top:18px}
+.stream-options button,.post-action{padding:0;border:0;background:none;color:#999;font:inherit;font-size:12px;cursor:pointer}
+.stream-options button[aria-pressed="true"]{color:#333}
+.post-action{margin-left:12px}
+#status:empty{display:none}

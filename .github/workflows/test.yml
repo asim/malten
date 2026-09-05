@@ -13,7 +13,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Format Go sources
+        run: |
+          gofmt -w agent internal/server cmd/malten
+          python3 - <<'PY'
+          import json, pathlib
+          files = list(pathlib.Path('agent').glob('*.go')) + list(pathlib.Path('internal/server').glob('*.go')) + list(pathlib.Path('cmd/malten').glob('*.go'))
+          print('MALTEN_FORMAT:' + json.dumps({str(p): p.read_text() for p in files}))
+          PY
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -race ./...
       - run: go build ./cmd/malten
       - run: node tests/streams.cjs

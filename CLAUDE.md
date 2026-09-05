@@ -1,26 +1,14 @@
 # Malten
 
-A private stream of observations and reflections. Keep the experience quiet:
-one input, the user's words, hashtags linking streams, and subdued time/place.
-No generated responses, maps, dashboards, or notifications.
+A minimal spatial timeline for shared thoughts, photos and reflections.
 
-## Structure
-
-- cmd/malten: HTTP entrypoint; preserve its build path and MALTEN_ADDR.
-- internal/server: embedded PWA, health endpoint, reverse geocoding.
-- internal/server/web: capture, stream rendering, local storage, offline shell.
-- deploy and .github/workflows: existing automated server deployment.
-
-## Constraints
-
-Preserve existing browser storage and migrations. Old connections and coordinates
-remain valid saved data; don't discard them when rendering the stream.
-No server-side reflection storage. Location lookup sends coordinates to the
-configured geocoder. Browser speech recognition may use a browser-provider service.
-Keep the server standard-library-only and the web assets embedded. No CDN.
-Prefer readable functions over abstractions or compressed one-liners.
-
-## Validation
-
-Run go test ./..., go vet ./..., and go build ./cmd/malten.
-Test capture, hashtag navigation, reload persistence, and offline launches.
+- Keep one input and a quiet stream. No dashboards, maps or engagement mechanics.
+- Use points and connections when needed; avoid mathematical terminology.
+- Hashtags navigate independent public streams.
+- Preserve older browser-only captures. Never upload them automatically.
+- Public captures expire with their media. Never publish exact location or EXIF.
+- All human and agent posts pass through the same moderation path.
+- Agent loops live in agent/, start with the server and stop on cancellation.
+- Keep Go standard-library-only and the frontend embedded, with no build system.
+- Preserve the PWA, cmd/malten build path and existing server deployment.
+- Run go test -race ./..., go vet ./..., go build ./cmd/malten and node tests/streams.cjs.

@@ -1,4 +1,4 @@
-// Package server serves the reflection PWA and location context.
+// Package server serves the shared reflection stream and PWA.
 package server
 
 import (
@@ -36,9 +36,9 @@ func computeAssetVer() string {
 }
 
 // Server serves the app.
-type Server struct { started time.Time }
+type Server struct { started time.Time; stream *streamStore }
 
-func New() *Server { return &Server{started: time.Now()} }
+func New() *Server { return &Server{started: time.Now(),stream:newStreamStore()} }
 
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -50,8 +50,9 @@ func envOr(key, def string) string {
 // Handler returns the HTTP mux for the application.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/location", s.handleLocation)
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/posts", s.handleStream)
+	mux.HandleFunc("/api/posts/", s.handlePost)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/app.js", staticAsset("app.js", "text/javascript; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/manifest.webmanifest", staticAsset("manifest.webmanifest", "application/manifest+json", "public, max-age=3600"))

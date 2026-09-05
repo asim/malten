@@ -6,7 +6,7 @@
 #   sudo systemctl enable --now malten
 #
 # The binary lives at /home/malten/malten and is run as the `malten` user with
-# working directory /home/malten. Reflections are stored in the browser.
+# working directory /home/malten. Shared reflections expire in server memory.
 # Configuration is read from /home/malten/.env (see deploy/env.example).
 
 [Unit]

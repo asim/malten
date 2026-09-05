@@ -3,7 +3,6 @@
   <header class="topbar"><a class="brand" href="/">Malten</a><span class="current-stream" id="current-stream"></span></header>
 
   <form class="composer" id="composer">
-    <div class="capture-preview" id="capture-preview" hidden><img id="photo-preview" alt="Photo ready to capture"><button id="photo-clear" type="button" aria-label="Remove photo">×</button></div>
     <div class="capture-row">
       <div class="capture-tools">
         <button class="capture-tool" id="camera" type="button" aria-label="Take a photo" title="Take a photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h3l1.4-2h7.2l1.4 2h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
@@ -12,10 +11,14 @@
       <textarea id="thought" rows="1" maxlength="1200" placeholder="What's on your mind?" aria-label="What's on your mind?"></textarea>
       <button class="capture-submit" type="submit" aria-label="Capture">↑</button>
     </div>
+    <div class="capture-preview" id="capture-preview" hidden><img id="photo-preview" alt="Photo ready to capture"><button id="photo-clear" type="button" aria-label="Remove photo">×</button></div>
     <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
   </form>
 
-  <section class="stream" id="stream" aria-label="Your observations and reflections"></section>
+  <nav class="stream-options" aria-label="Stream view"><button id="all" type="button" aria-pressed="true">All</button><button id="you" type="button" aria-pressed="false">You</button><button id="saved" type="button" hidden>Saved on this device</button></nav>
+  <p class="reflection-event" id="visibility">Public · disappears within 24 hours</p>
+  <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
+  <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
 
 </main>
 {{end}}
@@ -23,58 +26,118 @@
 {{define "scripts"}}
 <script>
 (function () {
-  const form=document.getElementById('composer'), input=document.getElementById('thought');
-  const stream=document.getElementById('stream');
-  const photoInput=document.getElementById('photo-input'), photoPreview=document.getElementById('photo-preview');
-  const capturePreview=document.getElementById('capture-preview');
-  let network=Malten.getNetwork(), currentLocation=null, photo=null;
-
-  const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:new Date(t).getFullYear()===new Date().getFullYear()?undefined:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
-
-  function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase();}catch(_){return "";}}
+  const $=id=>document.getElementById(id), input=$('thought'), form=$('composer');
+  const saved=Malten.getNetwork().points;
+  let posts=[],photo=null,view='all',busy=false,revision='',request=0;
+  let token='',hidden=[];
+  try {
+    token=localStorage.getItem('malten_author')||'';
+    if(!/^[a-f0-9]{64}$/.test(token)){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('malten_author',token);}
+    hidden=JSON.parse(localStorage.getItem('malten_hidden')||'[]');if(!Array.isArray(hidden))hidden=[];
+  } catch(_) { $('status').textContent='Browser storage is unavailable. Sharing needs storage to keep your delete key.'; }
+  const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
+  const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
+  function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase();}catch(_){return '';}}
+  function appendText(element,text){
+    let at=0;
+    for(const match of (text||'').matchAll(/https?:\/\/[^\s<>]+|(^|\s)#[\p{L}\p{N}_-]+/gu)){
+      const raw=match[0],space=raw.match(/^\s/)?1:0,start=match.index+space,value=raw.slice(space);
+      element.append(document.createTextNode(text.slice(at,start)));
+      const link=document.createElement('a');link.textContent=value;
+      if(value.startsWith('#')){link.href='/#'+encodeURIComponent(value.slice(1).toLowerCase());link.className='stream-link';}
+      else {link.href=value;link.target='_blank';link.rel='noopener noreferrer nofollow';link.onclick=e=>{if(!window.confirm('Open this external link? Its destination has not been checked.\n'+value))e.preventDefault();};}
+      element.append(link);at=match.index+raw.length;
+    }
+    element.append(document.createTextNode((text||'').slice(at)));
+  }
   function render(){
-    stream.replaceChildren();
+    $('stream').replaceChildren();
     const active=activeStream();
-    document.getElementById('current-stream').textContent=active?'#'+active:'';
-    [...network.points].filter(point=>(point.stream || "")===active).sort((a,b)=>b.created_at-a.created_at).forEach(point=>{
-      const entry=document.createElement('article');entry.className='reflection';
-      const text=document.createElement('div');text.className='reflection-text';appendText(text,point.text);
-      entry.appendChild(text);
-      if(point.photo){const image=document.createElement('img');image.className='reflection-photo';image.src=point.photo;image.alt='';entry.appendChild(image);}
+    $('current-stream').textContent=active?'#'+active:'';
+    $('visibility').textContent=view==='saved'?'Private · saved on this device':'Public · disappears within 24 hours'+(active.startsWith('near-')?' · approximate area':'');
+    for(const name of ['all','you','saved'])$(name).setAttribute('aria-pressed',String(view===name));
+    const entries=view==='saved'?saved.filter(p=>(p.stream||'')===active):posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine));
+    [...entries].sort((a,b)=>b.created_at-a.created_at).forEach(p=>{
+      const article=document.createElement('article');article.className='reflection';
+      const text=document.createElement('div');text.className='reflection-text';appendText(text,p.text);article.appendChild(text);
+      if(p.photo){const img=document.createElement('img');img.src=p.photo;img.alt='Shared photo';img.className='reflection-photo';img.loading='lazy';article.appendChild(img);}
       const event=document.createElement('div');event.className='reflection-event';
-      event.textContent=[when(point.created_at),point.location&&point.location.name].filter(Boolean).join(' · ');
-      entry.appendChild(event);
-      stream.appendChild(entry);
+      event.textContent=[when(p.created_at),p.agent,view==='saved'&&p.location&&p.location.name].filter(Boolean).join(' · ');
+      if(view!=='saved'){
+        const action=document.createElement('button');action.type='button';action.className='post-action';action.textContent=p.mine?'Delete':'Report';
+        action.onclick=async()=>{
+          if(!p.mine){hidden=[...hidden.slice(-499),p.id];try{localStorage.setItem('malten_hidden',JSON.stringify(hidden));}catch(_){}render();}
+          action.disabled=true;
+          try {const response=await fetch('/api/posts/'+p.id+'/'+(p.mine?'delete':'report'),{method:'POST',headers});
+            if(!response.ok)throw new Error(await response.text());
+            if(p.mine)posts=posts.filter(x=>x.id!==p.id);
+            $('status').textContent=p.mine?'Deleted.':'Hidden for you and reported for review.';render();
+          }catch(err){$('status').textContent=(p.mine?'':'Hidden for you. Report was not sent. ')+err.message;action.disabled=false;}
+        };
+        event.appendChild(action);
+      }
+      article.appendChild(event);$('stream').appendChild(article);
     });
   }
-  function appendText(element,text){let at=0;for(const match of text.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu)){const start=match.index+match[1].length;element.append(document.createTextNode(text.slice(at,start)));const link=document.createElement('a');link.className='stream-link';link.href='/#'+encodeURIComponent(match[2].toLowerCase());link.textContent='#'+match[2];element.append(link);at=start+match[2].length+1;}element.append(document.createTextNode(text.slice(at)));}
-
-  function addThought(text){
-    const point={id:Malten.newId(),stream:activeStream(),text,photo,created_at:Date.now(),location:currentLocation?{lat:currentLocation.lat,lng:currentLocation.lng,accuracy:currentLocation.accuracy,name:currentLocation.name||null}:null};
-    network.points.push(point);Malten.setNetwork(network);clearPhoto();render();
+  async function refresh(){
+    const n=++request,active=activeStream();
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active),{headers});
+      if(!response.ok)throw new Error('Could not load this stream.');
+      const data=await response.json();if(n!==request||active!==activeStream())return;
+      const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}
+    }catch(_){if(n===request)$('status').textContent='Offline or unavailable. Your draft stays here.';}
   }
-
-  form.onsubmit=e=>{e.preventDefault();const text=input.value.trim();if(!text&&!photo)return;input.value='';input.style.height='';addThought(text||'Photo');};
+  function clearPhoto(){photo=null;$('photo-input').value='';$('photo-preview').removeAttribute('src');$('capture-preview').hidden=true;}
+  form.onsubmit=async e=>{
+    e.preventDefault();if(busy)return;
+    const text=input.value.trim();if(!text&&!photo)return;
+    if(view==='saved'){$('status').textContent='Choose All or You to share a new thought publicly.';return;}
+    if(!token){$('status').textContent='Enable browser storage to share.';return;}
+    busy=true;for(const el of form.elements)el.disabled=true;$('status').textContent='Checking before sharing…';
+    try {
+      const response=await fetch('/api/posts',{method:'POST',headers,body:JSON.stringify({stream:activeStream(),text,photo})});
+      if(!response.ok)throw new Error(await response.text());
+      input.value='';input.style.height='';clearPhoto();$('status').textContent='';await refresh();
+    }catch(err){$('status').textContent=err.message||'Could not share. Your draft has been kept.';}
+    finally{busy=false;for(const el of form.elements)el.disabled=false;if(!SpeechRecognition)$('voice').disabled=true;}
+  };
   input.oninput=()=>{input.style.height='';input.style.height=Math.min(input.scrollHeight,130)+'px';};
-  input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit();}};
-  document.getElementById('camera').onclick=()=>photoInput.click();
-  document.getElementById('photo-clear').onclick=clearPhoto;
-  function clearPhoto(){photo=null;photoInput.value='';photoPreview.removeAttribute('src');capturePreview.hidden=true;}
-  function preparePhoto(file){if(!file||!file.type.startsWith('image/'))return;const reader=new FileReader();reader.onload=()=>{const image=new Image();image.onload=()=>{const max=1280,scale=Math.min(1,max/Math.max(image.width,image.height)),canvas=document.createElement('canvas');canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);photo=canvas.toDataURL('image/jpeg',.78);photoPreview.src=photo;capturePreview.hidden=false;};image.src=reader.result;};reader.readAsDataURL(file);}
-  photoInput.onchange=()=>preparePhoto(photoInput.files&&photoInput.files[0]);
-
-  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition,voiceButton=document.getElementById('voice');
-  if(SpeechRecognition){const recognition=new SpeechRecognition();recognition.continuous=false;recognition.interimResults=true;recognition.lang=navigator.language||'en';let before='';
-    recognition.onstart=()=>{before=input.value.trim();voiceButton.classList.add('recording');voiceButton.setAttribute('aria-label','Listening');};
-    recognition.onresult=e=>{let spoken='';for(let i=e.resultIndex;i<e.results.length;i++)spoken+=e.results[i][0].transcript;input.value=(before+(before&&spoken?' ':'')+spoken).trim();input.dispatchEvent(new Event('input'));};
-    recognition.onend=()=>{voiceButton.classList.remove('recording');voiceButton.setAttribute('aria-label','Capture with voice');input.focus();};
-    recognition.onerror=recognition.onend;voiceButton.onclick=()=>recognition.start();
-  }else{voiceButton.disabled=true;voiceButton.title='Voice transcription is not supported by this browser';}
-
-  let locationKey='';
-  async function nameLocation(){const key=currentLocation.lat.toFixed(4)+','+currentLocation.lng.toFixed(4);if(key===locationKey)return;locationKey=key;try{const response=await fetch('/api/location?lat='+encodeURIComponent(currentLocation.lat)+'&lng='+encodeURIComponent(currentLocation.lng));if(!response.ok)return;const place=await response.json();currentLocation.name=[place.name,place.locality].filter((v,i,a)=>v&&a.indexOf(v)===i).join(', ');}catch(_){}}
-  if(navigator.geolocation)navigator.geolocation.watchPosition(pos=>{currentLocation={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,name:null};nameLocation();},()=>{},{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
-  window.addEventListener('hashchange',render);render();
+  input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();form.requestSubmit();}};
+  $('camera').onclick=()=>$('photo-input').click();$('photo-clear').onclick=clearPhoto;
+  $('photo-input').onchange=()=>{
+    const file=$('photo-input').files[0];if(!file)return;
+    if(!file.type.startsWith('image/')||file.size>20*1024*1024){$('status').textContent='Choose a photo under 20 MB.';return;}
+    const url=URL.createObjectURL(file),image=new Image();
+    image.onload=()=>{
+      const scale=Math.min(1,1280/Math.max(image.width,image.height)),canvas=document.createElement('canvas');
+      canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+      let quality=.78;do{photo=canvas.toDataURL('image/jpeg',quality);quality-=.1;}while(photo.length>540000&&quality>.2);
+      URL.revokeObjectURL(url);
+      if(photo.length>540000){photo=null;$('status').textContent='That photo is too large. Try a smaller one.';return;}
+      $('photo-preview').src=photo;$('capture-preview').hidden=false;
+    };
+    image.onerror=()=>{URL.revokeObjectURL(url);$('status').textContent='Could not open that photo.';};image.src=url;
+  };
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(SpeechRecognition){
+    const recognition=new SpeechRecognition();recognition.interimResults=true;recognition.lang=navigator.language||'en';let before='',listening=false;
+    recognition.onstart=()=>{listening=true;before=input.value.trim();$('voice').classList.add('recording');};
+    recognition.onresult=e=>{let spoken='';for(let i=0;i<e.results.length;i++)spoken+=e.results[i][0].transcript;input.value=(before+' '+spoken).trim();input.oninput();};
+    recognition.onend=()=>{listening=false;$('voice').classList.remove('recording');};
+    recognition.onerror=()=>{$('status').textContent='Voice capture unavailable. You can still type.';};
+    $('voice').onclick=()=>{if(listening)recognition.stop();else recognition.start();};
+    form.addEventListener('submit',()=>recognition.stop());
+  }else{$('voice').disabled=true;$('voice').title='Voice transcription is unavailable in this browser';}
+  $('saved').hidden=!saved.length;
+  for(const name of ['all','you','saved'])$(name).onclick=()=>{view=name;render();};
+  window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
+  // A coarse code selects a starting stream. Exact coordinates never leave JS.
+  if(!window.location.hash&&navigator.geolocation)navigator.geolocation.getCurrentPosition(pos=>{
+    if(window.location.hash||input.value||photo||busy)return;
+    const lat=Math.min(17999,Math.floor((pos.coords.latitude+90)*100)),lng=Math.min(35999,Math.floor((pos.coords.longitude+180)*100));
+    window.location.hash='near-'+lat.toString(36)+'-'+lng.toString(36);
+  },()=>{},{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
+  render();refresh();setInterval(()=>{if(!document.hidden)refresh();},15000);
 })();
 </script>
 {{end}}
