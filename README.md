@@ -9,10 +9,11 @@ into a map, feed or AI chat.
 
 ## Features
 
-- Capture thoughts and observations as points
+- Capture text, voice transcription and photos as points
 - Create explicit connections between related points
 - Pan, zoom and arrange a personal spatial network
 - Attach optional location context to new captures
+- Revisit captures in a timeline
 - Store the network locally in the browser
 - Install as a progressive web app
 - Run as a self-contained Go server
@@ -45,4 +46,3 @@ Set `MALTEN_ADDR` to change the listen address. It defaults to `:8080`.
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE)
