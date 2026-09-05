@@ -1,4 +1,4 @@
-// Package server serves Malten's local-first mental network and stateless helpers.
+// Package server serves Malten's local-first spatial network and stateless helpers.
 // The network and its location context live only in the browser.
 package server
 
@@ -150,6 +150,8 @@ func secret(envKey, file string) string {
 // Handler returns the HTTP mux for the application.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/location", s.handleLocation)
+	mux.HandleFunc("/api/route", s.handleRoute)
 	mux.HandleFunc("/api/gridref", s.handleGridRef)
 	mux.HandleFunc("/api/stops", s.handleStops)
 	mux.HandleFunc("/api/arrivals", s.handleArrivals)
@@ -175,6 +177,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/icon-192.png", staticAsset("icon-192.png", "image/png", "public, max-age=86400"))
 	mux.Handle("/icon-512.png", staticAsset("icon-512.png", "image/png", "public, max-age=86400"))
 	mux.Handle("/icon-maskable-512.png", staticAsset("icon-maskable-512.png", "image/png", "public, max-age=86400"))
+	mux.Handle("/favicon.svg", staticAsset("favicon.svg", "image/svg+xml", "public, max-age=86400"))
 	mux.HandleFunc("/", s.handleIndex)
 	return mux
 }

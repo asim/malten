@@ -1,7 +1,9 @@
 # Malten
 
-Malten is an open-source personal network for the things you think, notice,
-experience and record.
+Streams of consciousness.
+
+Malten is an open-source tool for building a personal mental model from the
+things you think, notice, experience and record.
 
 Capture something as a point, connect it to what matters, and arrange it on an
 open spatial surface. Place and time add context without turning the experience

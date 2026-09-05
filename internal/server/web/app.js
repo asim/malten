@@ -1,4 +1,4 @@
-// Malten's mental network lives entirely in this browser. The server has no copy.
+// The spatial network behind the user's personal mental model lives in this browser.
 (function () {
   const NETWORK = 'malten_network1';
   const PREVIOUS = 'malten_graph1';
