@@ -1,6 +1,6 @@
 {{define "content"}}
 <main class="page">
-  <header class="topbar"><a class="brand" href="/">Malten</a><span class="current-stream" id="current-stream"></span></header>
+  <header class="topbar"><a class="brand" id="home" href="/">Malten</a><span class="current-stream" id="current-stream"></span></header>
 
   <form class="composer" id="composer">
     <div class="capture-row">
@@ -29,12 +29,12 @@
   const $=id=>document.getElementById(id), input=$('thought'), form=$('composer');
   const saved=Malten.getNetwork().points;
   let posts=[],photo=null,view='all',busy=false,revision='',request=0;
-  let token='',hidden=[];
+  let token='',hidden=[],stayDefault=false;
   try {
     token=localStorage.getItem('malten_author')||'';
     if(!/^[a-f0-9]{64}$/.test(token)){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('malten_author',token);}
     hidden=JSON.parse(localStorage.getItem('malten_hidden')||'[]');if(!Array.isArray(hidden))hidden=[];
-  } catch(_) { $('status').textContent='Browser storage is unavailable. Sharing needs storage to keep your delete key.'; }
+  } catch(_) { token=''; $('status').textContent='Browser storage is unavailable. Sharing needs storage to keep your delete key.'; }
   const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
   const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
   function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase();}catch(_){return '';}}
@@ -130,10 +130,11 @@
   }else{$('voice').disabled=true;$('voice').title='Voice transcription is unavailable in this browser';}
   $('saved').hidden=!saved.length;
   for(const name of ['all','you','saved'])$(name).onclick=()=>{view=name;render();};
+  $('home').onclick=e=>{e.preventDefault();stayDefault=true;window.location.hash='';posts=[];revision='';render();refresh();};
   window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
   // A coarse code selects a starting stream. Exact coordinates never leave JS.
   if(!window.location.hash&&navigator.geolocation)navigator.geolocation.getCurrentPosition(pos=>{
-    if(window.location.hash||input.value||photo||busy)return;
+    if(stayDefault||window.location.hash||input.value||photo||busy)return;
     const lat=Math.min(17999,Math.floor((pos.coords.latitude+90)*100)),lng=Math.min(35999,Math.floor((pos.coords.longitude+180)*100));
     window.location.hash='near-'+lat.toString(36)+'-'+lng.toString(36);
   },()=>{},{enableHighAccuracy:false,maximumAge:120000,timeout:12000});

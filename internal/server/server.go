@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"time"
-
 )
 
 //go:embed web/*
@@ -36,9 +35,12 @@ func computeAssetVer() string {
 }
 
 // Server serves the app.
-type Server struct { started time.Time; stream *streamStore }
+type Server struct {
+	started time.Time
+	stream  *streamStore
+}
 
-func New() *Server { return &Server{started: time.Now(),stream:newStreamStore()} }
+func New() *Server { return &Server{started: time.Now(), stream: newStreamStore()} }
 
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
