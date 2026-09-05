@@ -2,7 +2,7 @@
 <main class="space">
   <header class="topbar">
     <div><div class="brand">Malten</div><div class="purpose">Your mental network</div></div>
-    <div class="status"><span id="place-status">Finding your context…</span><button class="quiet" id="recenter" type="button">Centre</button></div>
+    <div class="status"><span id="place-status">Finding your context…</span><button class="quiet" id="timeline-toggle" type="button">Timeline</button><button class="quiet" id="recenter" type="button">Centre</button></div>
   </header>
   <svg id="network" role="img" aria-label="A spatial view of your mental network">
     <defs><filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-opacity=".12"/></filter></defs>
@@ -16,13 +16,27 @@
   <aside class="detail" id="detail" hidden>
     <button class="detail-close" id="detail-close" type="button" aria-label="Close">×</button>
     <div class="detail-time" id="detail-time"></div><div class="detail-text" id="detail-text"></div>
+    <img class="detail-photo" id="detail-photo" alt="Captured with this point" hidden>
     <div class="detail-context" id="detail-context"></div>
     <div class="detail-actions"><button class="primary" id="continue" type="button">Continue from here</button><button class="danger" id="remove" type="button">Delete</button></div>
   </aside>
+  <aside class="timeline" id="timeline" hidden>
+    <div class="timeline-head"><div><strong>Timeline</strong><span>Your captures, in time</span></div><button id="timeline-close" type="button" aria-label="Close timeline">×</button></div>
+    <div class="timeline-list" id="timeline-list"></div>
+  </aside>
   <div class="connection" id="connection" hidden><span>Connecting to</span><strong id="connection-text"></strong><button id="connection-clear" type="button">×</button></div>
   <form class="composer" id="composer">
-    <textarea id="thought" rows="1" maxlength="1200" placeholder="Capture a thought or observation…" aria-label="Thought or observation"></textarea>
-    <button type="submit" aria-label="Add to your mental network">↑</button>
+    <div class="capture-preview" id="capture-preview" hidden><img id="photo-preview" alt="Photo ready to capture"><button id="photo-clear" type="button" aria-label="Remove photo">×</button></div>
+    <input class="activity" id="activity" maxlength="80" placeholder="What are you doing? (optional)" aria-label="What are you doing">
+    <div class="capture-row">
+      <div class="capture-tools">
+        <button class="capture-tool" id="camera" type="button" aria-label="Take a photo" title="Take a photo">○</button>
+        <button class="capture-tool" id="voice" type="button" aria-label="Capture with voice" title="Capture with voice">⌁</button>
+      </div>
+      <textarea id="thought" rows="1" maxlength="1200" placeholder="What are you noticing?" aria-label="Thought or observation"></textarea>
+      <button class="capture-submit" type="submit" aria-label="Add to your network">↑</button>
+    </div>
+    <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
   </form>
 </main>
 {{end}}
@@ -34,9 +48,12 @@
   const connectionsEl = document.getElementById('connections'), pointsEl = document.getElementById('points');
   const emptyEl = document.getElementById('empty'), form = document.getElementById('composer');
   const input = document.getElementById('thought'), detail = document.getElementById('detail');
+  const activityInput = document.getElementById('activity'), photoInput = document.getElementById('photo-input');
+  const photoPreview = document.getElementById('photo-preview'), capturePreview = document.getElementById('capture-preview');
+  const timeline = document.getElementById('timeline'), timelineList = document.getElementById('timeline-list');
   const connection = document.getElementById('connection'), connectionText = document.getElementById('connection-text');
   const placeStatus = document.getElementById('place-status'), NS = 'http://www.w3.org/2000/svg';
-  let network = Malten.getNetwork(), selected = null, connectFrom = null, location = null, pan = null, dragPoint = null, moved = false;
+  let network = Malten.getNetwork(), selected = null, connectFrom = null, location = null, photo = null, pan = null, dragPoint = null, moved = false;
   let view = { x: 0, y: 0, scale: 1 };
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const short = (s, n) => s.length > n ? s.slice(0, n - 1).trim() + '…' : s;
@@ -78,15 +95,27 @@
       g.appendChild(text);
       g.onpointerdown=e=>{e.stopPropagation();moved=false;dragPoint={id:e.pointerId,point,sx:e.clientX,sy:e.clientY,ox:point.x,oy:point.y};svg.setPointerCapture(e.pointerId);};
       g.onclick=e=>{e.stopPropagation();if(!moved)select(point.id);}; pointsEl.appendChild(g);
-    }); applyView();
+    }); applyView(); renderTimeline();
+  }
+  function renderTimeline() {
+    timelineList.replaceChildren();
+    const ordered=[...network.points].sort((a,b)=>b.created_at-a.created_at);
+    if(!ordered.length){const p=document.createElement('p');p.className='timeline-empty';p.textContent='Nothing captured yet.';timelineList.appendChild(p);return;}
+    ordered.forEach(point=>{const button=document.createElement('button');button.type='button';button.className='timeline-item';
+      const time=document.createElement('time');time.textContent=when(point.created_at);button.appendChild(time);
+      const text=document.createElement('span');text.textContent=point.text||'Photo';button.appendChild(text);
+      const meta=document.createElement('small');meta.textContent=[point.activity,point.location?'Location captured':'',point.photo?'Photo':''].filter(Boolean).join(' · ');if(meta.textContent)button.appendChild(meta);
+      button.onclick=()=>{timeline.hidden=true;select(point.id);centre(point);};timelineList.appendChild(button);});
   }
   function select(id) {
     selected=id; const point=network.points.find(n=>n.id===id); if(!point)return closeDetail();
     document.getElementById('detail-time').textContent=when(point.created_at);
     document.getElementById('detail-text').textContent=point.text;
     const links=network.connections.filter(e=>e.from===id||e.to===id).length, bits=[];
-    if(point.location)bits.push(near(point)?'Recorded near you':'Recorded with a place');
+    if(point.activity)bits.push(point.activity);
+    if(point.location)bits.push((near(point)?'Near you':'Location captured')+' · '+point.location.lat.toFixed(5)+', '+point.location.lng.toFixed(5));
     bits.push(links+' connection'+(links===1?'':'s'));
+    const detailPhoto=document.getElementById('detail-photo');detailPhoto.hidden=!point.photo;detailPhoto.src=point.photo||'';
     document.getElementById('detail-context').textContent=bits.join(' · '); detail.hidden=false; render();
   }
   function closeDetail(){selected=null;detail.hidden=true;render();}
@@ -103,13 +132,13 @@
     view={x:box.width/2-(minX+maxX)/2*scale,y:box.height/2-(minY+maxY)/2*scale,scale};applyView();
   }
   function addThought(text){
-    const point={id:Malten.newId(),text,created_at:Date.now(),location:location?{lat:location.lat,lng:location.lng,accuracy:location.accuracy}:null};
+    const point={id:Malten.newId(),text,activity:activityInput.value.trim()||null,photo,created_at:Date.now(),location:location?{lat:location.lat,lng:location.lng,accuracy:location.accuracy}:null};
     const related=connectFrom&&network.points.find(n=>n.id===connectFrom);
     if(related)network.connections.push({id:Malten.newId(),from:related.id,to:point.id,kind:'related'});
     else if(point.location){const nearby=[...network.points].reverse().find(n=>n.location&&metres(point.location,n.location)<180);if(nearby)network.connections.push({id:Malten.newId(),from:nearby.id,to:point.id,kind:'place'});}
-    network.points.push(point);position(point,network.points.length-1);Malten.setNetwork(network);clearConnection();render();select(point.id);centre(point);
+    network.points.push(point);position(point,network.points.length-1);Malten.setNetwork(network);activityInput.value='';clearPhoto();clearConnection();render();select(point.id);centre(point);
   }
-  form.onsubmit=e=>{e.preventDefault();const text=input.value.trim();if(!text)return;input.value='';input.style.height='';addThought(text);};
+  form.onsubmit=e=>{e.preventDefault();const text=input.value.trim();if(!text&&!photo)return;input.value='';input.style.height='';addThought(text||'Photo');};
   input.oninput=()=>{input.style.height='';input.style.height=Math.min(input.scrollHeight,130)+'px';};
   input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit();}};
   document.getElementById('detail-close').onclick=closeDetail;
@@ -117,6 +146,24 @@
   document.getElementById('connection-clear').onclick=clearConnection;
   document.getElementById('remove').onclick=()=>{if(!selected)return;network.points=network.points.filter(n=>n.id!==selected);network.connections=network.connections.filter(e=>e.from!==selected&&e.to!==selected);Malten.setNetwork(network);closeDetail();fit();};
   document.getElementById('recenter').onclick=fit;
+  document.getElementById('timeline-toggle').onclick=()=>{timeline.hidden=!timeline.hidden;renderTimeline();};
+  document.getElementById('timeline-close').onclick=()=>timeline.hidden=true;
+  document.getElementById('camera').onclick=()=>photoInput.click();
+  document.getElementById('photo-clear').onclick=clearPhoto;
+  function clearPhoto(){photo=null;photoInput.value='';photoPreview.removeAttribute('src');capturePreview.hidden=true;}
+  function preparePhoto(file){
+    if(!file||!file.type.startsWith('image/'))return;
+    const reader=new FileReader();reader.onload=()=>{const image=new Image();image.onload=()=>{const max=1280,scale=Math.min(1,max/Math.max(image.width,image.height));const canvas=document.createElement('canvas');canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);photo=canvas.toDataURL('image/jpeg',.78);photoPreview.src=photo;capturePreview.hidden=false;};image.src=reader.result;};reader.readAsDataURL(file);
+  }
+  photoInput.onchange=()=>preparePhoto(photoInput.files&&photoInput.files[0]);
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const voiceButton=document.getElementById('voice');
+  if(SpeechRecognition){const recognition=new SpeechRecognition();recognition.continuous=false;recognition.interimResults=true;recognition.lang=navigator.language||'en';let before='';
+    recognition.onstart=()=>{before=input.value.trim();voiceButton.classList.add('recording');voiceButton.setAttribute('aria-label','Listening');};
+    recognition.onresult=e=>{let spoken='';for(let i=e.resultIndex;i<e.results.length;i++)spoken+=e.results[i][0].transcript;input.value=(before+(before&&spoken?' ':'')+spoken).trim();input.dispatchEvent(new Event('input'));};
+    recognition.onend=()=>{voiceButton.classList.remove('recording');voiceButton.setAttribute('aria-label','Capture with voice');input.focus();};
+    recognition.onerror=recognition.onend;voiceButton.onclick=()=>recognition.start();
+  }else{voiceButton.disabled=true;voiceButton.title='Voice transcription is not supported by this browser';}
   svg.onpointerdown=e=>{moved=false;pan={id:e.pointerId,x:e.clientX,y:e.clientY,ox:view.x,oy:view.y};svg.setPointerCapture(e.pointerId);};
   svg.onpointermove=e=>{
     if(dragPoint&&dragPoint.id===e.pointerId){const dx=e.clientX-dragPoint.sx,dy=e.clientY-dragPoint.sy;if(Math.abs(dx)+Math.abs(dy)>5)moved=true;dragPoint.point.x=dragPoint.ox+dx/view.scale;dragPoint.point.y=dragPoint.oy+dy/view.scale;render();return;}
