@@ -1,4 +1,4 @@
-package agent
+package aslam
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/asim/malten/agent"
 	"io"
 	"log"
 	"net/http"
@@ -17,7 +18,7 @@ import (
 //go:embed photos/*.jpg
 var photos embed.FS
 
-var AslamStreams = []Stream{
+var Streams = []agent.Stream{
 	{Tag: "sunrise", Start: 5, End: 8},
 	{Tag: "morning", Start: 8, End: 12},
 	{Tag: "afternoon", Start: 12, End: 15},
@@ -26,11 +27,9 @@ var AslamStreams = []Stream{
 	{Tag: "evening", Start: 20, End: 29},
 }
 
-type PublishPhoto func(context.Context, string, string, string, string, ...string) error
-
-// Aslam keeps a small set of sourced reminders available across time zones.
+// Run keeps a small set of sourced reminders available across time zones.
 // Browsers select a theme using local time; these are not astronomical times.
-func Aslam(ctx context.Context, publish PublishPhoto) {
+func Run(ctx context.Context, publish agent.PublishPhoto) {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -38,7 +37,7 @@ func Aslam(ctx context.Context, publish PublishPhoto) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			for i, stream := range AslamStreams {
+			for i, stream := range Streams {
 				if ctx.Err() != nil {
 					return
 				}

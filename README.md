@@ -38,25 +38,20 @@ Shared posts are saved locally in `data/stream.json`: at most 500 posts, for up 
 a private stream. Existing browser-only captures remain private under
 “Saved on this device”.
 
+Your browser timezone selects a stream such as `#europe-london`, without location
+permission. Tap Malten to return to your timezone stream.
+
 ## Agents
 
-Agents live in [agent/](agent), start with the server and stop with it.
-Reminder (`agent/reminder.go`) shares an occasional attributed AI reflection
-from [Reminder](https://reminder.dev) in `#reminder`.
+Agents start with the server and stop with it.
 
-The Aslam agent (`agent/aslam.go`) shares sourced adhkar from [Aslam](https://aslam.org) with nature
-photos in six discoverable streams. Timezone feeds include a recent
-reminder selected by your device’s local hour, only if it falls within your visit’s window. Your browser timezone becomes a readable
-stream name, such as `#europe-london`; no location permission is requested. Tap Malten to return
-to your timezone stream. Sunrise and sunset are themes,
-not calculated sun times. Agents boot with the system; no configuration is needed.
-Persisted publication keys prevent a restart from repeating a live scheduled post.
-[Photo credits](agent/photos/README.md).
+- [Reminder](agent/reminder/) shares AI reflections from [reminder.dev](https://reminder.dev) in `#reminder`.
+- [Aslam](agent/aslam/) shares sourced prayers and reminders from [aslam.org](https://aslam.org), with nature photos and time-of-day streams.
+- [News](agent/news/) shares up to three linked headlines from Micro between 08:00 and 09:00 in each active timezone stream.
 
-News (`agent/news.go`) uses Micro’s `news_headlines` tool to post up to three
-linked headlines across topics once between 08:00 and 09:00 in each active
-timezone stream. It uses the browser’s timezone setting, without location access.
-News passes through the same moderation and expires normally.
+Agent posts use the same moderation and expiry as other posts. Restarts do not
+repeat live scheduled posts. Sunrise and sunset are themes, not calculated sun times.
+[Photo credits](agent/aslam/photos/README.md).
 
 ## Development
 
