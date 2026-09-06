@@ -255,8 +255,20 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		b.Lock()
 		b.prune(time.Now())
 		out := []Post{}
+		latest := ""
+		for _, source := range s.AgentStreams {
+			if source.Tag == active {
+				for i := len(b.posts) - 1; i >= 0; i-- {
+					p := b.posts[i]
+					if p.Stream == active && !p.hidden && p.Agent != "" {
+						latest = p.ID
+						break
+					}
+				}
+			}
+		}
 		for _, p := range b.posts {
-			if p.Stream == active && !p.hidden && p.Created > last {
+			if p.Stream == active && !p.hidden && (p.Created > last || p.ID == latest) {
 				p.Mine = who != "" && p.owner == who
 				if p.Photo != "" {
 					p.Photo = "/api/posts/" + p.ID + "/photo"
