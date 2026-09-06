@@ -38,7 +38,7 @@ Shared posts are saved locally in `data/stream.json`: at most 500 posts, for up 
 a private stream. “Drafts” shows pending and failed posts saved on this device,
 across all streams. Successfully shared posts leave Drafts automatically.
 
-Home is shared by everyone. Tap New to open a stream with a short, random eight-character alphanumeric name
+Home is shared by everyone. Tap New to open a stream with a short, random ten-character alphanumeric name
 and start capturing immediately. Its identifier appears beside Malten. Anyone
 with the link can read and post there: unlisted does not mean access-controlled
 privacy. Random streams are excluded from agents' general public observations.

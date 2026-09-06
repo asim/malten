@@ -132,7 +132,7 @@ assert(!credentials.children.some(c=>c.href),'credential URLs are not linked');
  assert.equal(elements.get('stream').children.length,1,'visible home link leaves Drafts for public Home');
  elements.get('new-stream').onclick();
  const random=window.location.hash.replace(/^#/, '');
- assert(/^[a-z0-9]{8}$/.test(random)&&/[0-9]/.test(random),'new stream has a short alphanumeric name');
+ assert(/^[a-z0-9]{10}$/.test(random)&&/[0-9]/.test(random),'new stream has a short alphanumeric name');
  window.location.hash='#'+random;listeners.hashchange();await new Promise(setImmediate);
  assert.equal(elements.get('current-stream').textContent,random,'current stream is labelled');
  assert(elements.get('thought').focused,'new stream is ready for capture');

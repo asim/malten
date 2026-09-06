@@ -303,7 +303,7 @@ func Label(tag string) string {
 
 // IsUnlisted recognises short generated names and older random identifiers.
 func IsUnlisted(tag string) bool {
-	if len(tag) == 8 {
+	if len(tag) == 10 {
 		digit := false
 		for _, r := range tag {
 			if r >= '0' && r <= '9' {

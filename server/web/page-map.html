@@ -193,7 +193,7 @@
     let id;
     do {
       id='';
-      while(id.length<8){const b=crypto.getRandomValues(new Uint8Array(1))[0];if(b<252)id+='0123456789abcdefghijklmnopqrstuvwxyz'[b%36];}
+      while(id.length<10){const b=crypto.getRandomValues(new Uint8Array(1))[0];if(b<252)id+='0123456789abcdefghijklmnopqrstuvwxyz'[b%36];}
     }while(!/[0-9]/.test(id));
     window.location.hash=id;input.focus();
   };
