@@ -17,11 +17,20 @@ import (
 //go:embed photos/*.jpg
 var photos embed.FS
 
+var AslamStreams = []Stream{
+	{Tag: "sunrise", Start: 5, End: 8},
+	{Tag: "morning", Start: 8, End: 12},
+	{Tag: "afternoon", Start: 12, End: 15},
+	{Tag: "mid-afternoon", Start: 15, End: 18},
+	{Tag: "sunset", Start: 18, End: 20},
+	{Tag: "evening", Start: 20, End: 29},
+}
+
 type PublishPhoto func(context.Context, string, string, string, string) error
 
-// Day keeps a small set of sourced reminders available across time zones.
+// Aslam keeps a small set of sourced reminders available across time zones.
 // Browsers select a theme using local time; these are not astronomical times.
-func Day(ctx context.Context, publish PublishPhoto) {
+func Aslam(ctx context.Context, publish PublishPhoto) {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -29,7 +38,7 @@ func Day(ctx context.Context, publish PublishPhoto) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			for i, stream := range []string{"sunrise", "morning", "afternoon", "mid-afternoon", "sunset", "evening"} {
+			for i, stream := range AslamStreams {
 				if ctx.Err() != nil {
 					return
 				}
@@ -40,17 +49,17 @@ func Day(ctx context.Context, publish PublishPhoto) {
 				if i > 3 {
 					query, role = "evening", "evening dhikr"
 				}
-				text, err := dayReminder(ctx, query, role, time.Now().UTC().YearDay()+i)
+				text, err := aslamReminder(ctx, query, role, time.Now().UTC().YearDay()+i)
 				if err == nil {
 					file := "photos/trees.jpg"
 					if i < 2 {
 						file = "photos/sunrise.jpg"
 					}
 					raw, _ := photos.ReadFile(file)
-					err = publish(ctx, stream, text, "Aslam · adhkar", "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(raw))
+					err = publish(ctx, stream.Tag, text, "Aslam · adhkar", "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(raw))
 				}
 				if err != nil && ctx.Err() == nil {
-					log.Printf("day: %s reminder unavailable", stream)
+					log.Printf("aslam: %s reminder unavailable", stream.Tag)
 				}
 			}
 			timer.Reset(6 * time.Hour)
@@ -58,7 +67,7 @@ func Day(ctx context.Context, publish PublishPhoto) {
 	}
 }
 
-func dayReminder(ctx context.Context, query, role string, pick int) (string, error) {
+func aslamReminder(ctx context.Context, query, role string, pick int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://aslam.org/api/search?q="+url.QueryEscape(query), nil)

@@ -40,13 +40,13 @@ a private stream. Existing browser-only captures remain private under
 ## Agents
 
 Agents live in [agent/](agent), start with the server and stop with it.
-Set `MALTEN_REMINDER=true` to share an occasional attributed AI reflection
+Reminder (`agent/reminder.go`) shares an occasional attributed AI reflection
 from [Reminder](https://reminder.dev) in `#reminder`.
 
-The day agent shares sourced adhkar from [Aslam](https://aslam.org) with nature
+The Aslam agent (`agent/aslam.go`) shares sourced adhkar from [Aslam](https://aslam.org) with nature
 photos in six discoverable streams. The default and local feeds include one
 reminder selected by your device’s local hour. Sunrise and sunset are themes,
-not calculated sun times. Set `MALTEN_DAY=false` to disable it.
+not calculated sun times. Both agents boot with the system; no configuration is needed.
 [Photo credits](agent/photos/README.md).
 
 ## Development

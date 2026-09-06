@@ -11,10 +11,12 @@ Configuration is read from /home/malten/.env by systemd; see
 /home/malten/anthropic_key file. Keep secret files readable only by the service
 user. Without a working key, reading works but publication is blocked.
 
-MALTEN_REMINDER=true enables the Reminder agent. It checks /api/latest at startup
+Reminder and Aslam boot with the system and cancel when it stops; no agent
+switches are needed. Reminder checks /api/latest at startup
 and every six hours, skips duplicate reflections while the original post is still live,
 and publishes into #reminder through the normal moderation path. It cancels with
-the server. MALTEN_MODERATION_MODEL defaults to claude-sonnet-5.
+the server. Aslam sources adhkar and nature photos for its day streams.
+MALTEN_MODERATION_MODEL defaults to claude-sonnet-5.
 
 Shared posts and photos are saved atomically to data/stream.json relative to the
 working directory (/home/malten/data/stream.json with the existing systemd unit).

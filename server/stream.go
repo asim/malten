@@ -217,23 +217,21 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid stream", 400)
 			return
 		}
-		moment := r.URL.Query().Get("moment")
-		switch moment {
-		case "sunrise", "morning", "afternoon", "mid-afternoon", "sunset", "evening":
-		default:
-			moment = ""
-		}
-		if os.Getenv("MALTEN_DAY") == "false" {
-			moment = ""
+		selected := ""
+		for _, stream := range s.AgentStreams {
+			if stream.Tag == r.URL.Query().Get("seed") {
+				selected = stream.Tag
+				break
+			}
 		}
 		who := owner(r)
 		b.Lock()
 		b.prune(time.Now())
 		out := []Post{}
 		var seed string
-		if moment != "" && (active == "" || strings.HasPrefix(active, "near-")) {
+		if selected != "" && (active == "" || strings.HasPrefix(active, "near-")) {
 			for _, p := range b.posts {
-				if p.Stream == moment && p.Agent == "Aslam · adhkar" && !p.hidden {
+				if p.Stream == selected && p.Agent != "" && !p.hidden {
 					seed = p.ID
 				}
 			}
