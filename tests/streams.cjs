@@ -36,12 +36,17 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  await elements.get('composer').onsubmit({preventDefault(){}});
  assert.equal(elements.get('stream').children.length,2,'can post again during moderation');
  assert.equal(sent.text,'a reflection','requests are processed in order');
+ elements.get('drafts').onclick();
+ assert.equal(elements.get('stream').children.length,2,'sending posts appear in Drafts');
  elements.get('thought').value='still typing';
  release();hold=null;await new Promise(setImmediate);
  assert.equal(sent.stream,'x');assert.equal(sent.text,'another thought');
  assert.equal(sent.location,undefined);assert.equal(sent.agent,undefined);
  assert.equal(data.points.length,1,'old data untouched');
  assert.equal(shared.length,3);
+ assert.equal(elements.get('stream').children.length,0,'sent posts leave Drafts');
+ assert.equal(elements.get('drafts-empty').hidden,false,'empty Drafts is explicit');
+ elements.get('all').onclick();
  assert.equal(elements.get('stream').children.length,2,'no duplicate after approval');
  assert.equal(elements.get('thought').value,'still typing','completion does not erase next draft');
  fail=true;elements.get('thought').value='keep this failed thought';
@@ -61,12 +66,18 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  queued.photo='data:image/jpeg;base64,saved-photo';await outbox.put(queued);
  vm.runInNewContext(source,context);await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,2,'saved outbox returns after reload while offline');
+ window.location.hash='#elsewhere';listeners.hashchange();
+ elements.get('drafts').onclick();
+ assert.equal(elements.get('stream').children.length,2,'Drafts includes pending and rejected captures across streams');
+ window.location.hash='#x';listeners.hashchange();
  offline=false;unavailable=true;listeners.online();await new Promise(setImmediate);
  assert(pending.has(queued.id),'service failure remains queued');
  unavailable=false;listeners.online();await new Promise(setImmediate);
  assert.equal(sent.photo,queued.photo,'photo survives reload and retries');
  assert(![...pending.values()].some(p=>p.text==='a moment without signal'),'reconnect drains saved queue');
  assert.equal(shared.filter(p=>p.text==='a moment without signal').length,1);
+ assert.equal(elements.get('stream').children.length,1,'only rejected draft remains after reconnect');
+ elements.get('all').onclick();
  // Storage failure must preserve the composer and must never send the capture.
  const put=outbox.put;outbox.put=async()=>{throw new Error('quota');};
  elements.get('thought').value='keep draft when disk is full';
@@ -92,8 +103,15 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  window.location.hash='#city';listeners.hashchange();await new Promise(setImmediate);
  elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
  assert(lastURL.includes('stream='+home+'&last='),'brand returns from a hashtag to timezone');
- elements.get('saved').onclick();
- assert.equal(elements.get('stream').children.length,1,'old private default captures remain accessible');
+ elements.get('drafts').onclick();
+ assert.equal(elements.get('stream').children.length,1,'failed draft accessible from Home');
+ assert(!source.includes('getNetwork'),'legacy captures are no longer read');
+ assert(!source.includes("$('saved')"),'legacy navigation removed');
+ window.location.hash='#elsewhere';
+ elements.get('home-link').onclick({preventDefault(){}});await new Promise(setImmediate);
+ assert.equal(window.location.hash,'','visible home link uses clean root');
+ assert.equal(elements.get('current-stream').textContent,'Home');
+ assert.equal(elements.get('stream').children.length,1,'visible home link leaves Drafts for public Home');
  for(const [zone,expected] of [['Europe/London','europe-london'],['America/Los_Angeles','america-los-angeles'],['Etc/GMT+5','etc-gmt-plus-5']]){
    const testWindow={...window,location:{hash:''}};
    function DateTimeFormat(...args){return args.length?new Intl.DateTimeFormat(...args):{resolvedOptions:()=>({timeZone:zone})};}

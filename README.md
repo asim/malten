@@ -35,8 +35,8 @@ address (default `:8080`).
 
 Shared posts are saved locally in `data/stream.json`: at most 500 posts, for up to
 24 hours from capture. Posts survive restarts without extending their expiry. “You” filters your public posts; it is not
-a private stream. Existing browser-only captures remain private under
-“Saved on this device”.
+a private stream. “Drafts” shows pending and failed posts saved on this device,
+across all streams. Successfully shared posts leave Drafts automatically.
 
 Home is shared by everyone. Regions links to your browser timezone, such as
 `#europe-london`, without location permission. Tap Malten to return Home.

@@ -15,12 +15,13 @@
     <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
   </form>
 
-  <nav class="stream-options" aria-label="Stream view"><button id="all" type="button" aria-pressed="true">All</button><button id="you" type="button" aria-pressed="false">You</button><button id="saved" type="button" hidden>Saved on this device</button></nav>
-  <nav class="reflection-event" aria-label="Regions">Regions · <a class="stream-link" id="region"></a></nav>
-  {{if .AgentStreams}}<nav class="reflection-event" aria-label="Agent streams">
+  <nav class="stream-options" aria-label="Stream view"><button id="all" type="button" aria-pressed="true">All</button><button id="you" type="button" aria-pressed="false">You</button><button id="drafts" type="button" aria-pressed="false">Drafts</button></nav>
+  <nav class="reflection-event" aria-label="Streams">
+    <a class="stream-link" id="home-link" href="/">#home</a>
     {{range .AgentStreams}}<a class="stream-link" href="/#{{.Tag}}">#{{.Tag}}</a> {{end}}
-  </nav>{{end}}
-  <p class="reflection-event" id="visibility" hidden>Private · saved on this device</p>
+  </nav>
+  <nav class="reflection-event" aria-label="Regions">Regions · <a class="stream-link" id="region"></a></nav>
+  <p class="reflection-event" id="drafts-empty" hidden>No drafts.</p>
   <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
   <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
 
@@ -31,7 +32,6 @@
 <script>
 (function () {
   const $=id=>document.getElementById(id), input=$('thought'), form=$('composer');
-  const saved=Malten.getNetwork().points;
   let posts=[],photo=null,view='all',sending=false,revision='',request=0;
   let outbox=[],ready=false,saving=false;
   let joined=Date.now()-60*60*1000;
@@ -66,22 +66,23 @@
     $('stream').replaceChildren();
     const active=activeStream();
     $('current-stream').textContent=active===homeStream?'Home':'#'+active;
-    $('visibility').hidden=view!=='saved';
-    for(const name of ['all','you','saved'])$(name).setAttribute('aria-pressed',String(view===name));
-    const entries=view==='saved'?saved.filter(p=>(p.stream||'')===(window.location.hash?active:'')):[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
+    $('drafts-empty').hidden=view!=='drafts'||outbox.length>0;
+    for(const name of ['all','you','drafts'])$(name).setAttribute('aria-pressed',String(view===name));
+    const entries=view==='drafts'?outbox:[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
     [...entries].sort((a,b)=>b.created_at-a.created_at).forEach(p=>{
       const article=document.createElement('article');article.className='reflection';
       const text=document.createElement('div');text.className='reflection-text';appendText(text,p.text);article.appendChild(text);
       if(p.photo){const img=document.createElement('img');img.src=p.photo;img.alt='Shared photo';img.className='reflection-photo';img.loading='lazy';article.appendChild(img);}
       const event=document.createElement('div');event.className='reflection-event';
-      event.textContent=[when(p.created_at),p.agent==='Aslam · adhkar'?'Aslam':p.agent,view==='saved'&&p.location&&p.location.name].filter(Boolean).join(' · ');
+      event.textContent=[when(p.created_at),p.agent==='Aslam · adhkar'?'Aslam':p.agent].filter(Boolean).join(' · ');
+      if(view==='drafts'){event.append(document.createTextNode(' · '));appendText(event,'#'+p.stream);}
       if(p.delivery){
         event.textContent+=' · '+p.delivery;
         if(p.failed){
           const dismiss=document.createElement('button');dismiss.type='button';dismiss.className='post-action';dismiss.textContent='Dismiss';
           dismiss.onclick=async()=>{try{await Malten.outbox.remove(p.id);outbox=outbox.filter(x=>x!==p);render();}catch(_){$('status').textContent='Could not remove this saved post.';}};event.appendChild(dismiss);
         }
-      }else if(view!=='saved'){
+      }else{
         const action=document.createElement('button');action.type='button';action.className='post-action';action.textContent=p.mine?'Delete':'Report';
         action.onclick=async()=>{
           if(!p.mine){hidden=[...hidden.slice(-499),p.id];try{localStorage.setItem('malten_hidden',JSON.stringify(hidden));}catch(_){}render();}
@@ -139,7 +140,6 @@
   form.onsubmit=async e=>{
     e.preventDefault();
     const text=input.value.trim();if((!text&&!photo)||saving)return;
-    if(view==='saved'){$('status').textContent='Choose All or You to share a new thought publicly.';return;}
     if(!token||!ready){$('status').textContent='Device storage is unavailable. Your draft stays here.';return;}
     saving=true;
     const draft=input.value,capturedPhoto=photo;
@@ -180,9 +180,9 @@
     $('voice').onclick=()=>{if(listening)recognition.stop();else recognition.start();};
     form.addEventListener('submit',()=>recognition.stop());
   }else{$('voice').disabled=true;$('voice').title='Voice transcription is unavailable in this browser';}
-  $('saved').hidden=!saved.length;
-  for(const name of ['all','you','saved'])$(name).onclick=()=>{view=name;render();};
+  for(const name of ['all','you','drafts'])$(name).onclick=()=>{view=name;render();};
   $('home').onclick=e=>{e.preventDefault();view='all';window.history.replaceState(null,'','/');joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
+  $('home-link').onclick=$('home').onclick;
   window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
   async function restore(){
     try {
