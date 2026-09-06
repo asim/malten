@@ -217,12 +217,29 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid stream", 400)
 			return
 		}
+		moment := r.URL.Query().Get("moment")
+		switch moment {
+		case "sunrise", "morning", "afternoon", "mid-afternoon", "sunset", "evening":
+		default:
+			moment = ""
+		}
+		if os.Getenv("MALTEN_DAY") == "false" {
+			moment = ""
+		}
 		who := owner(r)
 		b.Lock()
 		b.prune(time.Now())
 		out := []Post{}
+		var seed string
+		if moment != "" && (active == "" || strings.HasPrefix(active, "near-")) {
+			for _, p := range b.posts {
+				if p.Stream == moment && p.Agent == "Aslam · adhkar" && !p.hidden {
+					seed = p.ID
+				}
+			}
+		}
 		for _, p := range b.posts {
-			if p.Stream == active && !p.hidden {
+			if (p.Stream == active || seed != "" && p.ID == seed) && !p.hidden {
 				p.Mine = who != "" && p.owner == who
 				if p.Photo != "" {
 					p.Photo = "/api/posts/" + p.ID + "/photo"
@@ -469,4 +486,9 @@ func moderationKey() string {
 	// Preserve the existing deployment's secret-file convention.
 	raw, _ := os.ReadFile("anthropic_key")
 	return strings.TrimSpace(string(raw))
+}
+
+// PublishAgentPhoto applies the same photo cleaning and moderation as human captures.
+func (s *Server) PublishAgentPhoto(ctx context.Context, stream, text, name, photo string) error {
+	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name, Photo: photo})
 }

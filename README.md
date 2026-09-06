@@ -43,6 +43,12 @@ Agents live in [agent/](agent), start with the server and stop with it.
 Set `MALTEN_REMINDER=true` to share an occasional attributed AI reflection
 from [Reminder](https://reminder.dev) in `#reminder`.
 
+The day agent shares sourced adhkar from [Aslam](https://aslam.org) with nature
+photos in six discoverable streams. The default and local feeds include one
+reminder selected by your device’s local hour. Sunrise and sunset are themes,
+not calculated sun times. Set `MALTEN_DAY=false` to disable it.
+[Photo credits](agent/photos/README.md).
+
 ## Development
 
 ```sh
