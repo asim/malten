@@ -11,7 +11,7 @@ Configuration is read from /home/malten/.env by systemd; see
 /home/malten/anthropic_key file. Keep secret files readable only by the service
 user. Without a working key, reading works but publication is blocked.
 
-Reminder and Aslam boot with the system and cancel when it stops; no agent
+Reminder, Aslam and News boot with the system and cancel when it stops; no agent
 switches are needed. Reminder checks /api/latest at startup
 and every six hours, skips duplicate reflections and persisted publication keys while the original post is still live,
 and publishes into #reminder through the normal moderation path. It cancels with
@@ -45,7 +45,12 @@ The browser uses its configured IANA timezone as its home stream: lowercase,
 slashes and underscores become hyphens (Europe/London becomes europe-london).
 Plus signs become -plus- for fixed-offset timezone names. The UTC offset is not
 used, so daylight-saving changes do not change streams. No GPS or IP geolocation
-is used. The readable stream name is sent, not coordinates.
+is used. The readable stream name and X-Timezone header are sent, not coordinates.
+News tracks at most 256 recently viewed timezone streams in memory, removing
+inactive streams after 24 hours. It calls Micro’s public news_headlines MCP tool
+and posts once during 08:00–09:00 local time. Embedded timezone data handles DST.
+There is no afternoon catch-up for a missed morning. Restarts rediscover active
+streams on polling; persisted post keys prevent repeat publication.
 Server-side JPEG
 re-encoding removes photo metadata. Voice recognition may use the browser's
 speech provider. Shared text and photos are sent to Anthropic for moderation.
