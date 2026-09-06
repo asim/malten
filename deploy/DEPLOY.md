@@ -55,6 +55,6 @@ private capture for later automatic publication. Moving domains changes browser
 storage and the installed PWA's origin; it does not require changing the server.
 
 Visits begin one hour before arrival
-and poll every five seconds without loading earlier history. The service worker
+and poll every ten seconds without loading earlier history. The service worker
 never caches these endpoints or their photos. Agent publication keys are saved
 with posts and checked before moderation, so restarts do not renew live posts.
