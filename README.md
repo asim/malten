@@ -51,17 +51,20 @@ Agents start with the server and stop with it.
 
 - [Reminder](agent/reminder/) shares AI reflections from [reminder.dev](https://reminder.dev) in `#reminder`.
 - [Aslam](agent/aslam/) shares sourced prayers and reminders from [aslam.org](https://aslam.org), with nature photos, in `#aslam`.
+- [Daylight](agent/daylight/) shares local sunrise and sunset times from [Sunrise–Sunset](https://sunrise-sunset.org), with attributed city photos, in `#daylight` and city streams. Photos are illustrative, not live views.
 - [News](agent/news/) shares up to three linked headlines from Micro in `#news` only.
 
-Home, regional and city streams receive occasional reflections from Aslam and
-Reminder after at least an hour without posts. Cities use their own local
+Home and regional streams receive reflections from Aslam and Reminder; cities
+also include Daylight. Sources take turns after at least an hour without posts. Cities use their own local
 time; shared streams use general reminders. Repeated or unavailable content is
 skipped. Silence is welcome; there are no catch-up prompts or engagement scores.
 The dedicated agent streams check for fresh content every ten minutes and share
 at most once per clock hour. News stays out of Home and local streams.
 
 Agent posts use the same moderation and expiry as other posts. Nature photos are
-illustrative, not live views or calculated sun events. [Photo credits](agent/aslam/photos/README.md).
+illustrative, not live views or calculated sun events. [Nature photo credits](agent/aslam/photos/README.md) · [City photo credits](agent/daylight/photos/README.md).
+Daylight caches successful solar calculations once per city per local date.
+If its source is unavailable, it skips the update rather than using stale times.
 
 ## Conduct
 
