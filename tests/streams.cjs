@@ -19,7 +19,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
 (async()=>{
  vm.runInNewContext(source.replace('{{.AgentStreams}}',JSON.stringify([{Tag:'scheduled',Start:0,End:24}])),context);await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,0,'private captures must not be public');
- assert(lastURL.startsWith('/thoughts?'),'uses the thoughts endpoint');
+ assert(lastURL.startsWith('/api/posts?'),'keeps the posts endpoint');
  const joined=Number(new URL(lastURL,'https://malten.test').searchParams.get('last'));
  assert(Math.abs(Date.now()-joined-3600000)<1000,'arrival starts one hour ago');
  assert(lastURL.endsWith('&seed='),'hashtag navigation does not inject home reminders');

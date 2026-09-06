@@ -267,7 +267,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			if (p.Stream == active || seed != "" && p.ID == seed) && !p.hidden && p.Created > last {
 				p.Mine = who != "" && p.owner == who
 				if p.Photo != "" {
-					p.Photo = "/thoughts/" + p.ID + "/photo"
+					p.Photo = "/api/posts/" + p.ID + "/photo"
 				}
 				out = append(out, p)
 			}
@@ -312,7 +312,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	parts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/api/posts/"), "/thoughts/"), "/")
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/posts/"), "/")
 	if len(parts) != 2 {
 		http.NotFound(w, r)
 		return

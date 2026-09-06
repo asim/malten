@@ -13,7 +13,7 @@ import (
 	"github.com/asim/malten/agent"
 )
 
-func TestThoughtsWindowAndDiscovery(t *testing.T) {
+func TestPostWindow(t *testing.T) {
 	s := New()
 	now := time.Now().UnixMilli()
 	s.AgentStreams = []agent.Stream{{Tag: "morning"}}
@@ -28,7 +28,7 @@ func TestThoughtsWindowAndDiscovery(t *testing.T) {
 		s.Handler().ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		return w
 	}
-	w := get("/thoughts?stream=zone&seed=morning")
+	w := get("/api/posts?stream=zone&seed=morning")
 	var posts []Post
 	if err := json.Unmarshal(w.Body.Bytes(), &posts); err != nil {
 		t.Fatal(err)
@@ -36,25 +36,17 @@ func TestThoughtsWindowAndDiscovery(t *testing.T) {
 	if len(posts) != 1 || posts[0].ID != "recent" {
 		t.Fatalf("arrival included history: %s", w.Body.String())
 	}
-	w = get("/thoughts?stream=zone&last=" + strconv.FormatInt(now-1000, 10))
+	w = get("/api/posts?stream=zone&last=" + strconv.FormatInt(now-1000, 10))
 	if w.Body.String() != "[]\n" {
 		t.Fatal("cursor must be exclusive")
 	}
 	for _, last := range []string{"bad", "-1"} {
-		if get("/thoughts?last="+last).Code != 400 {
+		if get("/api/posts?last="+last).Code != 400 {
 			t.Fatal("accepted bad timestamp")
 		}
 	}
-	w = get("/streams")
-	var streams map[string]int64
-	if err := json.Unmarshal(w.Body.Bytes(), &streams); err != nil {
-		t.Fatal(err)
-	}
-	if streams["zone"] != now-1000 {
-		t.Fatal("discovery includes a hidden thought")
-	}
 	s.stream.moderate = func(context.Context, Post) (bool, error) { return true, nil }
-	w = request(t, s, "POST", "/thoughts", `{"stream":"zone","text":"new thought"}`, strings.Repeat("ab", 32))
+	w = request(t, s, "POST", "/api/posts", `{"stream":"zone","text":"new thought"}`, strings.Repeat("ab", 32))
 	if w.Code != 201 {
 		t.Fatalf("post: %d", w.Code)
 	}

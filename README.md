@@ -53,17 +53,6 @@ not calculated sun times. Both agents boot with the system; no configuration is 
 Persisted publication keys prevent a restart from repeating a live scheduled post.
 [Photo credits](agent/photos/README.md).
 
-## HTTP
-
-- `GET /streams` — active stream names and their latest timestamps
-- `GET /thoughts?stream=europe-london&last=...` — thoughts after a Unix millisecond timestamp; defaults to the past hour
-- `POST /thoughts` — share text or a photo in a stream
-
-The interface polls every five seconds for its visit’s window. Responses remain
-authoritative so deleted or moderated thoughts disappear. It never pages backwards.
-Photo, report and delete routes live under `/thoughts/{id}/`.
-The previous `/api/posts` routes remain aliases for installed clients.
-
 ## Development
 
 ```sh

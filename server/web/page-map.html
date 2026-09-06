@@ -82,7 +82,7 @@
         action.onclick=async()=>{
           if(!p.mine){hidden=[...hidden.slice(-499),p.id];try{localStorage.setItem('malten_hidden',JSON.stringify(hidden));}catch(_){}render();}
           action.disabled=true;
-          try {const response=await fetch('/thoughts/'+p.id+'/'+(p.mine?'delete':'report'),{method:'POST',headers});
+          try {const response=await fetch('/api/posts/'+p.id+'/'+(p.mine?'delete':'report'),{method:'POST',headers});
             if(!response.ok)throw new Error(await response.text());
             if(p.mine)posts=posts.filter(x=>x.id!==p.id);
             $('status').textContent=p.mine?'Deleted.':'Hidden for you and reported for review.';render();
@@ -100,7 +100,7 @@
   }
   async function refresh(){
     const n=++request,active=activeStream();
-    try {const response=await fetch('/thoughts?stream='+encodeURIComponent(active)+'&last='+joined+'&seed='+encodeURIComponent(active===homeStream?seedStream():''),{headers});
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined+'&seed='+encodeURIComponent(active===homeStream?seedStream():''),{headers});
       if(!response.ok)throw new Error('Could not load this stream.');
       const data=await response.json();if(n!==request||active!==activeStream())return;
       const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}
@@ -116,7 +116,7 @@
         try {
           let response;
           do {
-            response=await fetch('/thoughts',{method:'POST',headers,body:JSON.stringify({stream:p.stream,text:p.text,photo:p.photo})});
+            response=await fetch('/api/posts',{method:'POST',headers,body:JSON.stringify({stream:p.stream,text:p.text,photo:p.photo})});
             if(response.status===429){
               p.delivery='Waiting to send…';render();
               await new Promise(resolve=>setTimeout(resolve,10000));

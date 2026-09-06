@@ -55,10 +55,6 @@ func envOr(key, def string) string {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
-	mux.HandleFunc("/streams", s.handleStreams)
-	mux.HandleFunc("/thoughts", s.handleStream)
-	mux.HandleFunc("/thoughts/", s.handlePost)
-	// Compatibility for installed clients from before the endpoint rename.
 	mux.HandleFunc("/api/posts", s.handleStream)
 	mux.HandleFunc("/api/posts/", s.handlePost)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
@@ -112,22 +108,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-func (s *Server) handleStreams(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
-		return
-	}
-	streams := map[string]int64{}
-	s.stream.Lock()
-	s.stream.prune(time.Now())
-	for _, p := range s.stream.posts {
-		if !p.hidden && p.Created > streams[p.Stream] {
-			streams[p.Stream] = p.Created
-		}
-	}
-	s.stream.Unlock()
-	writeJSON(w, 200, streams)
 }
