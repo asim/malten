@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/asim/malten/agent"
 	"github.com/asim/malten/agent/aslam"
 	"github.com/asim/malten/agent/news"
 	"github.com/asim/malten/agent/reminder"
@@ -37,9 +38,9 @@ func main() {
 	srv.AgentStreams = append(srv.AgentStreams, aslam.Streams...)
 	start(func(ctx context.Context) { reminder.Run(ctx, srv.PublishAgent) })
 	start(func(ctx context.Context) { aslam.Run(ctx, srv.PublishAgentPhoto) })
-	newsAgent := news.New(srv.PublishAgent)
-	srv.ObserveStream = newsAgent.Observe
-	start(newsAgent.Run)
+	live := agent.NewLive(srv.RecentPosts, srv.PublishQuietAgent, aslam.Fetch, reminder.Fetch, news.Fetch)
+	srv.ObserveStream = live.Observe
+	start(live.Run)
 	addr := os.Getenv("MALTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"

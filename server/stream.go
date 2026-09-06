@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/asim/malten/agent"
 	"image/jpeg"
 	"io"
 	"log"
@@ -35,6 +36,7 @@ type Post struct {
 	Created  int64  `json:"created_at"`
 	Agent    string `json:"agent,omitempty"`
 	Mine     bool   `json:"mine,omitempty"`
+	quiet    bool
 	key      string
 	owner    string
 	hidden   bool
@@ -165,7 +167,7 @@ func (b *streamStore) duplicate(p Post) bool {
 func (b *streamStore) publish(ctx context.Context, p Post) error {
 	b.Lock()
 	b.prune(time.Now())
-	duplicate := b.duplicate(p)
+	duplicate := b.duplicate(p) || p.quiet && b.recent(p.Stream, time.Now())
 	b.Unlock()
 	if duplicate {
 		return nil
@@ -211,7 +213,7 @@ func (b *streamStore) publish(ctx context.Context, p Post) error {
 	b.Lock()
 	defer b.Unlock()
 	b.prune(time.Now())
-	if b.duplicate(p) {
+	if b.duplicate(p) || p.quiet && b.recent(p.Stream, time.Now()) {
 		return nil
 	}
 	before := append([]Post(nil), b.posts...)
@@ -238,13 +240,6 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		if s.ObserveStream != nil {
 			s.ObserveStream(active, r.Header.Get("X-Timezone"))
 		}
-		selected := ""
-		for _, stream := range s.AgentStreams {
-			if stream.Tag == r.URL.Query().Get("seed") {
-				selected = stream.Tag
-				break
-			}
-		}
 		last := time.Now().Add(-time.Hour).UnixMilli()
 		if value := r.URL.Query().Get("last"); value != "" {
 			parsed, err := strconv.ParseInt(value, 10, 64)
@@ -258,16 +253,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		b.Lock()
 		b.prune(time.Now())
 		out := []Post{}
-		var seed string
-		if selected != "" {
-			for _, p := range b.posts {
-				if p.Stream == selected && p.Agent != "" && !p.hidden && p.Created > last {
-					seed = p.ID
-				}
-			}
-		}
 		for _, p := range b.posts {
-			if (p.Stream == active || seed != "" && p.ID == seed) && !p.hidden && p.Created > last {
+			if p.Stream == active && !p.hidden && p.Created > last {
 				p.Mine = who != "" && p.owner == who
 				if p.Photo != "" {
 					p.Photo = "/api/posts/" + p.ID + "/photo"
@@ -527,4 +514,37 @@ func (s *Server) PublishAgentPhoto(ctx context.Context, stream, text, name, phot
 		key = keys[0]
 	}
 	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name, Photo: photo, key: key})
+}
+
+func (b *streamStore) recent(stream string, now time.Time) bool {
+	for _, p := range b.posts {
+		if p.Stream == stream && !p.hidden && now.Sub(time.UnixMilli(p.Created)) < time.Hour {
+			return true
+		}
+	}
+	return false
+}
+
+// RecentPosts provides bounded public context without private owner or report data.
+func (s *Server) RecentPosts(stream string) []agent.Post {
+	b := s.stream
+	b.Lock()
+	defer b.Unlock()
+	b.prune(time.Now())
+	var out []agent.Post
+	for _, p := range b.posts {
+		if p.Stream == stream && !p.hidden {
+			out = append(out, agent.Post{Text: p.Text, Name: p.Agent, Created: p.Created})
+		}
+	}
+	return out
+}
+
+// PublishQuietAgent rechecks activity after moderation as well as before it.
+func (s *Server) PublishQuietAgent(ctx context.Context, stream, text, name, photo string, keys ...string) error {
+	key := ""
+	if len(keys) > 0 {
+		key = keys[0]
+	}
+	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name, Photo: photo, key: key, quiet: true})
 }

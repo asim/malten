@@ -69,3 +69,8 @@ func latest(ctx context.Context) (string, error) {
 	// Generated prose is explicitly attributed; scripture is not rewritten.
 	return message + "\n\nhttps://reminder.dev", nil
 }
+
+func Fetch(ctx context.Context, _ time.Time) (agent.Post, error) {
+	text, err := latest(ctx)
+	return agent.Post{Text: text, Name: "Reminder · AI reflection"}, err
+}

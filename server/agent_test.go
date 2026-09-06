@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestAgentSeedKeepsStreamsIndependent(t *testing.T) {
+func TestStreamsDoNotInsertOtherAgentPosts(t *testing.T) {
 	s := New()
 	s.AgentStreams = []agent.Stream{{Tag: "morning"}}
 	now := time.Now().UnixMilli()
@@ -23,8 +23,8 @@ func TestAgentSeedKeepsStreamsIndependent(t *testing.T) {
 		path string
 		want int
 	}{
-		{"/api/posts?stream=europe-london&seed=morning", 2},
-		{"/api/posts?stream=&seed=morning", 1},
+		{"/api/posts?stream=europe-london&seed=morning", 1},
+		{"/api/posts?stream=&seed=morning", 0},
 		{"/api/posts?stream=other", 0},
 		{"/api/posts?stream=morning", 3},
 		{"/api/posts?stream=europe-london&seed=anything", 1},
@@ -38,9 +38,7 @@ func TestAgentSeedKeepsStreamsIndependent(t *testing.T) {
 		if len(posts) != tc.want {
 			t.Fatalf("%s: %d posts, want %d", tc.path, len(posts), tc.want)
 		}
-		if tc.want == 2 && posts[1].ID != "new" {
-			t.Fatal("did not select latest approved reminder")
-		}
+
 	}
 	s.AgentStreams = nil
 	w := httptest.NewRecorder()

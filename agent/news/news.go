@@ -6,115 +6,19 @@ import (
 	"errors"
 	"github.com/asim/malten/agent"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
-	_ "time/tzdata"
 )
 
-type newsZone struct {
-	location *time.Location
-	seen     time.Time
-	posted   string
-}
-
-// News publishes one morning post per active timezone, through normal moderation.
-type News struct {
-	sync.Mutex
-	zones     map[string]newsZone
-	publish   agent.Publish
-	headlines func(context.Context) (string, error)
-}
-
-func New(publish agent.Publish) *News {
-	return &News{zones: map[string]newsZone{}, publish: publish, headlines: newsHeadlines}
-}
-
-// Observe accepts only a timezone matching the stream's normalised identifier.
-func (n *News) Observe(stream, zone string) {
-	if len(zone) > 100 || zone == "" || zone == "Local" {
-		return
+// Fetch supplies fresh topic-based headlines during waking hours.
+func Fetch(ctx context.Context, local time.Time) (agent.Post, error) {
+	if local.Hour() < 7 || local.Hour() >= 21 {
+		return agent.Post{}, nil
 	}
-	tag := strings.NewReplacer("/", "-", "_", "-", "+", "-plus-").Replace(strings.ToLower(zone))
-	if stream != tag {
-		return
-	}
-	n.Lock()
-	defer n.Unlock()
-	if existing, ok := n.zones[stream]; ok {
-		existing.seen = time.Now()
-		n.zones[stream] = existing
-		return
-	}
-	if len(n.zones) >= 256 {
-		return
-	}
-	location, err := time.LoadLocation(zone)
-	if err != nil {
-		return
-	}
-	n.zones[stream] = newsZone{location: location, seen: time.Now()}
-}
-
-func (n *News) Run(ctx context.Context) {
-	timer := time.NewTimer(0)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			n.check(ctx, time.Now())
-			timer.Reset(time.Minute)
-		}
-	}
-}
-
-func (n *News) check(ctx context.Context, now time.Time) {
-	pending := map[string]string{}
-	n.Lock()
-	for stream, zone := range n.zones {
-		if now.Sub(zone.seen) > 24*time.Hour {
-			delete(n.zones, stream)
-			continue
-		}
-		local := now.In(zone.location)
-		day := local.Format("2006-01-02")
-		if local.Hour() == 8 && zone.posted != day {
-			pending[stream] = day
-		}
-	}
-	n.Unlock()
-	if len(pending) == 0 || ctx.Err() != nil {
-		return
-	}
-	text, err := n.headlines(ctx)
-	if err != nil {
-		if ctx.Err() == nil {
-			log.Print("news: headlines unavailable")
-		}
-		return
-	}
-	for stream, day := range pending {
-		if ctx.Err() != nil {
-			return
-		}
-		if err := n.publish(ctx, stream, text, "News · Micro", day); err != nil {
-			if ctx.Err() == nil {
-				log.Print("news: could not publish morning headlines")
-			}
-			continue
-		}
-		n.Lock()
-		if zone, ok := n.zones[stream]; ok {
-			zone.posted = day
-			n.zones[stream] = zone
-		}
-		n.Unlock()
-	}
+	text, err := newsHeadlines(ctx)
+	return agent.Post{Text: text, Name: "News · Micro"}, err
 }
 
 func newsHeadlines(ctx context.Context) (string, error) {
@@ -151,7 +55,7 @@ func readHeadlines(reader io.Reader) (string, error) {
 	if (len(response.Error) > 0 && string(response.Error) != "null") || response.Result.IsError {
 		return "", errors.New("headlines tool failed")
 	}
-	text := "Morning headlines"
+	text := "Headlines"
 	seen := map[string]bool{}
 	count := 0
 	for _, content := range response.Result.Content {

@@ -3,11 +3,9 @@ package agent
 
 import "context"
 
-// Stream describes discovery and an optional local-hour window for a feed seed.
-// End may exceed 24 for a window crossing midnight. Zero hours means link only.
+// Stream describes an agent's public stream for discovery.
 type Stream struct {
-	Tag        string
-	Start, End int
+	Tag string
 }
 
 // Publish and PublishPhoto send agent posts through the server's moderation path.

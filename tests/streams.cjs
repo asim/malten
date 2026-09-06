@@ -22,7 +22,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  assert(lastURL.startsWith('/api/posts?'),'keeps the posts endpoint');
  const joined=Number(new URL(lastURL,'https://malten.test').searchParams.get('last'));
  assert(Math.abs(Date.now()-joined-3600000)<1000,'arrival starts one hour ago');
- assert(lastURL.endsWith('&seed='),'hashtag navigation does not inject home reminders');
+ assert(!lastURL.includes('seed='),'posts are not inserted from another stream');
  let release;hold=new Promise(resolve=>{release=resolve});
  elements.get('thought').value='a reflection';
  elements.get('composer').onsubmit({preventDefault(){}});
@@ -57,14 +57,14 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  // Home is automatically selected and remains stable for a timezone.
  window.location.hash='';elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
  const home=Intl.DateTimeFormat().resolvedOptions().timeZone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-');
- assert((lastURL.includes('stream='+home+'&last=') && lastURL.endsWith('&seed=scheduled')),'home loads timezone stream and its reminder');
+ assert((lastURL.includes('stream='+home+'&last=')),'home loads timezone stream');
  assert.equal(elements.get('current-stream').textContent,'#'+home);
  fail=false;elements.get('thought').value='in my timezone';
  elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
  assert.equal(sent.stream,home,'home posts belong to the timezone');
  window.location.hash='#city';listeners.hashchange();await new Promise(setImmediate);
  elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
- assert(lastURL.includes('stream='+home+'&last=') && lastURL.endsWith('&seed=scheduled'),'brand returns from a hashtag to timezone');
+ assert(lastURL.includes('stream='+home+'&last='),'brand returns from a hashtag to timezone');
  elements.get('saved').onclick();
  assert.equal(elements.get('stream').children.length,1,'old private default captures remain accessible');
  for(const [zone,expected] of [['Europe/London','europe-london'],['America/Los_Angeles','america-los-angeles'],['Etc/GMT+5','etc-gmt-plus-5']]){
