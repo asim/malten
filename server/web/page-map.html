@@ -16,6 +16,10 @@
   </form>
 
   <nav class="stream-options" aria-label="Stream view"><button id="all" type="button" aria-pressed="true">All</button><button id="you" type="button" aria-pressed="false">You</button><button id="saved" type="button" hidden>Saved on this device</button></nav>
+  {{if or .Day .Reminder}}<nav class="reflection-event" aria-label="Agent streams">
+    {{if .Reminder}}<a class="stream-link" href="/#reminder">#reminder</a> {{end}}
+    {{if .Day}}<a class="stream-link" href="/#sunrise">#sunrise</a> · <a class="stream-link" href="/#morning">#morning</a> · <a class="stream-link" href="/#afternoon">#afternoon</a> · <a class="stream-link" href="/#mid-afternoon">#mid-afternoon</a> · <a class="stream-link" href="/#sunset">#sunset</a> · <a class="stream-link" href="/#evening">#evening</a>{{end}}
+  </nav>{{end}}
   <p class="reflection-event" id="visibility">Public · disappears within 24 hours</p>
   <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
   <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
@@ -86,9 +90,13 @@
       article.appendChild(event);$('stream').appendChild(article);
     });
   }
+  function dayStream(){
+    const hour=new Date().getHours();
+    return hour<5?'evening':hour<8?'sunrise':hour<12?'morning':hour<15?'afternoon':hour<18?'mid-afternoon':hour<20?'sunset':'evening';
+  }
   async function refresh(){
     const n=++request,active=activeStream();
-    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active),{headers});
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&moment='+dayStream(),{headers});
       if(!response.ok)throw new Error('Could not load this stream.');
       const data=await response.json();if(n!==request||active!==activeStream())return;
       const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}

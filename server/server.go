@@ -73,7 +73,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := page.ExecuteTemplate(w, "base.html", map[string]any{"Title": "Malten", "Ver": assetVer}); err != nil {
+	if err := page.ExecuteTemplate(w, "base.html", map[string]any{"Title": "Malten", "Ver": assetVer, "Day": os.Getenv("MALTEN_DAY") != "false", "Reminder": os.Getenv("MALTEN_REMINDER") == "true"}); err != nil {
 		log.Printf("malten: render: %v", err)
 	}
 }

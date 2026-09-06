@@ -12,7 +12,7 @@ const shared=[];
 const storage=new Map();
 const context={document,window,navigator:{},Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,Malten:{getNetwork:()=>data},fetch:async(url,opts)=>{
  if(opts.method==='POST'){sent=JSON.parse(opts.body);if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,text:async()=> 'Moderation unavailable'};}
- return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1]))};
+ return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]))};
 }};
 const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 (async()=>{

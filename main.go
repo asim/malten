@@ -34,6 +34,9 @@ func main() {
 	if os.Getenv("MALTEN_REMINDER") == "true" {
 		start(func(ctx context.Context) { agent.Reminder(ctx, srv.PublishAgent) })
 	}
+	if os.Getenv("MALTEN_DAY") != "false" {
+		start(func(ctx context.Context) { agent.Day(ctx, srv.PublishAgentPhoto) })
+	}
 	addr := os.Getenv("MALTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"
