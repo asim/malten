@@ -1,4 +1,4 @@
-package daylight
+package nature
 
 var places = []place{
 	{"london", "London", "51.5074", "-0.1278", "Rob Bye", "https://commons.wikimedia.org/w/index.php?curid=61752525"},
