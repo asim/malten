@@ -189,7 +189,14 @@
   for(const name of ['all','you','drafts'])$(name).onclick=()=>{view=name;render();};
   $('home').onclick=e=>{e.preventDefault();view='all';window.history.replaceState(null,'','/');joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
   $('home-link').onclick=$('home').onclick;
-  $('new-stream').onclick=()=>{window.location.hash=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');input.focus();};
+  $('new-stream').onclick=()=>{
+    let id;
+    do {
+      id='';
+      while(id.length<8){const b=crypto.getRandomValues(new Uint8Array(1))[0];if(b<252)id+='0123456789abcdefghijklmnopqrstuvwxyz'[b%36];}
+    }while(!/[0-9]/.test(id));
+    window.location.hash=id;input.focus();
+  };
   window.addEventListener('hashchange',()=>{view='all';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();});
   async function restore(){
     try {
