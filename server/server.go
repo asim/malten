@@ -37,6 +37,7 @@ func computeAssetVer() string {
 
 // Server serves the app.
 type Server struct {
+	AgentStatus  func() any
 	AgentStreams []agent.Stream
 	started      time.Time
 	stream       *streamStore
@@ -81,10 +82,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":         "ok",
-		"uptime_seconds": int(time.Since(s.started).Seconds()),
-	})
+	data := map[string]any{"status": "ok", "uptime_seconds": int(time.Since(s.started).Seconds())}
+	if s.AgentStatus != nil {
+		data["agents"] = s.AgentStatus()
+	}
+	writeJSON(w, http.StatusOK, data)
 }
 
 // staticAsset serves a single embedded file from web/ with an explicit content

@@ -39,6 +39,7 @@ func main() {
 		log.Fatalf("open agent streams: %v", err)
 	}
 	srv.UseAgentContext(memory)
+	srv.AgentStatus = func() any { return memory.Status() }
 	start(srv.Run)
 	for _, worker := range []agent.Agent{reminder.New(), aslam.New(), news.New(), nature.New()} {
 		srv.AgentStreams = append(srv.AgentStreams, agent.Stream{Tag: worker.Name})

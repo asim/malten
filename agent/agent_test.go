@@ -144,3 +144,32 @@ func TestSourceFailureRetainsContext(t *testing.T) {
 		t.Fatal("lost retained source")
 	}
 }
+
+func TestBlockedAttemptDoesNotConsumePublicationWindow(t *testing.T) {
+	now := time.Now()
+	m, _ := Open(filepath.Join(t.TempDir(), "agents.json"))
+	m.Write("news", Record{ID: "blocked", Kind: "decision", At: now.Add(-10 * time.Minute), Action: &Action{Stream: "news", Text: "old attempt"}, Status: "blocked"})
+	published := 0
+	l := Loop{Memory: m, Agent: Agent{Name: "news", Read: func(context.Context, time.Time) (json.RawMessage, error) {
+		return json.RawMessage(`{"headline":"new"}`), nil
+	}, Decide: func(_ context.Context, v View) (Decision, error) {
+		var id string
+		for _, r := range v.Records {
+			if r.Kind == "source" {
+				id = r.ID
+			}
+		}
+		return Decision{Action: &Action{Stream: "news", Text: "New brief"}, Evidence: []string{id}}, nil
+	}}, Observe: func() []Observation { return nil }, Publish: func(context.Context, string, string, string, string, ...string) error { published++; return nil }}
+	if err := l.Step(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	if published != 1 {
+		t.Fatal("rejected attempt suppressed a valid new contribution")
+	}
+	m.RecordCycle("news", errors.New("secret material"))
+	status := m.Status()["news"]
+	if status.LastError != "cycle failed" || status.LastAction != "sent" {
+		t.Fatalf("unsafe or incorrect status: %+v", status)
+	}
+}
