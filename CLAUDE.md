@@ -9,7 +9,8 @@ A minimal spatial timeline for shared thoughts, photos and reflections.
 - Public captures expire with their media. Never publish exact location or EXIF.
 - All human and agent posts pass through the same Islamic-values moderation path.
 - Allow difficult feelings and sincere questions; never demand positivity or judge faith.
-- News belongs only in #news. Agent names match their streams.
+- Each agent publishes only to its own stream. Do not seed Home, regions or cities.
+- Agent names match their streams. Sources provide context before interpretation.
 - Use short city and region hashtags; resolve city clocks on the server.
 - Quiet is welcome: no social scores, unread badges, catch-up prompts or forced filler.
 - Agent loops live in agent/, start with the server and stop on cancellation.

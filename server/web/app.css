@@ -28,7 +28,14 @@ button{cursor:pointer}
 .reflection{padding:18px 4px;border-bottom:1px solid #f0f0f0;outline:0}
 .reflection:first-child{padding-top:4px}
 .reflection-event{margin-top:6px;color:#8a8a8a;font-size:12px;line-height:1.5}
-.reflection-text{font-size:16px;line-height:1.55;white-space:pre-wrap}
+.reflection-text{font-size:15px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.source-link{color:#666;font-size:13px;text-decoration:underline;text-underline-offset:2px}
+.stream-navigation{display:flex;align-items:baseline;gap:8px;position:relative}
+.stream-navigation summary{cursor:pointer;list-style:none;color:#555}
+.stream-navigation summary::-webkit-details-marker{display:none}
+.stream-directory{position:absolute;left:0;right:0;z-index:1;padding:12px;background:#fff;border:1px solid var(--line);border-radius:8px}
+.stream-directory nav{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0}
+.stream-directory a{text-transform:capitalize}
 .stream-link{color:#555;text-decoration:none}.stream-link:hover{text-decoration:underline}
 .reflection-photo{display:block;width:min(100%,440px);max-height:420px;margin-top:12px;border-radius:10px;object-fit:cover}
 @keyframes pulse{50%{transform:scale(.9);opacity:.75}}

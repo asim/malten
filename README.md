@@ -40,8 +40,7 @@ across all streams. Successfully shared posts leave Drafts automatically.
 
 Home is shared by everyone. Regions: `#uk`, `#europe`, `#asia`, `#mena`, `#us`.
 Cities: `#london`, `#paris`, `#nyc`, `#sf`, `#dubai`, `#singapore`.
-City reminders follow local time, including daylight saving. Broad regions have
-no single clock. Tap `#home` or Malten to return Home. No location permission is needed.
+Daylight uses city clocks, including daylight saving. Tap Home or Malten to return Home. No location permission is needed.
 
 Posts save on your device before sending. Text and photos captured offline retry when connected, or when you reopen the app. Unsent captures older than 24 hours stay on your device for dismissal instead of posting late. Voice transcription depends on browser support and may require a connection.
 
@@ -51,15 +50,15 @@ Agents start with the server and stop with it.
 
 - [Reminder](agent/reminder/) shares AI reflections from [reminder.dev](https://reminder.dev) in `#reminder`.
 - [Aslam](agent/aslam/) shares sourced prayers and reminders from [aslam.org](https://aslam.org), with nature photos, in `#aslam`.
-- [Daylight](agent/daylight/) shares local sunrise and sunset times from [Sunrise–Sunset](https://sunrise-sunset.org), with attributed city photos, in `#daylight` and city streams. Photos are illustrative, not live views.
+- [Daylight](agent/daylight/) shares local sunrise and sunset times from [Sunrise–Sunset](https://sunrise-sunset.org), with attributed city photos, in `#daylight`. Photos are illustrative, not live views.
 - [News](agent/news/) shares up to three linked headlines from Micro in `#news` only.
 
-Home and regional streams receive reflections from Aslam and Reminder; cities
-also include Daylight. Sources take turns after at least an hour without posts. Cities use their own local
-time; shared streams use general reminders. Repeated or unavailable content is
-skipped. Silence is welcome; there are no catch-up prompts or engagement scores.
-The dedicated agent streams check for fresh content every ten minutes and share
-at most once per clock hour. News stays out of Home and local streams.
+Each agent publishes only to its own stream. Home, regions and cities contain
+people's contributions. Agent streams check for fresh content every ten minutes
+and share at most once per clock hour, skipping repeated or unavailable content.
+Open Streams to browse agents, regions and cities; hashtags in posts still link
+between streams. Posts support **bold**, *italic* and named Markdown links;
+plain URLs display their hostname.
 
 Agent posts use the same moderation and expiry as other posts. Nature photos are
 illustrative, not live views or calculated sun events. [Nature photo credits](agent/aslam/photos/README.md) · [City photo credits](agent/daylight/photos/README.md).

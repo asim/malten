@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/asim/malten/agent"
 	"image/jpeg"
 	"io"
 	"log"
@@ -36,7 +35,6 @@ type Post struct {
 	Created  int64  `json:"created_at"`
 	Agent    string `json:"agent,omitempty"`
 	Mine     bool   `json:"mine,omitempty"`
-	quiet    bool
 	key      string
 	owner    string
 	hidden   bool
@@ -172,7 +170,7 @@ func (b *streamStore) duplicate(p Post) bool {
 func (b *streamStore) publish(ctx context.Context, p Post) error {
 	b.Lock()
 	b.prune(time.Now())
-	duplicate := b.duplicate(p) || p.quiet && b.recent(p.Stream, time.Now())
+	duplicate := b.duplicate(p)
 	b.Unlock()
 	if duplicate {
 		return nil
@@ -218,7 +216,7 @@ func (b *streamStore) publish(ctx context.Context, p Post) error {
 	b.Lock()
 	defer b.Unlock()
 	b.prune(time.Now())
-	if b.duplicate(p) || p.quiet && b.recent(p.Stream, time.Now()) {
+	if b.duplicate(p) {
 		return nil
 	}
 	before := append([]Post(nil), b.posts...)
@@ -241,9 +239,6 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		if !validStream(active) {
 			http.Error(w, "invalid stream", 400)
 			return
-		}
-		if s.ObserveStream != nil {
-			s.ObserveStream(active)
 		}
 		last := time.Now().Add(-time.Hour).UnixMilli()
 		if value := r.URL.Query().Get("last"); value != "" {
@@ -542,37 +537,4 @@ func (s *Server) PublishAgentPhoto(ctx context.Context, stream, text, name, phot
 		key = keys[0]
 	}
 	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name, Photo: photo, key: key})
-}
-
-func (b *streamStore) recent(stream string, now time.Time) bool {
-	for _, p := range b.posts {
-		if p.Stream == stream && !p.hidden && now.Sub(time.UnixMilli(p.Created)) < agent.ReflectionPause {
-			return true
-		}
-	}
-	return false
-}
-
-// RecentPosts provides bounded public context without private owner or report data.
-func (s *Server) RecentPosts(stream string) []agent.Post {
-	b := s.stream
-	b.Lock()
-	defer b.Unlock()
-	b.prune(time.Now())
-	var out []agent.Post
-	for _, p := range b.posts {
-		if p.Stream == stream && !p.hidden {
-			out = append(out, agent.Post{Text: p.Text, Name: p.Agent, Created: p.Created})
-		}
-	}
-	return out
-}
-
-// PublishQuietAgent rechecks activity after moderation as well as before it.
-func (s *Server) PublishQuietAgent(ctx context.Context, stream, text, name, photo string, keys ...string) error {
-	key := ""
-	if len(keys) > 0 {
-		key = keys[0]
-	}
-	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name, Photo: photo, key: key, quiet: true})
 }
