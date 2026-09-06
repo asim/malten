@@ -7,17 +7,19 @@ function element(){return {children:[],value:'',style:{},elements:[],classList:{
 const document={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element,createTextNode:t=>({textContent:t})};
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
 const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
-let sent,fail=false,hold=null;
+let sent,fail=false,hold=null,lastURL='';
 const shared=[];
 const storage=new Map();
 const context={document,window,navigator:{},Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,Malten:{getNetwork:()=>data},fetch:async(url,opts)=>{
+ lastURL=url;
  if(opts.method==='POST'){sent=JSON.parse(opts.body);if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,text:async()=> 'Moderation unavailable'};}
  return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]))};
 }};
 const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 (async()=>{
- vm.runInNewContext(source,context);await new Promise(setImmediate);
+ vm.runInNewContext(source.replace('{{.AgentStreams}}',JSON.stringify([{Tag:'scheduled',Start:0,End:24}])),context);await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,0,'private captures must not be public');
+ assert(lastURL.endsWith('&seed=scheduled'),'feed selection uses registered agent metadata');
  let release;hold=new Promise(resolve=>{release=resolve});
  elements.get('thought').value='a reflection';
  elements.get('composer').onsubmit({preventDefault(){}});

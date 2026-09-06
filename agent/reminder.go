@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+var ReminderStreams = []Stream{{Tag: "reminder"}}
+
 type Publish func(context.Context, string, string, string) error
 
 // Reminder shares an occasional sourced reflection in #reminder. Its caller

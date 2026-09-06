@@ -31,12 +31,10 @@ func main() {
 	var agents sync.WaitGroup
 	start := func(run func(context.Context)) { agents.Add(1); go func() { defer agents.Done(); run(ctx) }() }
 	start(srv.Run)
-	if os.Getenv("MALTEN_REMINDER") == "true" {
-		start(func(ctx context.Context) { agent.Reminder(ctx, srv.PublishAgent) })
-	}
-	if os.Getenv("MALTEN_DAY") != "false" {
-		start(func(ctx context.Context) { agent.Day(ctx, srv.PublishAgentPhoto) })
-	}
+	srv.AgentStreams = append(srv.AgentStreams, agent.ReminderStreams...)
+	srv.AgentStreams = append(srv.AgentStreams, agent.AslamStreams...)
+	start(func(ctx context.Context) { agent.Reminder(ctx, srv.PublishAgent) })
+	start(func(ctx context.Context) { agent.Aslam(ctx, srv.PublishAgentPhoto) })
 	addr := os.Getenv("MALTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"

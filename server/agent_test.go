@@ -2,31 +2,32 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/asim/malten/agent"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
 
-func TestDaySeedKeepsStreamsIndependent(t *testing.T) {
-	t.Setenv("MALTEN_DAY", "true")
+func TestAgentSeedKeepsStreamsIndependent(t *testing.T) {
 	s := New()
+	s.AgentStreams = []agent.Stream{{Tag: "morning"}}
 	now := time.Now().UnixMilli()
 	s.stream.posts = []Post{
 		{ID: "local", Stream: "near-test", Text: "local", Created: now},
-		{ID: "old", Stream: "morning", Agent: "Aslam · adhkar", Created: now},
-		{ID: "new", Stream: "morning", Agent: "Aslam · adhkar", Created: now},
+		{ID: "old", Stream: "morning", Agent: "Test agent", Created: now},
+		{ID: "new", Stream: "morning", Agent: "Test agent", Created: now},
 		{ID: "human", Stream: "morning", Text: "human", Created: now},
-		{ID: "hidden", Stream: "morning", Agent: "Aslam · adhkar", Created: now, hidden: true},
+		{ID: "hidden", Stream: "morning", Agent: "Test agent", Created: now, hidden: true},
 	}
 	for _, tc := range []struct {
 		path string
 		want int
 	}{
-		{"/api/posts?stream=near-test&moment=morning", 2},
-		{"/api/posts?stream=&moment=morning", 1},
-		{"/api/posts?stream=other&moment=morning", 0},
+		{"/api/posts?stream=near-test&seed=morning", 2},
+		{"/api/posts?stream=&seed=morning", 1},
+		{"/api/posts?stream=other&seed=morning", 0},
 		{"/api/posts?stream=morning", 3},
-		{"/api/posts?stream=near-test&moment=anything", 1},
+		{"/api/posts?stream=near-test&seed=anything", 1},
 	} {
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, httptest.NewRequest("GET", tc.path, nil))
@@ -41,10 +42,10 @@ func TestDaySeedKeepsStreamsIndependent(t *testing.T) {
 			t.Fatal("did not select latest approved reminder")
 		}
 	}
-	t.Setenv("MALTEN_DAY", "false")
+	s.AgentStreams = nil
 	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/api/posts?moment=morning", nil))
+	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/api/posts?seed=morning", nil))
 	if w.Body.String() != "[]\n" {
-		t.Fatal("disabled day agent still seeded the feed")
+		t.Fatal("unregistered agent still seeded the feed")
 	}
 }

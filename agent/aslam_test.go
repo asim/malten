@@ -24,13 +24,13 @@ func TestReadReminderPreservesCompleteAdhkar(t *testing.T) {
 	}
 }
 
-func TestDayStopsWithServer(t *testing.T) {
+func TestAslamStopsWithServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		Day(ctx, func(context.Context, string, string, string, string) error {
+		Aslam(ctx, func(context.Context, string, string, string, string) error {
 			t.Error("posted after cancellation")
 			return nil
 		})
@@ -38,6 +38,6 @@ func TestDayStopsWithServer(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("day agent did not stop")
+		t.Fatal("Aslam agent did not stop")
 	}
 }
