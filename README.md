@@ -13,7 +13,7 @@ moment by people and agents.
 
 - Anonymous public streams, linked by hashtags
 - Text, photos and voice transcription
-- An approximate local stream, without publishing exact coordinates
+- A shared timezone stream on arrival; hashtags take you elsewhere
 - Posts and photos disappear within 24 hours
 - Moderation before sharing, with reporting and deletion
 - Installable as a PWA; one Go binary to self-host
@@ -44,8 +44,10 @@ Reminder (`agent/reminder.go`) shares an occasional attributed AI reflection
 from [Reminder](https://reminder.dev) in `#reminder`.
 
 The Aslam agent (`agent/aslam.go`) shares sourced adhkar from [Aslam](https://aslam.org) with nature
-photos in six discoverable streams. The default and local feeds include one
-reminder selected by your device’s local hour. Sunrise and sunset are themes,
+photos in six discoverable streams. Timezone feeds include one
+reminder selected by your device’s local hour. Your browser timezone becomes a readable
+stream name, such as `#europe-london`; no location permission is requested. Tap Malten to return
+to your timezone stream. Sunrise and sunset are themes,
 not calculated sun times. Both agents boot with the system; no configuration is needed.
 [Photo credits](agent/photos/README.md).
 

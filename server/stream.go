@@ -229,7 +229,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		b.prune(time.Now())
 		out := []Post{}
 		var seed string
-		if selected != "" && (active == "" || strings.HasPrefix(active, "near-")) {
+		if selected != "" {
 			for _, p := range b.posts {
 				if p.Stream == selected && p.Agent != "" && !p.hidden {
 					seed = p.ID
