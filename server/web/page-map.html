@@ -70,7 +70,7 @@
       const text=document.createElement('div');text.className='reflection-text';appendText(text,p.text);article.appendChild(text);
       if(p.photo){const img=document.createElement('img');img.src=p.photo;img.alt='Shared photo';img.className='reflection-photo';img.loading='lazy';article.appendChild(img);}
       const event=document.createElement('div');event.className='reflection-event';
-      event.textContent=[when(p.created_at),p.agent,view==='saved'&&p.location&&p.location.name].filter(Boolean).join(' · ');
+      event.textContent=[when(p.created_at),p.agent==='Aslam · adhkar'?'Aslam':p.agent,view==='saved'&&p.location&&p.location.name].filter(Boolean).join(' · ');
       if(p.delivery){
         event.textContent+=' · '+p.delivery;
         if(p.failed){
