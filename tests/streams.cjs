@@ -7,6 +7,7 @@ function element(){return {children:[],value:'',style:{},elements:[],classList:{
 const document={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element,createTextNode:t=>({textContent:t})};
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
 const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
+window.history={replaceState(_state,_title,url){assert.equal(url,'/');window.location.hash='';}};
 let sent,fail=false,offline=false,unavailable=false,hold=null,lastURL='';
 const pending=new Map();
 const outbox={list:async()=>structuredClone([...pending.values()]),put:async p=>pending.set(p.id,structuredClone(p)),remove:async id=>pending.delete(id)};
@@ -81,9 +82,10 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  assert(!source.includes('geolocation'),'location permission is never requested');
  // Home is automatically selected and remains stable for a timezone.
  window.location.hash='';elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
- const home=Intl.DateTimeFormat().resolvedOptions().timeZone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-');
- assert((lastURL.includes('stream='+home+'&last=')),'home loads timezone stream');
- assert.equal(elements.get('current-stream').textContent,'#'+home);
+ const home='home';
+ assert(lastURL.includes('stream=home&last='),'root loads shared home');
+ assert.equal(elements.get('current-stream').textContent,'Home');
+
  fail=false;elements.get('thought').value='in my timezone';
  await elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
  assert.equal(sent.stream,home,'home posts belong to the timezone');
@@ -97,7 +99,9 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
    function DateTimeFormat(...args){return args.length?new Intl.DateTimeFormat(...args):{resolvedOptions:()=>({timeZone:zone})};}
    vm.runInNewContext(source.replace('{{.AgentStreams}}','[]'),{...context,window:testWindow,Intl:{DateTimeFormat}});
    await new Promise(setImmediate);
-   assert(lastURL.includes('stream='+expected+'&last='),'automatic timezone arrival: '+zone);
+   assert(lastURL.includes('stream=home&last='),'shared home arrival: '+zone);
+   assert.equal(elements.get('region').textContent,'#'+expected,'timezone suggested separately');
+   assert.equal(elements.get('region').href,'/#'+expected);
  }
 
  console.log('Queued posting, moderation outcomes, stream isolation and private migration: passed');
