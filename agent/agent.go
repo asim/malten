@@ -51,6 +51,7 @@ type View struct {
 	Observations      []Observation
 }
 type Agent struct {
+	DisplayName     string
 	Name, Objective string
 	Read            func(context.Context, time.Time) (json.RawMessage, error)
 	Decide          func(context.Context, View) (Decision, error)
@@ -109,7 +110,10 @@ func (l Loop) Step(ctx context.Context, now time.Time) error {
 			}
 			if expired {
 				r.Status = "expired"
-				return l.Memory.Write(l.Agent.Name, r)
+				if err := l.Memory.Write(l.Agent.Name, r); err != nil {
+					return err
+				}
+				continue
 			}
 			return l.act(ctx, r)
 		}
@@ -259,7 +263,11 @@ func (l Loop) act(ctx context.Context, r Record) error {
 			text += "\n\n" + caption
 		}
 	}
-	err := l.Publish(ctx, r.Action.Stream, text, strings.ToUpper(l.Agent.Name[:1])+l.Agent.Name[1:]+" · AI", photo, r.ID)
+	name := l.Agent.DisplayName
+	if name == "" {
+		name = Label(l.Agent.Name) + " · AI"
+	}
+	err := l.Publish(ctx, r.Action.Stream, text, name, photo, r.ID)
 	if err != nil {
 		if err.Error() != "capture not suitable for sharing" && err.Error() != "invalid capture" {
 			return err

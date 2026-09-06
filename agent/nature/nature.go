@@ -21,9 +21,10 @@ type place struct{ Tag, Name, Latitude, Longitude, Credit, Source string }
 
 func New() agent.Agent {
 	return agent.Agent{
-		Name:      "nature",
-		Objective: "Weather now. Maintain current weather and daylight context for each supplied city using Open-Meteo. Compare previous conditions: precipitation beginning/ending, weather code or day/night changing, or a temperature change of at least 3 C can warrant an update. Small fluctuations and timestamps alone do not. Initial context may warrant one concise update in nature. Publish in a city only when a recent observation there makes it relevant. Set Action.Place to its exact city tag. Describe current values as weather model estimates, include the local time and Open-Meteo attribution, never imply live measurements or turn an illustrative photo into a live view. Do not extrapolate to regions.",
-		Read:      Read, Check: check, Media: media,
+		DisplayName: "Nature",
+		Name:        "nature",
+		Objective:   "Weather now. Maintain current weather and daylight context for each supplied city using Open-Meteo. Compare previous conditions: precipitation beginning/ending, weather code or day/night changing, or a temperature change of at least 3 C can warrant an update. Small fluctuations and timestamps alone do not. Initial context may warrant one concise update in nature. Publish in a city only when a recent observation there makes it relevant. Set Action.Place to its exact city tag. Describe current values as weather model estimates, include the local time and Open-Meteo attribution, never imply live measurements or turn an illustrative photo into a live view. Do not extrapolate to regions.",
+		Read:        Read, Decide: decide, Check: check, Media: media,
 	}
 }
 func Read(ctx context.Context, now time.Time) (json.RawMessage, error) {
