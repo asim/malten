@@ -46,7 +46,7 @@ func (s *Server) AgentObservations() []agent.Observation {
 	b.prune(time.Now())
 	var out []agent.Observation
 	for _, p := range b.posts {
-		if p.Agent == "" && !p.hidden {
+		if p.Agent == "" && !p.hidden && !agent.IsUnlisted(p.Stream) {
 			out = append(out, agent.Observation{ID: p.ID, Stream: p.Stream, Text: p.Text, Photo: p.Photo, Kind: "human", At: time.UnixMilli(p.Created)})
 		}
 	}
