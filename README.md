@@ -35,11 +35,13 @@ address (default `:8080`).
 
 Shared posts are saved locally in `data/stream.json`: at most 500 posts, for up to
 24 hours from capture. Posts survive restarts without extending their expiry. “You” filters your public posts; it is not
-a private stream. Existing browser-only captures remain private under
-“Saved on this device”.
+a private stream. “Drafts” shows pending and failed posts saved on this device,
+across all streams. Successfully shared posts leave Drafts automatically.
 
-Home is shared by everyone. Regions links to your browser timezone, such as
-`#europe-london`, without location permission. Tap Malten to return Home.
+Home is shared by everyone. Regions offers six starting streams: London, Paris,
+New York, Los Angeles, Dubai and Singapore, plus your browser timezone if different.
+Regional agents follow the destination timezone. No location permission is needed.
+Tap #home or Malten to return Home.
 
 Posts save on your device before sending. Text and photos captured offline retry when connected, or when you reopen the app. Unsent captures older than 24 hours stay on your device for dismissal instead of posting late. Voice transcription depends on browser support and may require a connection.
 
