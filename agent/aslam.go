@@ -26,7 +26,7 @@ var AslamStreams = []Stream{
 	{Tag: "evening", Start: 20, End: 29},
 }
 
-type PublishPhoto func(context.Context, string, string, string, string) error
+type PublishPhoto func(context.Context, string, string, string, string, ...string) error
 
 // Aslam keeps a small set of sourced reminders available across time zones.
 // Browsers select a theme using local time; these are not astronomical times.
@@ -56,7 +56,7 @@ func Aslam(ctx context.Context, publish PublishPhoto) {
 						file = "photos/sunrise.jpg"
 					}
 					raw, _ := photos.ReadFile(file)
-					err = publish(ctx, stream.Tag, text, "Aslam · adhkar", "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(raw))
+					err = publish(ctx, stream.Tag, text, "Aslam · adhkar", "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(raw), time.Now().UTC().Format("2006-01-02"))
 				}
 				if err != nil && ctx.Err() == nil {
 					log.Printf("aslam: %s reminder unavailable", stream.Tag)

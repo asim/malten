@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type Post struct {
 	Created  int64  `json:"created_at"`
 	Agent    string `json:"agent,omitempty"`
 	Mine     bool   `json:"mine,omitempty"`
+	key      string
 	owner    string
 	hidden   bool
 	reviewed bool
@@ -148,7 +150,27 @@ func (b *streamStore) allowAt(key string, now time.Time) bool {
 	b.limits[key] = next.Add(10 * time.Second)
 	return true
 }
+func (b *streamStore) duplicate(p Post) bool {
+	if p.Agent == "" {
+		return false
+	}
+	for _, existing := range b.posts {
+		if existing.Agent == p.Agent && existing.Stream == p.Stream &&
+			((p.key != "" && existing.key == p.key) || existing.Text == p.Text) {
+			return true
+		}
+	}
+	return false
+}
 func (b *streamStore) publish(ctx context.Context, p Post) error {
+	b.Lock()
+	b.prune(time.Now())
+	duplicate := b.duplicate(p)
+	b.Unlock()
+	if duplicate {
+		return nil
+	}
+
 	select {
 	case b.slots <- struct{}{}:
 		defer func() { <-b.slots }()
@@ -189,12 +211,8 @@ func (b *streamStore) publish(ctx context.Context, p Post) error {
 	b.Lock()
 	defer b.Unlock()
 	b.prune(time.Now())
-	if p.Agent != "" {
-		for _, existing := range b.posts {
-			if existing.Agent == p.Agent && existing.Stream == p.Stream && existing.Text == p.Text {
-				return nil
-			}
-		}
+	if b.duplicate(p) {
+		return nil
 	}
 	before := append([]Post(nil), b.posts...)
 	if len(b.posts) >= capacity {
@@ -224,6 +242,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+		last := time.Now().Add(-time.Hour).UnixMilli()
+		if value := r.URL.Query().Get("last"); value != "" {
+			parsed, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || parsed < 0 {
+				http.Error(w, "invalid timestamp", 400)
+				return
+			}
+			last = parsed
+		}
 		who := owner(r)
 		b.Lock()
 		b.prune(time.Now())
@@ -231,13 +258,13 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		var seed string
 		if selected != "" {
 			for _, p := range b.posts {
-				if p.Stream == selected && p.Agent != "" && !p.hidden {
+				if p.Stream == selected && p.Agent != "" && !p.hidden && p.Created > last {
 					seed = p.ID
 				}
 			}
 		}
 		for _, p := range b.posts {
-			if (p.Stream == active || seed != "" && p.ID == seed) && !p.hidden {
+			if (p.Stream == active || seed != "" && p.ID == seed) && !p.hidden && p.Created > last {
 				p.Mine = who != "" && p.owner == who
 				if p.Photo != "" {
 					p.Photo = "/api/posts/" + p.ID + "/photo"
@@ -473,8 +500,12 @@ func moderate(ctx context.Context, p Post) (bool, error) {
 }
 
 // PublishAgent uses the same validation, expiry and moderation as human posts.
-func (s *Server) PublishAgent(ctx context.Context, stream, text, name string) error {
-	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name})
+func (s *Server) PublishAgent(ctx context.Context, stream, text, name string, keys ...string) error {
+	key := ""
+	if len(keys) > 0 {
+		key = keys[0]
+	}
+	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name, key: key})
 }
 
 func moderationKey() string {
@@ -487,6 +518,10 @@ func moderationKey() string {
 }
 
 // PublishAgentPhoto applies the same photo cleaning and moderation as human captures.
-func (s *Server) PublishAgentPhoto(ctx context.Context, stream, text, name, photo string) error {
-	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name, Photo: photo})
+func (s *Server) PublishAgentPhoto(ctx context.Context, stream, text, name, photo string, keys ...string) error {
+	key := ""
+	if len(keys) > 0 {
+		key = keys[0]
+	}
+	return s.stream.publish(ctx, Post{Stream: stream, Text: text, Agent: name, Photo: photo, key: key})
 }

@@ -33,6 +33,7 @@
   const saved=Malten.getNetwork().points;
   let posts=[],photo=null,view='all',sending=false,revision='',request=0;
   let outbox=[];
+  let joined=Date.now()-60*60*1000;
   let token='',hidden=[];
   let timezone='UTC';
   try { timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; } catch(_) {}
@@ -99,7 +100,7 @@
   }
   async function refresh(){
     const n=++request,active=activeStream();
-    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&seed='+encodeURIComponent(active===homeStream?seedStream():''),{headers});
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined+'&seed='+encodeURIComponent(active===homeStream?seedStream():''),{headers});
       if(!response.ok)throw new Error('Could not load this stream.');
       const data=await response.json();if(n!==request||active!==activeStream())return;
       const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}
@@ -172,9 +173,9 @@
   }else{$('voice').disabled=true;$('voice').title='Voice transcription is unavailable in this browser';}
   $('saved').hidden=!saved.length;
   for(const name of ['all','you','saved'])$(name).onclick=()=>{view=name;render();};
-  $('home').onclick=e=>{e.preventDefault();view='all';window.location.hash='';posts=[];revision='';render();refresh();};
+  $('home').onclick=e=>{e.preventDefault();view='all';window.location.hash='';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
   window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
-  render();refresh();setInterval(()=>{if(!document.hidden)refresh();},15000);
+  render();refresh();setInterval(()=>{if(!document.hidden)refresh();},5000);
 })();
 </script>
 {{end}}

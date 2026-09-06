@@ -8,17 +8,20 @@ const document={getElementById(id){if(!elements.has(id))elements.set(id,element(
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
 const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
 let sent,fail=false,hold=null,lastURL='';
-const shared=[];
+const shared=[{id:'before-arrival',stream:'x',text:'old',created_at:Date.now()-2*60*60*1000}];
 const storage=new Map();
-const context={document,window,navigator:{},Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,Malten:{getNetwork:()=>data},fetch:async(url,opts)=>{
+const context={document,window,navigator:{},URL,Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,Malten:{getNetwork:()=>data},fetch:async(url,opts)=>{
  lastURL=url;
  if(opts.method==='POST'){sent=JSON.parse(opts.body);if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,text:async()=> 'Moderation unavailable'};}
- return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]))};
+ return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]) && p.created_at>Number(new URL(url,'https://malten.test').searchParams.get('last')))};
 }};
 const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 (async()=>{
  vm.runInNewContext(source.replace('{{.AgentStreams}}',JSON.stringify([{Tag:'scheduled',Start:0,End:24}])),context);await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,0,'private captures must not be public');
+ assert(lastURL.startsWith('/api/posts?'),'keeps the posts endpoint');
+ const joined=Number(new URL(lastURL,'https://malten.test').searchParams.get('last'));
+ assert(Math.abs(Date.now()-joined-3600000)<1000,'arrival starts one hour ago');
  assert(lastURL.endsWith('&seed='),'hashtag navigation does not inject home reminders');
  let release;hold=new Promise(resolve=>{release=resolve});
  elements.get('thought').value='a reflection';
@@ -34,7 +37,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  assert.equal(sent.stream,'x');assert.equal(sent.text,'another thought');
  assert.equal(sent.location,undefined);assert.equal(sent.agent,undefined);
  assert.equal(data.points.length,1,'old data untouched');
- assert.equal(shared.length,2);
+ assert.equal(shared.length,3);
  assert.equal(elements.get('stream').children.length,2,'no duplicate after approval');
  assert.equal(elements.get('thought').value,'still typing','completion does not erase next draft');
  fail=true;elements.get('thought').value='keep this failed thought';
@@ -54,14 +57,14 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  // Home is automatically selected and remains stable for a timezone.
  window.location.hash='';elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
  const home=Intl.DateTimeFormat().resolvedOptions().timeZone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-');
- assert(lastURL.includes('stream='+home+'&seed=scheduled'),'home loads timezone stream and its reminder');
+ assert((lastURL.includes('stream='+home+'&last=') && lastURL.endsWith('&seed=scheduled')),'home loads timezone stream and its reminder');
  assert.equal(elements.get('current-stream').textContent,'#'+home);
  fail=false;elements.get('thought').value='in my timezone';
  elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
  assert.equal(sent.stream,home,'home posts belong to the timezone');
  window.location.hash='#city';listeners.hashchange();await new Promise(setImmediate);
  elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
- assert(lastURL.includes('stream='+home+'&seed=scheduled'),'brand returns from a hashtag to timezone');
+ assert(lastURL.includes('stream='+home+'&last=') && lastURL.endsWith('&seed=scheduled'),'brand returns from a hashtag to timezone');
  elements.get('saved').onclick();
  assert.equal(elements.get('stream').children.length,1,'old private default captures remain accessible');
  for(const [zone,expected] of [['Europe/London','europe-london'],['America/Los_Angeles','america-los-angeles'],['Etc/GMT+5','etc-gmt-plus-5']]){
@@ -69,7 +72,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
    function DateTimeFormat(...args){return args.length?new Intl.DateTimeFormat(...args):{resolvedOptions:()=>({timeZone:zone})};}
    vm.runInNewContext(source.replace('{{.AgentStreams}}','[]'),{...context,window:testWindow,Intl:{DateTimeFormat}});
    await new Promise(setImmediate);
-   assert(lastURL.includes('stream='+expected+'&seed='),'automatic timezone arrival: '+zone);
+   assert(lastURL.includes('stream='+expected+'&last='),'automatic timezone arrival: '+zone);
  }
 
  console.log('Queued posting, moderation outcomes, stream isolation and private migration: passed');

@@ -12,7 +12,10 @@ func TestReminderStopsWithServer(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		Reminder(ctx, func(context.Context, string, string, string) error { t.Error("published after shutdown"); return nil })
+		Reminder(ctx, func(context.Context, string, string, string, ...string) error {
+			t.Error("published after shutdown")
+			return nil
+		})
 	}()
 	select {
 	case <-done:
