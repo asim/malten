@@ -1,4 +1,4 @@
-package agent
+package news
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 func TestNewsLocalMorningAndDailyPublication(t *testing.T) {
 	calls, posts := 0, 0
-	n := NewNews(func(_ context.Context, stream, text, name string, keys ...string) error {
+	n := New(func(_ context.Context, stream, text, name string, keys ...string) error {
 		posts++
 		if stream != "europe-london" || name != "News · Micro" || len(keys) != 1 || keys[0] != "2026-06-01" {
 			t.Fatalf("unexpected post: %s %v", stream, keys)
@@ -47,7 +47,7 @@ func TestNewsLocalMorningAndDailyPublication(t *testing.T) {
 }
 
 func TestNewsFailureAndCancellation(t *testing.T) {
-	n := NewNews(func(context.Context, string, string, string, ...string) error { return errors.New("unavailable") })
+	n := New(func(context.Context, string, string, string, ...string) error { return errors.New("unavailable") })
 	n.Observe("europe-london", "Europe/London")
 	now := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC) // 08:00 London in winter.
 	n.headlines = func(context.Context) (string, error) { return "headlines", nil }

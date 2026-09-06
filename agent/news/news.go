@@ -1,9 +1,10 @@
-package agent
+package news
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/asim/malten/agent"
 	"io"
 	"log"
 	"net/http"
@@ -24,11 +25,11 @@ type newsZone struct {
 type News struct {
 	sync.Mutex
 	zones     map[string]newsZone
-	publish   Publish
+	publish   agent.Publish
 	headlines func(context.Context) (string, error)
 }
 
-func NewNews(publish Publish) *News {
+func New(publish agent.Publish) *News {
 	return &News{zones: map[string]newsZone{}, publish: publish, headlines: newsHeadlines}
 }
 

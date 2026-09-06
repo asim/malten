@@ -1,9 +1,10 @@
-// Package agent contains server-owned loops with specific objectives.
-package agent
+// Package reminder shares reflections from reminder.dev.
+package reminder
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/asim/malten/agent"
 	"io"
 	"log"
 	"net/http"
@@ -12,13 +13,11 @@ import (
 	"time"
 )
 
-var ReminderStreams = []Stream{{Tag: "reminder"}}
+var Streams = []agent.Stream{{Tag: "reminder"}}
 
-type Publish func(context.Context, string, string, string, ...string) error
-
-// Reminder shares an occasional sourced reflection in #reminder. Its caller
+// Run shares an occasional sourced reflection in #reminder. Its caller
 // owns the lifecycle: cancellation stops the wait and any active request.
-func Reminder(ctx context.Context, publish Publish) {
+func Run(ctx context.Context, publish agent.Publish) {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	last := ""
