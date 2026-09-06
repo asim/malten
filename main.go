@@ -35,6 +35,9 @@ func main() {
 	srv.AgentStreams = append(srv.AgentStreams, agent.AslamStreams...)
 	start(func(ctx context.Context) { agent.Reminder(ctx, srv.PublishAgent) })
 	start(func(ctx context.Context) { agent.Aslam(ctx, srv.PublishAgentPhoto) })
+	news := agent.NewNews(srv.PublishAgent)
+	srv.ObserveStream = news.Observe
+	start(news.Run)
 	addr := os.Getenv("MALTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"

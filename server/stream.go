@@ -235,6 +235,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid stream", 400)
 			return
 		}
+		if s.ObserveStream != nil {
+			s.ObserveStream(active, r.Header.Get("X-Timezone"))
+		}
 		selected := ""
 		for _, stream := range s.AgentStreams {
 			if stream.Tag == r.URL.Query().Get("seed") {

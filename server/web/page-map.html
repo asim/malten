@@ -43,7 +43,7 @@
     if(!/^[a-f0-9]{64}$/.test(token)){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('malten_author',token);}
     hidden=JSON.parse(localStorage.getItem('malten_hidden')||'[]');if(!Array.isArray(hidden))hidden=[];
   } catch(_) { token=''; $('status').textContent='Browser storage is unavailable. Sharing needs storage to keep your delete key.'; }
-  const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
+  const headers={'Content-Type':'application/json','Authorization':'Bearer '+token,'X-Timezone':timezone};
   const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
   function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase()||homeStream;}catch(_){return homeStream;}}
   function appendText(element,text){

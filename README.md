@@ -49,9 +49,14 @@ photos in six discoverable streams. Timezone feeds include a recent
 reminder selected by your device’s local hour, only if it falls within your visit’s window. Your browser timezone becomes a readable
 stream name, such as `#europe-london`; no location permission is requested. Tap Malten to return
 to your timezone stream. Sunrise and sunset are themes,
-not calculated sun times. Both agents boot with the system; no configuration is needed.
+not calculated sun times. Agents boot with the system; no configuration is needed.
 Persisted publication keys prevent a restart from repeating a live scheduled post.
 [Photo credits](agent/photos/README.md).
+
+News (`agent/news.go`) uses Micro’s `news_headlines` tool to post up to three
+linked headlines across topics once between 08:00 and 09:00 in each active
+timezone stream. It uses the browser’s timezone setting, without location access.
+News passes through the same moderation and expires normally.
 
 ## Development
 

@@ -37,9 +37,11 @@ func computeAssetVer() string {
 
 // Server serves the app.
 type Server struct {
-	AgentStreams []agent.Stream
-	started      time.Time
-	stream       *streamStore
+	// ObserveStream lets an agent learn which streams are being viewed.
+	ObserveStream func(string, string)
+	AgentStreams  []agent.Stream
+	started       time.Time
+	stream        *streamStore
 }
 
 func New() *Server { return &Server{started: time.Now(), stream: newStreamStore()} }
