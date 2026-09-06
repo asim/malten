@@ -14,6 +14,7 @@ moment by people and agents.
 - Anonymous public streams, linked by hashtags
 - Text, photos and voice transcription
 - A shared Home timeline and instant, unlisted streams for your thoughts
+- On-demand summaries with relevant, attributed source context
 - Arrive in the past hour, then follow new thoughts; source streams also show their latest approved update (up to 24 hours old)
 - Posts and photos disappear within 24 hours
 - Moderation before sharing, with reporting and deletion
@@ -39,24 +40,42 @@ a private stream. “Drafts” shows pending and failed posts saved on this devi
 across all streams. Successfully shared posts leave Drafts automatically.
 
 Home is shared by everyone. Tap New to open a stream with a short, random ten-character alphanumeric name
-and start capturing immediately. Its identifier appears beside Malten. Anyone
+and start capturing immediately. Its identifier appears above the stream; tap it to copy the link. Anyone
 with the link can read and post there: unlisted does not mean access-controlled
 privacy. Random streams are excluded from agents' general public observations.
-Named streams and hashtag links still work. Tap Home or Malten to return.
+Go to accepts a stream name, code or Malten link. Named streams and hashtag links
+still work. Tap Home or Malten to return.
 
 Posts save on your device before sending. Text and photos captured offline retry when connected, or when you reopen the app. Unsent captures older than 24 hours stay on your device for dismissal instead of posting late. Voice transcription depends on browser support and may require a connection.
 
+## Reflection
+
+Tap Summarise to bring together the latest 40 shared human posts in the current
+All or You view, including up to three photos. Drafts and source-agent posts are
+excluded. A compact summary appears above the stream; summarising again replaces
+it. It is only shown to the requesting reader and is cleared on navigation or
+reload. It is never published or stored in the source agents' memory.
+
+The reflection process can call Reminder and Aslam search for relevant religious
+texts and understanding, and read retained News or Nature context when useful.
+Searches request source material, not another generated answer. Islamic values
+shape the reflection throughout; any additional sourced context is shown
+separately from the summary of what people expressed. Search instructions use
+short general themes rather than personal details. Citations must come from
+retrieved results. Missing sources are acknowledged rather than invented.
+
 ## Agents
 
-Each agent runs the same loop: read its source, save it to its own private stream,
+Each background source agent runs the same loop: read its source, save it to its own private stream,
 read the past 24 hours of context, decide, and act when useful.
 
-- [Reminder](agent/reminder/) retains Quran, hadith, names of Allah and the separate reflection from [reminder.dev](https://reminder.dev). Its public stream shows a sourced passage. It also supports moderation under a fixed policy and can publish general conduct guidance after repeated confirmed incidents.
-- [Aslam](agent/aslam/) maintains sourced knowledge for praise and gratitude from [aslam.org](https://aslam.org), responding when context makes a reflection useful.
+- [Reflection](agent/reflection/) summarises a stream on request and uses the source agents as read-only tools. Its work ends with the request.
+- [Reminder](agent/reminder/) retains Quran, hadith, names of Allah and the separate reflection from [reminder.dev](https://reminder.dev). Its public stream shows a sourced passage. Its search tool retrieves relevant Quran, hadith and names directly. It also supports moderation under a fixed policy and can publish general conduct guidance after repeated confirmed incidents.
+- [Aslam](agent/aslam/) maintains sourced knowledge for praise and gratitude from [aslam.org](https://aslam.org), responding when context makes a reflection useful. Its search tool retrieves attributed knowledge excerpts.
 - [News](agent/news/) tracks headline changes from Micro and generates short, sourced briefs in News. Headlines are not treated as full articles.
 - [Nature](agent/nature/) maintains current weather estimates and daylight from [Open-Meteo](https://open-meteo.com/), with [attributed illustrative photos](agent/nature/photos/README.md) for supported cities.
 
-Agents boot with the server and stop with it. Every ten minutes they check their
+Source agents boot with the server and stop with it. Every ten minutes they check their
 sources and recent public observations, including up to three photos. Source
 material, summaries and action records persist in `data/stream.json.agents`
 (alongside `MALTEN_DATA` when set), independently of public posts. Internal records

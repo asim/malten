@@ -2,10 +2,12 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"github.com/asim/malten/agent"
+	"github.com/asim/malten/agent/reflection"
 	"hash/crc32"
 	"html/template"
 	"log"
@@ -41,9 +43,16 @@ type Server struct {
 	AgentStreams []agent.Stream
 	started      time.Time
 	stream       *streamStore
+	summarySlots chan struct{}
+	summarise    func(context.Context, []agent.Observation) (reflection.Result, error)
 }
 
-func New() *Server { return &Server{started: time.Now(), stream: newStreamStore()} }
+func New() *Server {
+	return &Server{started: time.Now(), stream: newStreamStore(), summarySlots: make(chan struct{}, 2),
+		summarise: func(ctx context.Context, captures []agent.Observation) (reflection.Result, error) {
+			return reflection.Summarise(ctx, captures, nil)
+		}}
+}
 
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -58,6 +67,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/posts", s.handleStream)
 	mux.HandleFunc("/api/posts/", s.handlePost)
+	mux.HandleFunc("/api/summary", s.handleSummary)
 	mux.Handle("/app.css", staticAsset("app.css", "text/css; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/app.js", staticAsset("app.js", "text/javascript; charset=utf-8", "public, max-age=300"))
 	mux.Handle("/manifest.webmanifest", staticAsset("manifest.webmanifest", "application/manifest+json", "public, max-age=3600"))

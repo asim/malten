@@ -2,13 +2,13 @@
 *{box-sizing:border-box}
 html,body{min-height:100%;margin:0}
 body{color:var(--ink);background:#fff;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-button,textarea{font:inherit;color:inherit}
+button,textarea,input{font:inherit;color:inherit}
 button{cursor:pointer}
 [hidden]{display:none!important}
 .page{width:min(680px,calc(100% - 32px));margin:0 auto;padding:calc(26px + env(safe-area-inset-top)) 0 calc(48px + env(safe-area-inset-bottom))}
 .topbar{display:flex;align-items:baseline;gap:9px;margin-bottom:34px;position:relative;white-space:nowrap}
 .brand{color:var(--ink);font-size:20px;font-weight:650;letter-spacing:-.025em;text-decoration:none}
-.current-stream{color:#999;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.current-stream{color:#555;font-size:14px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;padding:0;background:none}
 .composer{position:relative;padding:6px;border:1px solid var(--line);border-radius:16px;background:#fff}
 .capture-row{display:flex;align-items:flex-end;gap:4px}
 .capture-tools{display:flex}
@@ -24,14 +24,14 @@ button{cursor:pointer}
 .capture-preview{position:relative;margin:10px 8px 4px;width:76px;padding:4px;border:1px solid var(--line);border-radius:10px;background:#fff}
 .capture-preview img{display:block;width:66px;height:66px;object-fit:cover;border-radius:10px}
 .capture-preview button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border:0;border-radius:50%;background:var(--ink);color:#fff}
-.stream{margin-top:34px}
+.stream{margin-top:16px}
 .reflection{padding:18px 4px;border-bottom:1px solid #f0f0f0;outline:0}
 .reflection:first-child{padding-top:4px}
 .reflection-event{margin-top:6px;color:#8a8a8a;font-size:12px;line-height:1.5}
 .reflection-text{font-size:15px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
 .source-link{color:#666;font-size:13px;text-decoration:underline;text-underline-offset:2px}
 .stream-navigation{display:flex;align-items:baseline;gap:8px;margin-left:auto;flex-shrink:0}
-#new-stream{border:0;padding:0;background:none;font:inherit;cursor:pointer}
+.stream-navigation button,.goto-form button,.stream-heading>button{border:0;padding:0;background:none;font:inherit;cursor:pointer}
 .stream-link{color:#555;text-decoration:none}.stream-link:hover{text-decoration:underline}
 .reflection-photo{display:block;width:min(100%,440px);max-height:420px;margin-top:12px;border-radius:10px;object-fit:cover}
 @keyframes pulse{50%{transform:scale(.9);opacity:.75}}
@@ -42,3 +42,14 @@ button{cursor:pointer}
 .stream-options button[aria-pressed="true"]{color:#333}
 .post-action{margin-left:12px}
 #status:empty{display:none}
+
+.goto-form{display:flex;align-items:center;gap:14px;margin:-12px 0 22px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.goto-form input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:14px}
+.stream-heading{display:flex;align-items:baseline;gap:16px;margin-top:28px;white-space:nowrap}
+.stream-heading h1{font-size:14px;font-weight:500;margin:0;min-width:0;flex:1}
+.stream-heading>button{font-size:12px;flex-shrink:0}
+.stream-heading>button:disabled{color:#999;cursor:default}
+.stream-summary{padding:12px 0 18px;border-bottom:1px solid var(--line)}
+.stream-summary p{margin:8px 0}
+.summary-context{margin-top:14px;padding-left:12px;border-left:2px solid var(--line);color:#555}
+#summary-status:empty{display:none}

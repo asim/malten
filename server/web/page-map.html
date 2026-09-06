@@ -1,11 +1,17 @@
 {{define "content"}}
 <main class="page">
-  <header class="topbar"><a class="brand" id="home" href="/">Malten</a><span class="current-stream" id="current-stream"></span>
+  <header class="topbar"><a class="brand" id="home" href="/">Malten</a>
   <nav class="stream-navigation reflection-event" aria-label="Navigation">
     <a class="stream-link" id="home-link" href="/">Home</a><span>·</span>
+    <button class="stream-link" id="goto" type="button" aria-expanded="false" aria-controls="goto-form">Go to</button><span>·</span>
     <button class="stream-link" id="new-stream" type="button" aria-label="New stream" title="Open an unlisted stream; anyone with its link can read it">New</button>
   </nav>
 </header>
+  <form class="goto-form" id="goto-form" hidden>
+    <input id="goto-input" type="text" maxlength="240" placeholder="Stream name or link" aria-label="Stream name or link" autocomplete="off" autocapitalize="none" spellcheck="false">
+    <button class="stream-link" type="submit">Go</button>
+    <button class="stream-link" id="goto-close" type="button" aria-label="Close Go to">×</button>
+  </form>
 
   <form class="composer" id="composer">
     <div class="capture-row">
@@ -23,6 +29,12 @@
   <nav class="stream-options" aria-label="Stream view"><button id="all" type="button" aria-pressed="true">All</button><button id="you" type="button" aria-pressed="false">You</button><button id="drafts" type="button" aria-pressed="false">Drafts</button></nav>
   <p class="reflection-event" id="drafts-empty" hidden>No drafts.</p>
   <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
+  <div class="stream-heading" id="stream-heading">
+    <h1><button class="current-stream" id="current-stream" type="button" aria-label="Copy stream link"></button></h1>
+    <button class="stream-link" id="summarise" type="button" hidden>Summarise</button>
+  </div>
+  <p class="reflection-event" id="summary-status" role="status" aria-live="polite"></p>
+  <section class="stream-summary" id="summary" aria-label="Stream summary" hidden></section>
   <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
 
 </main>
@@ -35,8 +47,9 @@
   let posts=[],photo=null,view='all',sending=false,revision='',request=0;
   let outbox=[],ready=false,saving=false;
   let joined=Date.now()-60*60*1000;
+  let summary=null,summaryRequest=null;
   let token='',hidden=[];
-  const homeStream='home';
+  const homeStream='home',streamLabels={home:'Home',uk:'UK',us:'US',mena:'Middle East',nyc:'New York',sf:'San Francisco'};
   try {
     token=localStorage.getItem('malten_author')||'';
     if(!/^[a-f0-9]{64}$/.test(token)){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('malten_author',token);}
@@ -71,8 +84,10 @@
     $('stream').replaceChildren();
     const active=activeStream();
     $('current-stream').title=active;
-    $('current-stream').textContent=({home:'Home',uk:'UK',us:'US',mena:'Middle East',nyc:'New York',sf:'San Francisco'})[active]||active;
+    $('current-stream').textContent=streamLabels[active]||active;
     $('drafts-empty').hidden=view!=='drafts'||outbox.length>0;
+    $('stream-heading').hidden=view==='drafts';
+    renderSummary();
     for(const name of ['all','you','drafts'])$(name).setAttribute('aria-pressed',String(view===name));
     const entries=view==='drafts'?outbox:[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
     [...entries].sort((a,b)=>b.created_at-a.created_at).forEach(p=>{
@@ -104,6 +119,48 @@
       article.appendChild(event);$('stream').appendChild(article);
     });
   }
+  function summarySelection(){return posts.filter(p=>!p.agent&&!hidden.includes(p.id)&&(view!=='you'||p.mine)).slice(-40);}
+  function clearSummary(){
+    if(summaryRequest)summaryRequest.abort();summaryRequest=null;summary=null;
+    $('summary-status').textContent='';$('summarise').textContent='Summarise';
+  }
+  function renderSummary(){
+    const selected=summarySelection();
+    if(summary&&(summary.stream!==activeStream()||summary.view!==view||Date.now()>=summary.expires||summary.ids.some(id=>!selected.some(p=>p.id===id))))summary=null;
+    $('summarise').hidden=view==='drafts'||selected.length===0;
+    $('summarise').disabled=!!summaryRequest;
+    const box=$('summary');box.replaceChildren();box.hidden=!summary||view==='drafts';
+    if(!summary)return;
+    const label=document.createElement('div');label.className='reflection-event';label.textContent='Summary · AI';label.title='Only shown to you; not posted to the stream';box.append(label);
+    const text=document.createElement('p');text.className='reflection-text';text.textContent=summary.summary;box.append(text);
+    for(const note of summary.context||[]){
+      const part=document.createElement('div');part.className='summary-context';
+      const text=document.createElement('p');text.className='reflection-text';text.textContent=note.text;part.append(text);
+      for(const source of note.sources||[]){
+        let url;try{url=new URL(source.url);}catch(_){continue;}
+        if(!['https:','http:'].includes(url.protocol)||url.username||url.password)continue;
+        const a=document.createElement('a');a.className='source-link';a.href=url.href;a.textContent=source.title;a.target='_blank';a.rel='noopener noreferrer nofollow';part.append(a,document.createTextNode(' '));
+      }
+      box.append(part);
+    }
+  }
+  $('summarise').onclick=async()=>{
+    if(summaryRequest||view==='drafts')return;
+    const selected=summarySelection();if(!selected.length)return;
+    const active=activeStream(),selectedView=view,ids=selected.map(p=>p.id);
+    const controller=new AbortController();summaryRequest=controller;
+    const timer=setTimeout(()=>controller.abort(),85000);
+    $('summarise').textContent='Summarising…';$('summary-status').textContent='';renderSummary();
+    try{
+      const response=await fetch('/api/summary',{method:'POST',headers,signal:controller.signal,body:JSON.stringify({stream:active,ids})});
+      if(!response.ok)throw new Error((await response.text()).trim()||'Could not summarise just now.');
+      const result=await response.json();
+      if(controller!==summaryRequest||active!==activeStream()||selectedView!==view)return;
+      summary={...result,stream:active,view:selectedView,ids,expires:Math.min(...selected.map(p=>p.created_at))+24*60*60*1000};
+      $('summary-status').textContent=result.unavailable?.length?'Some sources were unavailable.':'';
+    }catch(err){if(controller===summaryRequest)$('summary-status').textContent=controller.signal.aborted?'Summary timed out. Try again.':err.message;}
+    finally{clearTimeout(timer);if(controller===summaryRequest){summaryRequest=null;$('summarise').textContent='Summarise';renderSummary();}}
+  };
   async function refresh(){
     const n=++request,active=activeStream();
     try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined,{headers});
@@ -186,8 +243,9 @@
     $('voice').onclick=()=>{if(listening)recognition.stop();else recognition.start();};
     form.addEventListener('submit',()=>recognition.stop());
   }else{$('voice').disabled=true;$('voice').title='Voice transcription is unavailable in this browser';}
-  for(const name of ['all','you','drafts'])$(name).onclick=()=>{view=name;render();};
-  $('home').onclick=e=>{e.preventDefault();view='all';window.history.replaceState(null,'','/');joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
+  for(const name of ['all','you','drafts'])$(name).onclick=()=>{if(view!==name)clearSummary();view=name;render();};
+  function changeStream(){clearSummary();view='all';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();}
+  $('home').onclick=e=>{e.preventDefault();window.history.replaceState(null,'','/');changeStream();};
   $('home-link').onclick=$('home').onclick;
   $('new-stream').onclick=()=>{
     let id;
@@ -197,7 +255,26 @@
     }while(!/[0-9]/.test(id));
     window.location.hash=id;input.focus();
   };
-  window.addEventListener('hashchange',()=>{view='all';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();});
+  window.addEventListener('hashchange',changeStream);
+  function closeGoto(){$('goto-form').hidden=true;$('goto').setAttribute('aria-expanded','false');}
+  $('goto').onclick=()=>{const show=$('goto-form').hidden;$('goto-form').hidden=!show;$('goto').setAttribute('aria-expanded',String(show));if(show)$('goto-input').focus();};
+  $('goto-close').onclick=()=>{closeGoto();$('goto').focus();};
+  $('goto-input').onkeydown=e=>{if(e.key==='Escape'){closeGoto();$('goto').focus();}};
+  $('goto-form').onsubmit=e=>{
+    e.preventDefault();let name=$('goto-input').value.trim();
+    try{
+      if(/^https?:\/\//i.test(name)){const url=new URL(name);if(!['malten.me','malten.ai',window.location.hostname].includes(url.hostname)||url.pathname!=='/'||url.username||url.password)throw new Error();name=url.hash||'home';}
+      name=decodeURIComponent(name.replace(/^#/, '')).toLowerCase();
+      name=Object.entries(streamLabels).find(([,label])=>label.toLowerCase()===name)?.[0]||name;
+      if(!name||name.length>80||!/^[\p{L}\p{N}_-]+$/u.test(name))throw new Error();
+    }catch(_){$('status').textContent='Enter a stream name, code or Malten link.';return;}
+    closeGoto();$('goto-input').value='';$('status').textContent='';
+    if(name==='home'){$('home').onclick(e);}else if(name!==activeStream()){window.location.hash=encodeURIComponent(name);}input.focus();
+  };
+  $('current-stream').onclick=async()=>{
+    const link=window.location.origin+'/'+(activeStream()==='home'?'':'#'+encodeURIComponent(activeStream()));
+    try{await navigator.clipboard.writeText(link);$('status').textContent='Link copied.';}catch(_){$('status').textContent=link;}
+  };
   async function restore(){
     try {
       outbox=(await Malten.outbox.list()).sort((a,b)=>a.created_at-b.created_at);
@@ -208,7 +285,7 @@
   window.addEventListener('online',()=>{refresh();sendQueued();});
   window.addEventListener('pageshow',()=>{if(ready)sendQueued();});
   render();refresh();restore();
-  setInterval(()=>{if(!document.hidden){refresh();sendQueued();}},10000);
+  setInterval(()=>{if(!document.hidden){renderSummary();refresh();sendQueued();}},10000);
 })();
 </script>
 {{end}}

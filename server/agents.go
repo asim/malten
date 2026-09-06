@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/asim/malten/agent"
+	"github.com/asim/malten/agent/reflection"
 	"log"
 	"time"
 )
@@ -12,6 +13,9 @@ import (
 // UseAgentContext is called before serving. The fixed policy remains authoritative;
 // source context supports review but cannot change the moderation contract.
 func (s *Server) UseAgentContext(memory *agent.Memory) {
+	s.summarise = func(ctx context.Context, captures []agent.Observation) (reflection.Result, error) {
+		return reflection.Summarise(ctx, captures, memory)
+	}
 	s.stream.moderate = func(ctx context.Context, p Post) (bool, error) {
 		records := memory.Read("reminder", time.Now())
 		for i := len(records) - 1; i >= 0; i-- {

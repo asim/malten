@@ -6,9 +6,9 @@ const elements=new Map();
 function element(){const e={focus(){this.focused=true},children:[],value:'',style:{},elements:[],classList:{add(){},remove(){}},setAttribute(){},addEventListener(){},append(...v){this.children.push(...v)},appendChild(v){this.children.push(v)},replaceChildren(){this.children=[]},removeAttribute(){}};let text='';Object.defineProperty(e,'textContent',{get(){return text+this.children.map(c=>c.textContent||'').join('')},set(v){text=v;this.children=[]}});return e;}
 const document={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element,createTextNode:t=>({textContent:t})};
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
-const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
+const listeners={},window={location:{hash:'#x',origin:'https://malten.test',hostname:'malten.test'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
 window.history={replaceState(_state,_title,url){assert.equal(url,'/');window.location.hash='';}};
-let streamTimezone='';
+let streamTimezone='',summarySent,summaryHold=null,summaryFail=false;
 let sent,fail=false,offline=false,unavailable=false,hold=null,lastURL='';
 const pending=new Map();
 const outbox={list:async()=>structuredClone([...pending.values()]),put:async p=>pending.set(p.id,structuredClone(p)),remove:async id=>pending.delete(id)};
@@ -18,6 +18,7 @@ const context={document,window,navigator:{},URL,Intl,Date,Uint8Array,crypto:webc
  lastURL=url;
  if(!opts.method)streamTimezone=opts.headers['X-Timezone'];
  if(offline)throw new Error('offline');
+ if(url==='/api/summary'){summarySent=JSON.parse(opts.body);if(summaryHold)await summaryHold;return {ok:!summaryFail,status:summaryFail?503:200,text:async()=> 'Try again shortly.',json:async()=>({summary:'A moment to reflect.',context:[]})};}
  if(opts.method==='POST'){sent=JSON.parse(opts.body);if(unavailable)return {ok:false,status:503};if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,status:fail?422:201,text:async()=> 'capture not suitable for sharing'};}
  return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]) && p.created_at>Number(new URL(url,'https://malten.test').searchParams.get('last')))};
 }};
@@ -139,6 +140,37 @@ assert(!credentials.children.some(c=>c.href),'credential URLs are not linked');
  elements.get('thought').value='a thought in a fresh stream';
  await elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
  assert.equal(sent.stream,random,'capture belongs to the new stream');
+ assert.equal(elements.get('summarise').hidden,false);
+ await elements.get('summarise').onclick();
+ assert.equal(summarySent.stream,random);
+ assert(summarySent.ids.every(id=>shared.some(p=>p.id===id&&p.stream===random)),'summary stays within stream');
+ assert(!('text' in summarySent),'only approved capture IDs are sent');
+ assert.equal(elements.get('summary').hidden,false);
+ assert(elements.get('summary').textContent.includes('A moment to reflect.'));
+ const summaryCount=shared.length;await elements.get('summarise').onclick();
+ assert.equal(shared.length,summaryCount,'summary is not a public post');
+ summaryFail=true;await elements.get('summarise').onclick();summaryFail=false;
+ assert.equal(elements.get('summary').hidden,false,'failed update keeps current summary');
+ assert.equal(elements.get('summary-status').textContent,'Try again shortly.');
+ let finishSummary;summaryHold=new Promise(resolve=>finishSummary=resolve);
+ const inFlight=elements.get('summarise').onclick();
+ window.location.hash='#another';listeners.hashchange();await new Promise(setImmediate);
+ finishSummary();await inFlight;summaryHold=null;
+ assert.equal(elements.get('summary').hidden,true,'late result cannot leak into another stream');
+ elements.get('goto-form').hidden=true;elements.get('goto').onclick();
+ assert.equal(elements.get('goto-form').hidden,false);
+ elements.get('goto-input').value='https://malten.me/#'+random;
+ elements.get('goto-form').onsubmit({preventDefault(){}});
+ assert.equal(window.location.hash,random,'Go to accepts shared links');
+ window.location.hash='#'+random;listeners.hashchange();await new Promise(setImmediate);
+ await elements.get('summarise').onclick();
+ const summarized=shared.findIndex(p=>p.stream===random);shared.splice(summarized,1);
+ listeners.online();await new Promise(setImmediate);
+ assert.equal(elements.get('summary').hidden,true,'removed posts invalidate summary');
+ elements.get('goto-input').value='javascript:alert(1)';elements.get('goto-form').onsubmit({preventDefault(){}});
+ assert.equal(window.location.hash,'#'+random,'Go to rejects unsafe input');
+ elements.get('goto-input').value='Home';elements.get('goto-form').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ assert.equal(window.location.hash,'','Go to Home uses clean root');
  elements.get('new-stream').onclick();assert.notEqual(window.location.hash.replace(/^#/,''),random,'each new stream is distinct');
  elements.get('home-link').onclick({preventDefault(){}});await new Promise(setImmediate);
  for(const [zone,expected] of [['Europe/London','europe-london'],['America/Los_Angeles','america-los-angeles'],['Etc/GMT+5','etc-gmt-plus-5']]){
