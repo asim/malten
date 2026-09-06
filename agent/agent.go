@@ -15,7 +15,7 @@ type Stream struct {
 // PublishPhoto sends agent text and optional photos through moderation.
 type PublishPhoto func(context.Context, string, string, string, string, ...string) error
 
-const ReflectionPause = 3 * time.Hour
+const ReflectionPause = time.Hour
 
 // Regions span timezones; cities have a single local clock.
 var Regions = []Stream{{Tag: "uk"}, {Tag: "europe"}, {Tag: "asia"}, {Tag: "mena"}, {Tag: "us"}}
