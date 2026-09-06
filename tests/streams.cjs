@@ -7,12 +7,15 @@ function element(){return {children:[],value:'',style:{},elements:[],classList:{
 const document={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element,createTextNode:t=>({textContent:t})};
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
 const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
-let sent,fail=false,hold=null,lastURL='';
+let sent,fail=false,offline=false,unavailable=false,hold=null,lastURL='';
+const pending=new Map();
+const outbox={list:async()=>structuredClone([...pending.values()]),put:async p=>pending.set(p.id,structuredClone(p)),remove:async id=>pending.delete(id)};
 const shared=[{id:'before-arrival',stream:'x',text:'old',created_at:Date.now()-2*60*60*1000}];
 const storage=new Map();
-const context={document,window,navigator:{},URL,Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,Malten:{getNetwork:()=>data},fetch:async(url,opts)=>{
+const context={document,window,navigator:{},URL,Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,clearTimeout,AbortController,Malten:{getNetwork:()=>data,outbox},fetch:async(url,opts)=>{
  lastURL=url;
- if(opts.method==='POST'){sent=JSON.parse(opts.body);if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,text:async()=> 'Moderation unavailable'};}
+ if(offline)throw new Error('offline');
+ if(opts.method==='POST'){sent=JSON.parse(opts.body);if(unavailable)return {ok:false,status:503};if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,status:fail?422:201,text:async()=> 'capture not suitable for sharing'};}
  return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]) && p.created_at>Number(new URL(url,'https://malten.test').searchParams.get('last')))};
 }};
 const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -25,11 +28,11 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  assert(!lastURL.includes('seed='),'posts are not inserted from another stream');
  let release;hold=new Promise(resolve=>{release=resolve});
  elements.get('thought').value='a reflection';
- elements.get('composer').onsubmit({preventDefault(){}});
+ await elements.get('composer').onsubmit({preventDefault(){}});
  assert.equal(elements.get('thought').value,'');
  assert.equal(elements.get('stream').children.length,1,'pending message appears immediately');
  elements.get('thought').value='another thought';
- elements.get('composer').onsubmit({preventDefault(){}});
+ await elements.get('composer').onsubmit({preventDefault(){}});
  assert.equal(elements.get('stream').children.length,2,'can post again during moderation');
  assert.equal(sent.text,'a reflection','requests are processed in order');
  elements.get('thought').value='still typing';
@@ -41,16 +44,38 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  assert.equal(elements.get('stream').children.length,2,'no duplicate after approval');
  assert.equal(elements.get('thought').value,'still typing','completion does not erase next draft');
  fail=true;elements.get('thought').value='keep this failed thought';
- elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ await elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
  assert.equal(elements.get('thought').value,'');
  assert.equal(elements.get('stream').children.length,3,'failure stays in own stream');
  const failed=elements.get('stream').children.find(p=>p.children.some(c=>(c.textContent||'').includes('Not shared')));
  assert(failed,'failure status is attached to the message');
- assert(failed.children.some(c=>(c.textContent||'').includes('Moderation unavailable')));
+ assert(failed.children.some(c=>(c.textContent||'').includes('capture not suitable for sharing')));
+ // Offline posts survive reload, preserving both their photo and target stream.
+ fail=false;offline=true;
+ elements.get('thought').value='a moment without signal';
+ await elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ assert.equal(elements.get('thought').value,'');
+ assert([...pending.values()].some(p=>p.text==='a moment without signal'));
+ const queued=[...pending.values()].find(p=>p.text==='a moment without signal');
+ queued.photo='data:image/jpeg;base64,saved-photo';await outbox.put(queued);
+ vm.runInNewContext(source,context);await new Promise(setImmediate);
+ assert.equal(elements.get('stream').children.length,2,'saved outbox returns after reload while offline');
+ offline=false;unavailable=true;listeners.online();await new Promise(setImmediate);
+ assert(pending.has(queued.id),'service failure remains queued');
+ unavailable=false;listeners.online();await new Promise(setImmediate);
+ assert.equal(sent.photo,queued.photo,'photo survives reload and retries');
+ assert(![...pending.values()].some(p=>p.text==='a moment without signal'),'reconnect drains saved queue');
+ assert.equal(shared.filter(p=>p.text==='a moment without signal').length,1);
+ // Storage failure must preserve the composer and must never send the capture.
+ const put=outbox.put;outbox.put=async()=>{throw new Error('quota');};
+ elements.get('thought').value='keep draft when disk is full';
+ await elements.get('composer').onsubmit({preventDefault(){}});
+ assert.equal(elements.get('thought').value,'keep draft when disk is full');
+ assert(!shared.some(p=>p.text==='keep draft when disk is full'));outbox.put=put;
  window.location.hash='#elsewhere';listeners.hashchange();await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,0,'local captures stay in their original stream');
  window.location.hash='#x';listeners.hashchange();await new Promise(setImmediate);
- assert.equal(elements.get('stream').children.length,3);
+ assert.equal(elements.get('stream').children.length,4);
  window.location.hash='#%';listeners.hashchange();await new Promise(setImmediate);
  assert(source.includes('for(let i=0;i<e.results.length;i++)'),'voice retains finalized segments');
  assert(!source.includes('geolocation'),'location permission is never requested');
@@ -60,7 +85,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  assert((lastURL.includes('stream='+home+'&last=')),'home loads timezone stream');
  assert.equal(elements.get('current-stream').textContent,'#'+home);
  fail=false;elements.get('thought').value='in my timezone';
- elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ await elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
  assert.equal(sent.stream,home,'home posts belong to the timezone');
  window.location.hash='#city';listeners.hashchange();await new Promise(setImmediate);
  elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);

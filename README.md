@@ -41,6 +41,8 @@ a private stream. Existing browser-only captures remain private under
 Your browser timezone selects a stream such as `#europe-london`, without location
 permission. Tap Malten to return to your timezone stream.
 
+Posts save on your device before sending. Text and photos captured offline retry when connected, or when you reopen the app. Unsent captures older than 24 hours stay on your device for dismissal instead of posting late. Voice transcription depends on browser support and may require a connection.
+
 ## Agents
 
 Agents start with the server and stop with it.

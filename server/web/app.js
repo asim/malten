@@ -1,4 +1,4 @@
-// The spatial network behind the user's personal mental model lives in this browser.
+// Preserve older private captures on this device.
 (function () {
   const NETWORK = 'malten_network1';
   const PREVIOUS = 'malten_graph1';
@@ -92,7 +92,30 @@
     return false;
   }
 
+  // One record per capture: photos do not compete with localStorage's small quota.
+  let outboxDB;
+  function outboxStore(mode, action) {
+    if (!outboxDB) outboxDB = new Promise((resolve, reject) => {
+      const request = indexedDB.open('malten_outbox', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('posts', {keyPath: 'id'});
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => { outboxDB = null; reject(request.error); };
+    });
+    return outboxDB.then(db => new Promise((resolve, reject) => {
+      const transaction = db.transaction('posts', mode);
+      const request = action(transaction.objectStore('posts'));
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onabort = () => reject(transaction.error || new Error('Storage unavailable'));
+      transaction.onerror = () => reject(transaction.error);
+    }));
+  }
+
   window.Malten = {
+    outbox: {
+      list: () => outboxStore('readonly', store => store.getAll()),
+      put: post => outboxStore('readwrite', store => store.put(post)),
+      remove: id => outboxStore('readwrite', store => store.delete(id)),
+    },
     getNetwork: read,
     setNetwork: write,
     newId: () => {

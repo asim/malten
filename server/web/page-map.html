@@ -32,7 +32,7 @@
   const $=id=>document.getElementById(id), input=$('thought'), form=$('composer');
   const saved=Malten.getNetwork().points;
   let posts=[],photo=null,view='all',sending=false,revision='',request=0;
-  let outbox=[];
+  let outbox=[],ready=false,saving=false;
   let joined=Date.now()-60*60*1000;
   let token='',hidden=[];
   let timezone='UTC';
@@ -75,7 +75,7 @@
         event.textContent+=' · '+p.delivery;
         if(p.failed){
           const dismiss=document.createElement('button');dismiss.type='button';dismiss.className='post-action';dismiss.textContent='Dismiss';
-          dismiss.onclick=()=>{outbox=outbox.filter(x=>x!==p);render();};event.appendChild(dismiss);
+          dismiss.onclick=async()=>{try{await Malten.outbox.remove(p.id);outbox=outbox.filter(x=>x!==p);render();}catch(_){$('status').textContent='Could not remove this saved post.';}};event.appendChild(dismiss);
         }
       }else if(view!=='saved'){
         const action=document.createElement('button');action.type='button';action.className='post-action';action.textContent=p.mine?'Delete':'Report';
@@ -99,45 +99,55 @@
       if(!response.ok)throw new Error('Could not load this stream.');
       const data=await response.json();if(n!==request||active!==activeStream())return;
       const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}
-    }catch(_){if(n===request)$('status').textContent='Offline or unavailable. Your draft stays here.';}
+    }catch(_){if(n===request)$('status').textContent='Offline · posts will send when connected.';}
   }
   function clearPhoto(){photo=null;$('photo-input').value='';$('photo-preview').removeAttribute('src');$('capture-preview').hidden=true;}
   async function sendQueued(){
-    if(sending)return;
+    if(sending||!ready||navigator.onLine===false)return;
     sending=true;
     try {
-      for(const p of outbox.filter(p=>!p.failed)){
-        p.delivery='Checking…';render();
-        try {
-          let response;
-          do {
-            response=await fetch('/api/posts',{method:'POST',headers,body:JSON.stringify({stream:p.stream,text:p.text,photo:p.photo})});
-            if(response.status===429){
-              p.delivery='Waiting to send…';render();
-              await new Promise(resolve=>setTimeout(resolve,10000));
-            }
-          }while(response.status===429);
-          if(!response.ok)throw new Error('Not shared · '+(await response.text()).replace(/\. Your draft has been kept\./g,'').trim());
-          outbox=outbox.filter(x=>x!==p);
-          revision='';await refresh();render();
-        }catch(err){
-          p.failed=true;p.delivery=err.message?.startsWith('Not shared · ')?err.message:'Connection lost · delivery unconfirmed';
-          render();
+      while(outbox.some(p=>!p.failed)){
+        const p=outbox.find(p=>!p.failed);
+        if(Date.now()-p.created_at>=24*60*60*1000){
+          p.failed=true;p.delivery='Not shared · captured more than 24 hours ago';
+          await Malten.outbox.put(p);render();continue;
         }
+        p.delivery='Sending…';render();
+        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
+        try {
+          const response=await fetch('/api/posts',{method:'POST',headers:{...headers,'Idempotency-Key':p.id},signal:controller.signal,body:JSON.stringify({stream:p.stream,text:p.text,photo:p.photo})});
+          if(response.status===429||response.status>=500)throw new Error('retry');
+          if(!response.ok){
+            p.failed=true;p.delivery='Not shared · '+(await response.text()).replace(/\. Your draft has been kept\./g,'').trim();
+            await Malten.outbox.put(p);render();continue;
+          }
+          await Malten.outbox.remove(p.id);
+          outbox=outbox.filter(x=>x!==p);
+          $('status').textContent='';revision='';await refresh();render();
+        }catch(_){
+          p.delivery='Saved on this device · waiting to send';render();
+          break;
+        }finally{clearTimeout(timer);}
       }
-    }finally{
-      sending=false;
-      if(outbox.some(p=>!p.failed))sendQueued();
-    }
+    }catch(_){$('status').textContent='Could not update device storage. Your saved posts will be retried.';}
+    finally{sending=false;}
   }
-  form.onsubmit=e=>{
+  form.onsubmit=async e=>{
     e.preventDefault();
-    const text=input.value.trim();if(!text&&!photo)return;
+    const text=input.value.trim();if((!text&&!photo)||saving)return;
     if(view==='saved'){$('status').textContent='Choose All or You to share a new thought publicly.';return;}
-    if(!token){$('status').textContent='Enable browser storage to share.';return;}
-    outbox.push({text,photo,stream:activeStream(),created_at:Date.now(),mine:true,delivery:'Waiting to send…'});
-    input.value='';input.style.height='';clearPhoto();$('status').textContent='';
-    render();sendQueued();
+    if(!token||!ready){$('status').textContent='Device storage is unavailable. Your draft stays here.';return;}
+    saving=true;
+    const draft=input.value,capturedPhoto=photo;
+    const p={id:crypto.randomUUID(),text,photo,stream:activeStream(),created_at:Date.now(),mine:true,delivery:'Saved on this device · waiting to send'};
+    try {
+      await Malten.outbox.put(p);
+      outbox.push(p);
+      if(input.value===draft){input.value='';input.style.height='';}
+      if(photo===capturedPhoto)clearPhoto();
+      $('status').textContent='';render();sendQueued();
+    }catch(_){$('status').textContent='Could not save on this device. Your draft stays here.';}
+    finally{saving=false;}
   };
   input.oninput=()=>{input.style.height='';input.style.height=Math.min(input.scrollHeight,130)+'px';};
   input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();form.requestSubmit();}};
@@ -170,7 +180,17 @@
   for(const name of ['all','you','saved'])$(name).onclick=()=>{view=name;render();};
   $('home').onclick=e=>{e.preventDefault();view='all';window.location.hash='';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
   window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
-  render();refresh();setInterval(()=>{if(!document.hidden)refresh();},10000);
+  async function restore(){
+    try {
+      outbox=(await Malten.outbox.list()).sort((a,b)=>a.created_at-b.created_at);
+      for(const p of outbox)if(!p.failed)p.delivery='Saved on this device · waiting to send';
+      ready=true;render();sendQueued();
+    }catch(_){$('status').textContent='Device storage is unavailable. Your draft stays here.';}
+  }
+  window.addEventListener('online',()=>{refresh();sendQueued();});
+  window.addEventListener('pageshow',()=>{if(ready)sendQueued();});
+  render();refresh();restore();
+  setInterval(()=>{if(!document.hidden){refresh();sendQueued();}},10000);
 })();
 </script>
 {{end}}
