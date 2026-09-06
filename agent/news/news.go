@@ -12,11 +12,14 @@ import (
 	"time"
 )
 
-// Fetch supplies fresh topic-based headlines during waking hours.
-func Fetch(ctx context.Context, local time.Time) (agent.Post, error) {
-	if local.Hour() < 7 || local.Hour() >= 21 {
-		return agent.Post{}, nil
-	}
+var Streams = []agent.Stream{{Tag: "news"}}
+
+func Run(ctx context.Context, publish agent.PublishPhoto) {
+	agent.RunSource(ctx, "news", Fetch, publish)
+}
+
+// Fetch supplies headlines only to the news agent's own stream.
+func Fetch(ctx context.Context, _ time.Time) (agent.Post, error) {
 	text, err := newsHeadlines(ctx)
 	return agent.Post{Text: text, Name: "News · Micro"}, err
 }

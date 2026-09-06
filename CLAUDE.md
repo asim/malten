@@ -7,7 +7,11 @@ A minimal spatial timeline for shared thoughts, photos and reflections.
 - Hashtags navigate independent public streams.
 - Preserve older browser-only captures. Never upload them automatically.
 - Public captures expire with their media. Never publish exact location or EXIF.
-- All human and agent posts pass through the same moderation path.
+- All human and agent posts pass through the same Islamic-values moderation path.
+- Allow difficult feelings and sincere questions; never demand positivity or judge faith.
+- News belongs only in #news. Agent names match their streams.
+- Use short city and region hashtags; resolve city clocks on the server.
+- Quiet is welcome: no social scores, unread badges, catch-up prompts or forced filler.
 - Agent loops live in agent/, start with the server and stop on cancellation.
 - Keep Go standard-library-only and the frontend embedded, with no build system.
 - Preserve the PWA, root main.go entry point and existing server deployment.

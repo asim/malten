@@ -20,7 +20,9 @@
     <a class="stream-link" id="home-link" href="/">#home</a>
     {{range .AgentStreams}}<a class="stream-link" href="/#{{.Tag}}">#{{.Tag}}</a> {{end}}
   </nav>
-  <nav class="reflection-event" aria-label="Regions">Regions · <span id="regions"></span></nav>
+  <nav class="reflection-event" aria-label="Regions">Regions · {{range .Regions}}<a class="stream-link" href="/#{{.Tag}}">#{{.Tag}}</a> {{end}}</nav>
+  <nav class="reflection-event" aria-label="Cities">Cities · {{range .Cities}}<a class="stream-link" href="/#{{.Tag}}">#{{.Tag}}</a> {{end}}</nav>
+  <p class="reflection-event">Speak the truth. Treat people with dignity. Share with care.</p>
   <p class="reflection-event" id="drafts-empty" hidden>No drafts.</p>
   <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
   <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
@@ -36,20 +38,13 @@
   let outbox=[],ready=false,saving=false;
   let joined=Date.now()-60*60*1000;
   let token='',hidden=[];
-  let timezone='UTC';
-  try { timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; } catch(_) {}
   const homeStream='home';
-    try {
+  try {
     token=localStorage.getItem('malten_author')||'';
     if(!/^[a-f0-9]{64}$/.test(token)){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('malten_author',token);}
     hidden=JSON.parse(localStorage.getItem('malten_hidden')||'[]');if(!Array.isArray(hidden))hidden=[];
   } catch(_) { token=''; $('status').textContent='Browser storage is unavailable. Sharing needs storage to keep your delete key.'; }
-  const regions=new Map(['Europe/London','Europe/Paris','America/New_York','America/Los_Angeles','Asia/Dubai','Asia/Singapore',timezone].map(zone=>[zone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-'),zone]));
-  for(const [tag] of regions){
-    const link=document.createElement('a');link.className='stream-link';link.href='/#'+tag;link.textContent='#'+tag;
-    $('regions').append(link,document.createTextNode(' '));
-  }
-  const headers={'Content-Type':'application/json','Authorization':'Bearer '+token,'X-Timezone':timezone};
+  const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
   const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
   function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase()||homeStream;}catch(_){return homeStream;}}
   function appendText(element,text){
@@ -79,7 +74,7 @@
       event.textContent=[when(p.created_at),p.agent==='Aslam · adhkar'?'Aslam':p.agent].filter(Boolean).join(' · ');
       if(view==='drafts'){event.append(document.createTextNode(' · '));appendText(event,'#'+p.stream);}
       if(p.delivery){
-        event.textContent+=' · '+p.delivery;
+        event.append(document.createTextNode(' · '+p.delivery));
         if(p.failed){
           const dismiss=document.createElement('button');dismiss.type='button';dismiss.className='post-action';dismiss.textContent='Dismiss';
           dismiss.onclick=async()=>{try{await Malten.outbox.remove(p.id);outbox=outbox.filter(x=>x!==p);render();}catch(_){$('status').textContent='Could not remove this saved post.';}};event.appendChild(dismiss);
@@ -102,7 +97,7 @@
   }
   async function refresh(){
     const n=++request,active=activeStream();
-    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined,{headers:{...headers,'X-Timezone':regions.get(active)||timezone}});
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined,{headers});
       if(!response.ok)throw new Error('Could not load this stream.');
       const data=await response.json();if(n!==request||active!==activeStream())return;
       const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}
@@ -185,7 +180,7 @@
   for(const name of ['all','you','drafts'])$(name).onclick=()=>{view=name;render();};
   $('home').onclick=e=>{e.preventDefault();view='all';window.history.replaceState(null,'','/');joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
   $('home-link').onclick=$('home').onclick;
-  window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
+  window.addEventListener('hashchange',()=>{view='all';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();});
   async function restore(){
     try {
       outbox=(await Malten.outbox.list()).sort((a,b)=>a.created_at-b.created_at);

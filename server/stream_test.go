@@ -144,6 +144,9 @@ func TestSonnetResponseValidation(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatal(err)
 			}
+			if req["system"] != moderationPolicy {
+				t.Fatal("conduct policy missing from moderation request")
+			}
 			if req["model"] != "claude-sonnet-5" || r.Header.Get("x-api-key") != "test-key" {
 				t.Fatal("incorrect model or credentials")
 			}

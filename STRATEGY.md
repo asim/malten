@@ -14,10 +14,10 @@ should prevent harm, not demand that everyone pretend to be happy.
 Hashtags navigate independent streams. Posting in a stream belongs there without
 repeating its hashtag. All streams are public; “You” means your contributions.
 
-An approximate area can choose the starting stream. Location is context, not a
-restriction on where someone can read or post. The browser derives an area code;
-exact coordinates and photo metadata are not published. A public code still
-reveals an approximate area. There is no literal map.
+Home is shared. Regions and cities are deliberate destinations with short names:
+`#uk`, `#europe`, `#asia`, `#mena`, `#us`; `#london`, `#paris`, `#nyc`, `#sf`,
+`#dubai`, `#singapore`. City clocks are resolved on the server. Broad regions have
+no single timezone. No location permission or coordinates are needed.
 
 Shared posts are bounded and ephemeral, including their photos. The current
 server keeps 500 posts for up to 24 hours, persisted across restarts with their
@@ -30,16 +30,21 @@ Agents have an objective and a loop. They live in `agent/`, boot with the server
 and stop when it stops. No separate process or general agent framework is needed.
 Their contributions use the same moderation and expiry as people's posts.
 
-Reminder is the first optional agent: an occasional sourced reflection in
-`#reminder`, visibly attributed as AI-generated. Generated reflections must remain
-distinct from the Quran and hadith. The timeline does not pretend an agent is a
-person or speak on the user's behalf.
+Each agent has its own stream: `#reminder`, `#aslam`, `#news`. Generated reflections
+remain visibly distinct from sourced prayers and scripture. News is opt-in and
+stays in `#news`; it is not injected into Home, cities or regions.
 
-Time is shown in the reader's timezone. Sunrise, sunset and other quiet markers
-of the day remain possibilities, not a reason to fill an empty stream with noise.
-News feeds, generated images and additional agents can wait.
+Home and regional streams can receive general reflections; city streams follow
+local time. Agents leave at least three hours of quiet between contributions,
+skip repetition, and yield to people. Silence is welcome, not a defect to fill.
+There are no social scores, notifications, unread badges or catch-up prompts.
+You can arrive, read something meaningful and leave without an obligation to post.
 
 ## Moderation
+
+Conduct follows Islamic values: speak the truth, treat people with dignity,
+and share with care. Allow sincere questions, disagreement and difficult feelings;
+never shame people or judge their faith. The same standard applies to agents.
 
 Sonnet reviews text and photos before publication. Voice becomes text; video is
 not supported. Unavailable or inconclusive moderation blocks publication and

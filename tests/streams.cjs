@@ -3,7 +3,7 @@ const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const {webcrypto}=require('node:crypto');
 const elements=new Map();
-function element(){return {children:[],value:'',style:{},elements:[],classList:{add(){},remove(){}},setAttribute(){},addEventListener(){},append(...v){this.children.push(...v)},appendChild(v){this.children.push(v)},replaceChildren(){this.children=[]},removeAttribute(){}}}
+function element(){const e={children:[],value:'',style:{},elements:[],classList:{add(){},remove(){}},setAttribute(){},addEventListener(){},append(...v){this.children.push(...v)},appendChild(v){this.children.push(v)},replaceChildren(){this.children=[]},removeAttribute(){}};let text='';Object.defineProperty(e,'textContent',{get(){return text+this.children.map(c=>c.textContent||'').join('')},set(v){text=v;this.children=[]}});return e;}
 const document={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element,createTextNode:t=>({textContent:t})};
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
 const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
@@ -71,7 +71,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  window.location.hash='#elsewhere';listeners.hashchange();
  elements.get('drafts').onclick();
  assert.equal(elements.get('stream').children.length,2,'Drafts includes pending and rejected captures across streams');
- window.location.hash='#x';listeners.hashchange();
+ window.location.hash='#x';listeners.hashchange();elements.get('drafts').onclick();
  offline=false;unavailable=true;listeners.online();await new Promise(setImmediate);
  assert(pending.has(queued.id),'service failure remains queued');
  unavailable=false;listeners.online();await new Promise(setImmediate);
@@ -93,8 +93,8 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  window.location.hash='#%';listeners.hashchange();await new Promise(setImmediate);
  assert(source.includes('for(let i=0;i<e.results.length;i++)'),'voice retains finalized segments');
  assert(!source.includes('geolocation'),'location permission is never requested');
- window.location.hash='#america-new-york';listeners.hashchange();await new Promise(setImmediate);
- assert.equal(streamTimezone,'America/New_York','regional agent receives the destination timezone');
+ window.location.hash='#nyc';listeners.hashchange();await new Promise(setImmediate);
+ assert.equal(streamTimezone,undefined,'server resolves city time without a client clock');
  // Home is automatically selected and remains stable for a timezone.
  window.location.hash='';elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
  const home='home';
@@ -122,7 +122,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
    vm.runInNewContext(source.replace('{{.AgentStreams}}','[]'),{...context,window:testWindow,Intl:{DateTimeFormat}});
    await new Promise(setImmediate);
    assert(lastURL.includes('stream=home&last='),'shared home arrival: '+zone);
-   assert(elements.get('regions').children.some(c=>c.textContent==='#'+expected&&c.href==='/#'+expected),'timezone offered separately');
+   assert(!source.includes('X-Timezone'),'navigation no longer exposes timezone identifiers');
  }
 
  console.log('Queued posting, moderation outcomes, stream isolation and private migration: passed');

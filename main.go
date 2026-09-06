@@ -36,9 +36,18 @@ func main() {
 	start(srv.Run)
 	srv.AgentStreams = append(srv.AgentStreams, reminder.Streams...)
 	srv.AgentStreams = append(srv.AgentStreams, aslam.Streams...)
-	start(func(ctx context.Context) { reminder.Run(ctx, srv.PublishAgent) })
+	srv.AgentStreams = append(srv.AgentStreams, news.Streams...)
+	start(func(ctx context.Context) { reminder.Run(ctx, srv.PublishAgentPhoto) })
 	start(func(ctx context.Context) { aslam.Run(ctx, srv.PublishAgentPhoto) })
-	live := agent.NewLive(srv.RecentPosts, srv.PublishQuietAgent, aslam.Fetch, reminder.Fetch, news.Fetch)
+	live := agent.NewLive(srv.RecentPosts, srv.PublishQuietAgent, aslam.Fetch, reminder.Fetch)
+	start(func(ctx context.Context) { news.Run(ctx, srv.PublishAgentPhoto) })
+	live.Observe("home")
+	for _, region := range agent.Regions {
+		live.Observe(region.Tag)
+	}
+	for _, city := range agent.Cities {
+		live.Observe(city.Tag)
+	}
 	srv.ObserveStream = live.Observe
 	start(live.Run)
 	addr := os.Getenv("MALTEN_ADDR")
