@@ -99,7 +99,10 @@ func TestCityClocksAndSharedRegions(t *testing.T) {
 			}
 		})
 	}
-	live := NewLive(func(string) []Post { return []Post{{Created: now.Add(-2 * time.Hour).UnixMilli()}} }, nil, func(context.Context, time.Time) (Post, error) { t.Fatal("filled a quiet hour"); return Post{}, nil })
+	live := NewLive(func(string) []Post { return []Post{{Created: now.Add(-30 * time.Minute).UnixMilli()}} }, nil, func(context.Context, time.Time) (Post, error) {
+		t.Fatal("posted over recent activity")
+		return Post{}, nil
+	})
 	live.Observe("london")
 	live.check(context.Background(), now)
 	live.Observe("news")

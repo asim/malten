@@ -54,7 +54,7 @@ Agents start with the server and stop with it.
 - [News](agent/news/) shares up to three linked headlines from Micro in `#news` only.
 
 Home, regional and city streams receive occasional reflections from Aslam and
-Reminder after at least three hours without posts. Cities use their own local
+Reminder after at least an hour without posts. Cities use their own local
 time; shared streams use general reminders. Repeated or unavailable content is
 skipped. Silence is welcome; there are no catch-up prompts or engagement scores.
 The dedicated agent streams check for fresh content every ten minutes and share
