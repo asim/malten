@@ -3,7 +3,7 @@ const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const {webcrypto}=require('node:crypto');
 const elements=new Map();
-function element(){const e={children:[],value:'',style:{},elements:[],classList:{add(){},remove(){}},setAttribute(){},addEventListener(){},append(...v){this.children.push(...v)},appendChild(v){this.children.push(v)},replaceChildren(){this.children=[]},removeAttribute(){}};let text='';Object.defineProperty(e,'textContent',{get(){return text+this.children.map(c=>c.textContent||'').join('')},set(v){text=v;this.children=[]}});return e;}
+function element(){const e={focus(){this.focused=true},children:[],value:'',style:{},elements:[],classList:{add(){},remove(){}},setAttribute(){},addEventListener(){},append(...v){this.children.push(...v)},appendChild(v){this.children.push(v)},replaceChildren(){this.children=[]},removeAttribute(){}};let text='';Object.defineProperty(e,'textContent',{get(){return text+this.children.map(c=>c.textContent||'').join('')},set(v){text=v;this.children=[]}});return e;}
 const document={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:element,createTextNode:t=>({textContent:t})};
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
 const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
@@ -130,6 +130,17 @@ assert(!credentials.children.some(c=>c.href),'credential URLs are not linked');
  assert.equal(window.location.hash,'','visible home link uses clean root');
  assert.equal(elements.get('current-stream').textContent,'Home');
  assert.equal(elements.get('stream').children.length,1,'visible home link leaves Drafts for public Home');
+ elements.get('new-stream').onclick();
+ const random=window.location.hash.replace(/^#/, '');
+ assert(/^[a-f0-9]{32}$/.test(random),'new stream has a random 128-bit identifier');
+ window.location.hash='#'+random;listeners.hashchange();await new Promise(setImmediate);
+ assert.equal(elements.get('current-stream').textContent,random,'current stream is labelled');
+ assert(elements.get('thought').focused,'new stream is ready for capture');
+ elements.get('thought').value='a thought in a fresh stream';
+ await elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ assert.equal(sent.stream,random,'capture belongs to the new stream');
+ elements.get('new-stream').onclick();assert.notEqual(window.location.hash.replace(/^#/,''),random,'each new stream is distinct');
+ elements.get('home-link').onclick({preventDefault(){}});await new Promise(setImmediate);
  for(const [zone,expected] of [['Europe/London','europe-london'],['America/Los_Angeles','america-los-angeles'],['Etc/GMT+5','etc-gmt-plus-5']]){
    const testWindow={...window,location:{hash:''}};
    function DateTimeFormat(...args){return args.length?new Intl.DateTimeFormat(...args):{resolvedOptions:()=>({timeZone:zone})};}

@@ -13,7 +13,7 @@ moment by people and agents.
 
 - Anonymous public streams, linked by hashtags
 - Text, photos and voice transcription
-- A shared Home stream; regional and agent streams linked by hashtags
+- A shared Home timeline and instant, unlisted streams for your thoughts
 - Arrive in the past hour, then follow new thoughts; source streams also show their latest approved update (up to 24 hours old)
 - Posts and photos disappear within 24 hours
 - Moderation before sharing, with reporting and deletion
@@ -38,9 +38,11 @@ Shared posts are saved locally in `data/stream.json`: at most 500 posts, for up 
 a private stream. “Drafts” shows pending and failed posts saved on this device,
 across all streams. Successfully shared posts leave Drafts automatically.
 
-Home is shared by everyone. Regions: `#uk`, `#europe`, `#asia`, `#mena`, `#us`.
-Cities: `#london`, `#paris`, `#nyc`, `#sf`, `#dubai`, `#singapore`.
-Nature uses city clocks, including daylight saving. Tap Home or Malten to return Home. No location permission is needed.
+Home is shared by everyone. Tap New stream to open a random, unlisted stream
+and start capturing immediately. Its identifier appears beside Malten. Anyone
+with the link can read and post there: unlisted does not mean access-controlled
+privacy. Random streams are excluded from agents' general public observations.
+Named streams and hashtag links still work. Tap Home or Malten to return.
 
 Posts save on your device before sending. Text and photos captured offline retry when connected, or when you reopen the app. Unsent captures older than 24 hours stay on your device for dismissal instead of posting late. Voice transcription depends on browser support and may require a connection.
 
@@ -77,9 +79,9 @@ Nature uses weather model estimates, not live measurements. Its photos are illus
 not live views. Open-Meteo's free hosted API is for non-commercial use; set
 `OPEN_METEO_API_KEY` to use its paid commercial endpoint ([plans](https://open-meteo.com/en/pricing)).
 
-Open Streams to browse Sources, Regions and Cities. Hashtags in posts still link
-between streams. Posts support **bold**, *italic* and named Markdown links;
-plain URLs display their hostname.
+Sources remain available to the agents in the background; the interface has no
+default source, region or city directory. Posts support **bold**, *italic* and
+named Markdown links; plain URLs display their hostname.
 
 ## Conduct
 

@@ -12,6 +12,7 @@ func TestAgentObservationsRespectVisibility(t *testing.T) {
 	s := New()
 	now := time.Now().UnixMilli()
 	s.stream.posts = []Post{{ID: "human", Stream: "home", Text: "visible", Created: now, owner: "private owner"}, {ID: "hidden", Stream: "home", Text: "reported", Created: now, hidden: true}, {ID: "agent", Stream: "news", Text: "generated", Created: now, Agent: "News"}}
+	s.stream.posts = append(s.stream.posts, Post{ID: "unlisted", Stream: strings.Repeat("ab", 16), Text: "a brain dump", Created: now})
 	observations := s.AgentObservations()
 	if len(observations) != 1 || observations[0].ID != "human" {
 		t.Fatalf("observed inappropriate input: %+v", observations)

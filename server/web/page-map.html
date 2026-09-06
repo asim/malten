@@ -3,13 +3,7 @@
   <header class="topbar"><a class="brand" id="home" href="/">Malten</a><span class="current-stream" id="current-stream"></span>
   <nav class="stream-navigation reflection-event" aria-label="Navigation">
     <a class="stream-link" id="home-link" href="/">Home</a><span>·</span>
-    <details id="stream-menu"><summary>Streams</summary>
-      <div class="stream-directory">
-        <nav aria-label="Sources">Sources · {{range .AgentStreams}}<a class="stream-link" href="/#{{.Tag}}">{{.Label}}</a> {{end}}</nav>
-        <nav aria-label="Regions">Regions · {{range .Regions}}<a class="stream-link" href="/#{{.Tag}}">{{.Label}}</a> {{end}}</nav>
-        <nav aria-label="Cities">Cities · {{range .Cities}}<a class="stream-link" href="/#{{.Tag}}">{{.Label}}</a> {{end}}</nav>
-      </div>
-    </details>
+    <button class="stream-link" id="new-stream" type="button" title="Open an unlisted stream; anyone with its link can read it">New stream</button>
   </nav>
 </header>
 
@@ -76,6 +70,7 @@
   function render(){
     $('stream').replaceChildren();
     const active=activeStream();
+    $('current-stream').title=active;
     $('current-stream').textContent=({home:'Home',uk:'UK',us:'US',mena:'Middle East',nyc:'New York',sf:'San Francisco'})[active]||active;
     $('drafts-empty').hidden=view!=='drafts'||outbox.length>0;
     for(const name of ['all','you','drafts'])$(name).setAttribute('aria-pressed',String(view===name));
@@ -194,7 +189,7 @@
   for(const name of ['all','you','drafts'])$(name).onclick=()=>{view=name;render();};
   $('home').onclick=e=>{e.preventDefault();view='all';window.history.replaceState(null,'','/');joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
   $('home-link').onclick=$('home').onclick;
-  $('stream-menu').onclick=e=>{if(e.target.tagName==='A')$('stream-menu').open=false;};
+  $('new-stream').onclick=()=>{window.location.hash=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');input.focus();};
   window.addEventListener('hashchange',()=>{view='all';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();});
   async function restore(){
     try {

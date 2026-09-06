@@ -14,10 +14,12 @@ should prevent harm, not demand that everyone pretend to be happy.
 Hashtags navigate independent streams. Posting in a stream belongs there without
 repeating its hashtag. All streams are public; “You” means your contributions.
 
-Home is shared. Regions and cities are deliberate destinations with short names:
-`#uk`, `#europe`, `#asia`, `#mena`, `#us`; `#london`, `#paris`, `#nyc`, `#sf`,
-`#dubai`, `#singapore`. City clocks are resolved on the server. Broad regions have
-no single timezone. No location permission or coordinates are needed.
+Home is shared. New stream opens a random, unlisted destination immediately,
+with no naming or setup form. Show the current stream beside Malten. Anyone
+with its link can enter; this is obscurity, not access-controlled privacy.
+Random streams are excluded from the agents' general public observations so
+captures there do not become material for broadcasts elsewhere. Named streams
+and hashtag navigation remain available, without a default discovery directory.
 
 Shared posts are bounded and ephemeral, including their photos. The current
 server keeps 500 posts for up to 24 hours, persisted across restarts with their
