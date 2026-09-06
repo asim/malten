@@ -8,6 +8,7 @@ const document={getElementById(id){if(!elements.has(id))elements.set(id,element(
 const data={points:[{id:'private',text:'old private thought',created_at:1}]};
 const listeners={},window={location:{hash:'#x'},confirm:()=>true,addEventListener(name,fn){listeners[name]=fn}};
 window.history={replaceState(_state,_title,url){assert.equal(url,'/');window.location.hash='';}};
+let streamTimezone='';
 let sent,fail=false,offline=false,unavailable=false,hold=null,lastURL='';
 const pending=new Map();
 const outbox={list:async()=>structuredClone([...pending.values()]),put:async p=>pending.set(p.id,structuredClone(p)),remove:async id=>pending.delete(id)};
@@ -15,6 +16,7 @@ const shared=[{id:'before-arrival',stream:'x',text:'old',created_at:Date.now()-2
 const storage=new Map();
 const context={document,window,navigator:{},URL,Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,clearTimeout,AbortController,Malten:{getNetwork:()=>data,outbox},fetch:async(url,opts)=>{
  lastURL=url;
+ if(!opts.method)streamTimezone=opts.headers['X-Timezone'];
  if(offline)throw new Error('offline');
  if(opts.method==='POST'){sent=JSON.parse(opts.body);if(unavailable)return {ok:false,status:503};if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,status:fail?422:201,text:async()=> 'capture not suitable for sharing'};}
  return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]) && p.created_at>Number(new URL(url,'https://malten.test').searchParams.get('last')))};
@@ -91,6 +93,8 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  window.location.hash='#%';listeners.hashchange();await new Promise(setImmediate);
  assert(source.includes('for(let i=0;i<e.results.length;i++)'),'voice retains finalized segments');
  assert(!source.includes('geolocation'),'location permission is never requested');
+ window.location.hash='#america-new-york';listeners.hashchange();await new Promise(setImmediate);
+ assert.equal(streamTimezone,'America/New_York','regional agent receives the destination timezone');
  // Home is automatically selected and remains stable for a timezone.
  window.location.hash='';elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
  const home='home';
@@ -118,8 +122,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
    vm.runInNewContext(source.replace('{{.AgentStreams}}','[]'),{...context,window:testWindow,Intl:{DateTimeFormat}});
    await new Promise(setImmediate);
    assert(lastURL.includes('stream=home&last='),'shared home arrival: '+zone);
-   assert.equal(elements.get('region').textContent,'#'+expected,'timezone suggested separately');
-   assert.equal(elements.get('region').href,'/#'+expected);
+   assert(elements.get('regions').children.some(c=>c.textContent==='#'+expected&&c.href==='/#'+expected),'timezone offered separately');
  }
 
  console.log('Queued posting, moderation outcomes, stream isolation and private migration: passed');

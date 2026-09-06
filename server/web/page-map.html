@@ -20,7 +20,7 @@
     <a class="stream-link" id="home-link" href="/">#home</a>
     {{range .AgentStreams}}<a class="stream-link" href="/#{{.Tag}}">#{{.Tag}}</a> {{end}}
   </nav>
-  <nav class="reflection-event" aria-label="Regions">Regions · <a class="stream-link" id="region"></a></nav>
+  <nav class="reflection-event" aria-label="Regions">Regions · <span id="regions"></span></nav>
   <p class="reflection-event" id="drafts-empty" hidden>No drafts.</p>
   <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
   <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
@@ -39,14 +39,16 @@
   let timezone='UTC';
   try { timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; } catch(_) {}
   const homeStream='home';
-  const regionStream=timezone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-');
-  try {
+    try {
     token=localStorage.getItem('malten_author')||'';
     if(!/^[a-f0-9]{64}$/.test(token)){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('malten_author',token);}
     hidden=JSON.parse(localStorage.getItem('malten_hidden')||'[]');if(!Array.isArray(hidden))hidden=[];
   } catch(_) { token=''; $('status').textContent='Browser storage is unavailable. Sharing needs storage to keep your delete key.'; }
-  $('region').textContent='#'+regionStream;
-  $('region').href='/#'+regionStream;
+  const regions=new Map(['Europe/London','Europe/Paris','America/New_York','America/Los_Angeles','Asia/Dubai','Asia/Singapore',timezone].map(zone=>[zone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-'),zone]));
+  for(const [tag] of regions){
+    const link=document.createElement('a');link.className='stream-link';link.href='/#'+tag;link.textContent='#'+tag;
+    $('regions').append(link,document.createTextNode(' '));
+  }
   const headers={'Content-Type':'application/json','Authorization':'Bearer '+token,'X-Timezone':timezone};
   const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
   function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase()||homeStream;}catch(_){return homeStream;}}
@@ -100,7 +102,7 @@
   }
   async function refresh(){
     const n=++request,active=activeStream();
-    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined,{headers});
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined,{headers:{...headers,'X-Timezone':regions.get(active)||timezone}});
       if(!response.ok)throw new Error('Could not load this stream.');
       const data=await response.json();if(n!==request||active!==activeStream())return;
       const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}
