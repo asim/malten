@@ -131,6 +131,18 @@ func (b *streamStore) allow(r *http.Request) bool {
 	if strings.HasSuffix(r.URL.Path, "/report") {
 		key = "report:" + hex.EncodeToString(sum[:])
 	}
+	if r.URL.Path == "/api/summary" {
+		key = "summary:" + hex.EncodeToString(sum[:])
+		b.Lock()
+		defer b.Unlock()
+		now := time.Now()
+		b.prune(now)
+		if now.Before(b.limits[key]) || len(b.limits) >= 10000 {
+			return false
+		}
+		b.limits[key] = now.Add(time.Minute)
+		return true
+	}
 	return b.allowAt(key, time.Now())
 }
 

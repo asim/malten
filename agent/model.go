@@ -80,6 +80,12 @@ func Decide(ctx context.Context, v View) (Decision, error) {
 type Image struct{ ID, Data string }
 
 func Complete(ctx context.Context, system, input string, images ...Image) (string, error) {
+	return CompleteWithTools(ctx, system, input, nil, images...)
+}
+
+// CompleteWithTools permits at most two retrieval rounds and six tool calls.
+// The caller's context bounds the whole task; each model call is bounded too.
+func CompleteWithTools(ctx context.Context, system, input string, tools []Tool, images ...Image) (string, error) {
 	key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
 	if key == "" {
 		raw, _ := os.ReadFile("anthropic_key")
@@ -96,41 +102,113 @@ func Complete(ctx context.Context, system, input string, images ...Image) (strin
 	for _, image := range images {
 		content = append(content, map[string]string{"type": "text", "text": "Photo from public observation " + image.ID}, map[string]any{"type": "image", "source": map[string]string{"type": "base64", "media_type": "image/jpeg", "data": image.Data}})
 	}
-	body, _ := json.Marshal(map[string]any{"model": model, "max_tokens": 1600, "system": system, "messages": []any{map[string]any{"role": "user", "content": content}}})
+
+	messages := []any{map[string]any{"role": "user", "content": content}}
+	calls := 0
+	for round := 0; round < 3; round++ {
+		body := map[string]any{"model": model, "max_tokens": 1600, "system": system, "messages": messages}
+		if len(tools) > 0 {
+			body["tools"] = tools
+			if round == 2 || calls >= 6 {
+				body["tool_choice"] = map[string]string{"type": "none"}
+			}
+		}
+		result, err := modelRequest(ctx, key, body)
+		if err != nil {
+			return "", err
+		}
+		if result.StopReason == "end_turn" {
+			var answer string
+			for _, raw := range result.Content {
+				var c struct{ Type, Text string }
+				if json.Unmarshal(raw, &c) != nil {
+					return "", errors.New("invalid model content")
+				}
+				if c.Type == "text" {
+					answer += c.Text
+				}
+			}
+			return strings.TrimSpace(answer), nil
+		}
+		if result.StopReason != "tool_use" || len(tools) == 0 || round == 2 {
+			return "", errors.New("incomplete agent decision")
+		}
+		var results []any
+		for _, raw := range result.Content {
+			var call struct {
+				Type, ID, Name string
+				Input          json.RawMessage
+			}
+			if json.Unmarshal(raw, &call) != nil {
+				return "", errors.New("invalid tool call")
+			}
+			if call.Type != "tool_use" {
+				continue
+			}
+			if call.ID == "" {
+				return "", errors.New("missing tool identifier")
+			}
+			calls++
+			data, err := json.RawMessage(nil), errors.New("tool unavailable or call limit reached")
+			if calls <= 6 {
+				for _, tool := range tools {
+					if tool.Name == call.Name {
+						data, err = tool.Call(ctx, call.Input)
+						break
+					}
+				}
+			}
+			if err == nil && (!json.Valid(data) || len(data) > 24<<10) {
+				err = errors.New("invalid tool result")
+			}
+			item := map[string]any{"type": "tool_result", "tool_use_id": call.ID}
+			if err != nil {
+				item["is_error"] = true
+				item["content"] = "Source unavailable. Do not invent results."
+			} else {
+				item["content"] = string(data)
+			}
+			results = append(results, item)
+		}
+		if len(results) == 0 {
+			return "", errors.New("missing tool calls")
+		}
+		// Preserve every assistant block, including any signed thinking blocks.
+		messages = append(messages, map[string]any{"role": "assistant", "content": result.Content}, map[string]any{"role": "user", "content": results})
+	}
+	return "", errors.New("tool limit reached")
+}
+
+type modelResponse struct {
+	StopReason string            `json:"stop_reason"`
+	Content    []json.RawMessage `json:"content"`
+}
+
+func modelRequest(ctx context.Context, key string, body any) (modelResponse, error) {
+	var result modelResponse
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return result, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(raw))
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", key)
 	req.Header.Set("anthropic-version", "2023-06-01")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		return "", errors.New("agent model unavailable")
+		return result, errors.New("agent model unavailable")
 	}
-	var result struct {
-		StopReason string `json:"stop_reason"`
-		Content    []struct{ Type, Text string }
-	}
-	if err = json.NewDecoder(io.LimitReader(res.Body, 32<<10)).Decode(&result); err != nil {
-		return "", err
-	}
-	if result.StopReason != "end_turn" {
-		return "", errors.New("incomplete agent decision")
-	}
-	var answer string
-	for _, c := range result.Content {
-		if c.Type == "text" {
-			answer += c.Text
-		}
-	}
-	return strings.TrimSpace(answer), nil
+	err = json.NewDecoder(io.LimitReader(res.Body, 32<<10)).Decode(&result)
+	return result, err
 }
 
 // ReadJSON preserves the full source document within a fixed size bound.
