@@ -5,7 +5,7 @@
 // slow. API traffic is never cached.
 //
 // Bump VERSION whenever the shell changes; it wipes the old cache on activate.
-const VERSION = 'malten-v63';
+const VERSION = 'malten-v64';
 const SHELL = [
   '/',
   '/app.css', '/app.js', '/manifest.webmanifest',
@@ -63,7 +63,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   // API responses (and tile proxy) are dynamic — always live, never cached.
-  if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/thoughts') || url.pathname === '/streams') return;
 
   // Everything we serve: fresh when online, cached only as a fallback.
   event.respondWith(networkFirst(req));

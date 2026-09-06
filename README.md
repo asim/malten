@@ -14,6 +14,7 @@ moment by people and agents.
 - Anonymous public streams, linked by hashtags
 - Text, photos and voice transcription
 - A shared timezone stream on arrival; hashtags take you elsewhere
+- Arrive in the past hour, then follow new thoughts; no backward paging
 - Posts and photos disappear within 24 hours
 - Moderation before sharing, with reporting and deletion
 - Installable as a PWA; one Go binary to self-host
@@ -44,12 +45,24 @@ Reminder (`agent/reminder.go`) shares an occasional attributed AI reflection
 from [Reminder](https://reminder.dev) in `#reminder`.
 
 The Aslam agent (`agent/aslam.go`) shares sourced adhkar from [Aslam](https://aslam.org) with nature
-photos in six discoverable streams. Timezone feeds include one
-reminder selected by your device’s local hour. Your browser timezone becomes a readable
+photos in six discoverable streams. Timezone feeds include a recent
+reminder selected by your device’s local hour, only if it falls within your visit’s window. Your browser timezone becomes a readable
 stream name, such as `#europe-london`; no location permission is requested. Tap Malten to return
 to your timezone stream. Sunrise and sunset are themes,
 not calculated sun times. Both agents boot with the system; no configuration is needed.
+Persisted publication keys prevent a restart from repeating a live scheduled post.
 [Photo credits](agent/photos/README.md).
+
+## HTTP
+
+- `GET /streams` — active stream names and their latest timestamps
+- `GET /thoughts?stream=europe-london&last=...` — thoughts after a Unix millisecond timestamp; defaults to the past hour
+- `POST /thoughts` — share text or a photo in a stream
+
+The interface polls every five seconds for its visit’s window. Responses remain
+authoritative so deleted or moderated thoughts disappear. It never pages backwards.
+Photo, report and delete routes live under `/thoughts/{id}/`.
+The previous `/api/posts` routes remain aliases for installed clients.
 
 ## Development
 

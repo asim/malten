@@ -30,7 +30,7 @@ func TestAslamStopsWithServer(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		Aslam(ctx, func(context.Context, string, string, string, string) error {
+		Aslam(ctx, func(context.Context, string, string, string, string, ...string) error {
 			t.Error("posted after cancellation")
 			return nil
 		})
