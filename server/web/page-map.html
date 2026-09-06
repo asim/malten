@@ -19,7 +19,7 @@
   {{if .AgentStreams}}<nav class="reflection-event" aria-label="Agent streams">
     {{range .AgentStreams}}<a class="stream-link" href="/#{{.Tag}}">#{{.Tag}}</a> {{end}}
   </nav>{{end}}
-  <p class="reflection-event" id="visibility">Public · disappears within 24 hours</p>
+  <p class="reflection-event" id="visibility" hidden>Private · saved on this device</p>
   <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
   <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
 
@@ -62,7 +62,7 @@
     $('stream').replaceChildren();
     const active=activeStream();
     $('current-stream').textContent='#'+active;
-    $('visibility').textContent=view==='saved'?'Private · saved on this device':'Public · disappears within 24 hours';
+    $('visibility').hidden=view!=='saved';
     for(const name of ['all','you','saved'])$(name).setAttribute('aria-pressed',String(view===name));
     const entries=view==='saved'?saved.filter(p=>(p.stream||'')===(window.location.hash?active:'')):[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
     [...entries].sort((a,b)=>b.created_at-a.created_at).forEach(p=>{

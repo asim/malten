@@ -22,7 +22,6 @@ var Streams = []agent.Stream{
 	{Tag: "sunrise"},
 	{Tag: "morning"},
 	{Tag: "afternoon"},
-	{Tag: "mid-afternoon"},
 	{Tag: "sunset"},
 	{Tag: "evening"},
 }
@@ -45,7 +44,7 @@ func Run(ctx context.Context, publish agent.PublishPhoto) {
 				if i < 2 {
 					query, role = "blessings", "morning dhikr"
 				}
-				if i > 3 {
+				if stream.Tag == "sunset" || stream.Tag == "evening" {
 					query, role = "evening", "evening dhikr"
 				}
 				text, err := aslamReminder(ctx, query, role, time.Now().UTC().YearDay()+i)
