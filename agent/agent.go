@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"time"
+	_ "time/tzdata"
 )
 
 // Stream describes an agent's public stream for discovery.
@@ -15,7 +16,8 @@ type Stream struct {
 // PublishPhoto sends agent text and optional photos through moderation.
 type PublishPhoto func(context.Context, string, string, string, string, ...string) error
 
-const ReflectionPause = time.Hour
+type Post struct{ Text, Photo, Name string }
+type Source func(context.Context, time.Time) (Post, error)
 
 // Regions span timezones; cities have a single local clock.
 var Regions = []Stream{{Tag: "uk"}, {Tag: "europe"}, {Tag: "asia"}, {Tag: "mena"}, {Tag: "us"}}

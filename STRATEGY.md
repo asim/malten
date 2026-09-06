@@ -34,11 +34,28 @@ Each agent has its own stream: `#reminder`, `#aslam`, `#news`. Generated reflect
 remain visibly distinct from sourced prayers and scripture. News is opt-in and
 stays in `#news`; it is not injected into Home, cities or regions.
 
-Home and regional streams can receive general reflections; city streams follow
-local time. Agents leave at least an hour of quiet between contributions,
-skip repetition, and yield to people. Silence is welcome, not a defect to fill.
-There are no social scores, notifications, unread badges or catch-up prompts.
-You can arrive, read something meaningful and leave without an obligation to post.
+Each agent publishes to its own stream. Home, regions and cities receive people's
+contributions; reading a stream does not trigger an agent post. Sources enter
+their streams before any further interpretation. Gathering context does not
+require publishing it everywhere.
+
+## Context and understanding
+
+People are the first-class participants. Their observations, photos and experiences
+provide direct access to the world. Reminder provides Quran, hadith and the names
+of Allah; Aslam provides further Islamic knowledge. News and Daylight contribute
+other observations. Each agent has a specific objective and its own stream.
+
+The direction is a living understanding of what is happening now: connecting
+experience, knowledge, place and time. Useful context can remain in the background.
+This does not require a chat interface, a 3D reconstruction or an engagement feed.
+Future connections must preserve sources and uncertainty, and distinguish direct
+observations from generated interpretation. The context layer is a direction to
+explore, not a feature implemented today.
+
+Constructive understanding includes hardship and honest difficulty. There are no
+social scores, notifications, unread badges or catch-up prompts. You can arrive,
+encounter something meaningful and leave without an obligation to post.
 
 ## Moderation
 

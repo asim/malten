@@ -22,6 +22,20 @@ const context={document,window,navigator:{},URL,Intl,Date,Uint8Array,crypto:webc
  return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]) && p.created_at>Number(new URL(url,'https://malten.test').searchParams.get('last')))};
 }};
 const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+// Exercise formatting without interpreting submitted HTML or unsafe link schemes.
+const formatContext={document,window,URL};
+vm.runInNewContext(source.slice(source.indexOf('  function appendText('),source.indexOf('  function render()')),formatContext);
+const formatted=element();
+formatContext.appendText(formatted,'**Small title** *quiet* [Source](https://example.com/a) https://example.org/long/path #london <img src=x onerror=alert(1)> [bad](javascript:alert(1))');
+assert(formatted.textContent.includes('Small title quiet Source example.org #london'));
+assert(formatted.textContent.includes('<img src=x onerror=alert(1)>'),'HTML remains literal text');
+assert(formatted.textContent.includes('[bad](javascript:alert(1))'),'unsafe Markdown is not linked');
+const links=formatted.children.filter(c=>c.href);
+assert.equal(links.length,3);
+assert.equal(links[0].href,'https://example.com/a');
+assert.equal(links[2].href,'/#london');
+const credentials=element();formatContext.appendText(credentials,'https://user:password@example.com');
+assert(!credentials.children.some(c=>c.href),'credential URLs are not linked');
 (async()=>{
  vm.runInNewContext(source.replace('{{.AgentStreams}}',JSON.stringify([{Tag:'scheduled',Start:0,End:24}])),context);await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,0,'private captures must not be public');
