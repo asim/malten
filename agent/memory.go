@@ -24,8 +24,9 @@ type Record struct {
 }
 type Memory struct {
 	sync.Mutex
-	path    string
-	streams map[string][]Record
+	path        string
+	streams     map[string][]Record
+	cycleErrors map[string]string
 }
 
 func Key(data []byte) string { h := sha256.Sum256(data); return hex.EncodeToString(h[:]) }
@@ -190,4 +191,55 @@ func (m *Memory) Expire(now time.Time) error {
 		return err
 	}
 	return nil
+}
+
+// Status reports pipeline health without exposing source data or summaries.
+type Status struct {
+	LastSource   time.Time `json:"last_source,omitempty"`
+	LastDecision time.Time `json:"last_decision,omitempty"`
+	LastAction   string    `json:"last_action,omitempty"`
+	LastError    string    `json:"last_error,omitempty"`
+}
+
+func (m *Memory) RecordCycle(name string, err error) {
+	m.Lock()
+	defer m.Unlock()
+	if m.cycleErrors == nil {
+		m.cycleErrors = map[string]string{}
+	}
+	message := ""
+	if err != nil {
+		switch err.Error() {
+		case "unsupported action", "summary too long", "invalid agent decision", "incomplete agent decision", "agent model unavailable", "weather source unavailable", "source unavailable", "source request failed", "invalid or oversized source", "moderation unavailable", "busy", "stale or incomplete weather", "unexpected weather timezone":
+			message = err.Error()
+		default:
+			message = "cycle failed"
+		}
+	}
+	m.cycleErrors[name] = message
+}
+func (m *Memory) Status() map[string]Status {
+	m.Lock()
+	defer m.Unlock()
+	out := map[string]Status{}
+	for _, name := range []string{"reminder", "aslam", "news", "nature"} {
+		records := m.streams[name]
+		state := Status{LastError: m.cycleErrors[name]}
+		for _, r := range records {
+			if time.Since(r.At) >= 24*time.Hour {
+				continue
+			}
+			if r.Kind == "source" && r.At.After(state.LastSource) {
+				state.LastSource = r.At
+			}
+			if r.Kind == "decision" && r.At.After(state.LastDecision) {
+				state.LastDecision = r.At
+			}
+			if r.Action != nil {
+				state.LastAction = r.Status
+			}
+		}
+		out[name] = state
+	}
+	return out
 }

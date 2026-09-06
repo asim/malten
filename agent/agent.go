@@ -79,7 +79,9 @@ func (l Loop) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			if err := l.Step(ctx, time.Now()); err != nil && ctx.Err() == nil {
+			err := l.Step(ctx, time.Now())
+			l.Memory.RecordCycle(l.Agent.Name, err)
+			if err != nil && ctx.Err() == nil {
 				log.Printf("%s: cycle failed: %v", l.Agent.Name, err)
 			}
 			timer.Reset(10 * time.Minute)
@@ -187,7 +189,7 @@ func (l Loop) Step(ctx context.Context, now time.Time) error {
 		}
 		// Limit publication across all destinations, including restarts.
 		for _, r := range history {
-			if r.Action != nil && now.Sub(r.At) < time.Hour {
+			if r.Status == "sent" && r.Action != nil && now.Sub(r.At) < time.Hour {
 				return l.Memory.Write(l.Agent.Name, record)
 			}
 		}
