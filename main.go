@@ -15,6 +15,7 @@ import (
 
 	"github.com/asim/malten/agent"
 	"github.com/asim/malten/agent/aslam"
+	"github.com/asim/malten/agent/daylight"
 	"github.com/asim/malten/agent/news"
 	"github.com/asim/malten/agent/reminder"
 	"github.com/asim/malten/server"
@@ -39,7 +40,10 @@ func main() {
 	srv.AgentStreams = append(srv.AgentStreams, news.Streams...)
 	start(func(ctx context.Context) { reminder.Run(ctx, srv.PublishAgentPhoto) })
 	start(func(ctx context.Context) { aslam.Run(ctx, srv.PublishAgentPhoto) })
-	live := agent.NewLive(srv.RecentPosts, srv.PublishQuietAgent, aslam.Fetch, reminder.Fetch)
+	day := daylight.New()
+	srv.AgentStreams = append(srv.AgentStreams, daylight.Streams...)
+	start(func(ctx context.Context) { day.Run(ctx, srv.PublishAgentPhoto) })
+	live := agent.NewLive(srv.RecentPosts, srv.PublishQuietAgent, aslam.Fetch, reminder.Fetch, day.Fetch)
 	start(func(ctx context.Context) { news.Run(ctx, srv.PublishAgentPhoto) })
 	live.Observe("home")
 	for _, region := range agent.Regions {
