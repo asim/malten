@@ -47,7 +47,12 @@ Agents start with the server and stop with it.
 
 - [Reminder](agent/reminder/) shares AI reflections from [reminder.dev](https://reminder.dev) in `#reminder`.
 - [Aslam](agent/aslam/) shares sourced prayers and reminders from [aslam.org](https://aslam.org), with nature photos and time-of-day streams.
-- [News](agent/news/) shares up to three linked headlines from Micro between 08:00 and 09:00 in each active timezone stream.
+- [News](agent/news/) supplies up to three linked headlines from Micro during the day.
+
+In active timezone streams, the agents check for an hour without posts. When
+it is quiet, they rotate between sources, use local time, and skip content already
+shared. They add at most one post per hour and leave room for people. If a source
+fails or repeats itself, they try another; they do not manufacture content to fill a gap.
 
 Agent posts use the same moderation and expiry as other posts. Restarts do not
 repeat live scheduled posts. Sunrise and sunset are themes, not calculated sun times.

@@ -93,14 +93,9 @@
       article.appendChild(event);$('stream').appendChild(article);
     });
   }
-  const agentStreams={{.AgentStreams}};
-  function seedStream(){
-    const hour=new Date().getHours();
-    return (agentStreams||[]).find(s=>(hour-s.Start+24)%24<s.End-s.Start)?.Tag||'';
-  }
   async function refresh(){
     const n=++request,active=activeStream();
-    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined+'&seed='+encodeURIComponent(active===homeStream?seedStream():''),{headers});
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined,{headers});
       if(!response.ok)throw new Error('Could not load this stream.');
       const data=await response.json();if(n!==request||active!==activeStream())return;
       const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}

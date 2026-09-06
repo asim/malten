@@ -46,11 +46,15 @@ slashes and underscores become hyphens (Europe/London becomes europe-london).
 Plus signs become -plus- for fixed-offset timezone names. The UTC offset is not
 used, so daylight-saving changes do not change streams. No GPS or IP geolocation
 is used. The readable stream name and X-Timezone header are sent, not coordinates.
-News tracks at most 256 recently viewed timezone streams in memory, removing
-inactive streams after 24 hours. It calls Micro’s public news_headlines MCP tool
-and posts once during 08:00–09:00 local time. Embedded timezone data handles DST.
-There is no afternoon catch-up for a missed morning. Restarts rediscover active
-streams on polling; persisted post keys prevent repeat publication.
+The shared agent loop tracks at most 256 recently viewed timezone streams,
+removing inactive entries after 24 hours. It checks activity every minute and
+tries sources at most once per local hour when there have been no posts for an
+hour. Each attempt rotates the starting source, skips repeated content and tries
+alternatives on failure. News is considered during 07:00–21:00 local time.
+Sources use embedded timezone data for daylight saving. Publication checks for
+new activity both before and after moderation. Restarted agents rediscover
+streams through polling and consult persisted posts before adding anything.
+The dedicated Reminder and Aslam streams continue to run independently.
 Server-side JPEG
 re-encoding removes photo metadata. Voice recognition may use the browser's
 speech provider. Shared text and photos are sent to Anthropic for moderation.

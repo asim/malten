@@ -19,12 +19,12 @@ import (
 var photos embed.FS
 
 var Streams = []agent.Stream{
-	{Tag: "sunrise", Start: 5, End: 8},
-	{Tag: "morning", Start: 8, End: 12},
-	{Tag: "afternoon", Start: 12, End: 15},
-	{Tag: "mid-afternoon", Start: 15, End: 18},
-	{Tag: "sunset", Start: 18, End: 20},
-	{Tag: "evening", Start: 20, End: 29},
+	{Tag: "sunrise"},
+	{Tag: "morning"},
+	{Tag: "afternoon"},
+	{Tag: "mid-afternoon"},
+	{Tag: "sunset"},
+	{Tag: "evening"},
 }
 
 // Run keeps a small set of sourced reminders available across time zones.
@@ -111,4 +111,25 @@ func readReminder(r io.Reader, role string, pick int) (string, error) {
 		return "", fmt.Errorf("no complete adhkar found")
 	}
 	return choices[pick%len(choices)], nil
+}
+
+// Fetch selects a sourced reminder for the viewer's local part of the day.
+func Fetch(ctx context.Context, local time.Time) (agent.Post, error) {
+	query, role := "morning", "daily dua"
+	if local.Hour() >= 5 && local.Hour() < 12 {
+		query, role = "blessings", "morning dhikr"
+	}
+	if local.Hour() >= 18 || local.Hour() < 5 {
+		query, role = "evening", "evening dhikr"
+	}
+	text, err := aslamReminder(ctx, query, role, local.YearDay()+local.Hour())
+	if err != nil {
+		return agent.Post{}, err
+	}
+	file := "photos/trees.jpg"
+	if local.Hour() >= 5 && local.Hour() < 12 {
+		file = "photos/sunrise.jpg"
+	}
+	raw, err := photos.ReadFile(file)
+	return agent.Post{Text: text, Name: "Aslam · adhkar", Photo: "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(raw)}, err
 }
