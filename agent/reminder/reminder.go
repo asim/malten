@@ -20,23 +20,19 @@ var Streams = []agent.Stream{{Tag: "reminder"}}
 func Run(ctx context.Context, publish agent.Publish) {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
-	last := ""
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
 			text, err := latest(ctx)
-			if err == nil && text != "" && text != last {
-				err = publish(ctx, "reminder", text, "Reminder · AI reflection", strconv.FormatInt(time.Now().Unix()/int64((6*time.Hour)/time.Second), 10))
-				if err == nil {
-					last = text
-				}
+			if err == nil && text != "" {
+				err = publish(ctx, "reminder", text, "Reminder · AI reflection", strconv.FormatInt(time.Now().Unix()/int64(time.Hour/time.Second), 10))
 			}
 			if err != nil && ctx.Err() == nil {
 				log.Print("reminder: could not share reflection")
 			}
-			timer.Reset(6 * time.Hour)
+			timer.Reset(10 * time.Minute)
 		}
 	}
 }
