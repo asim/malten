@@ -157,9 +157,10 @@ func (l Loop) Step(ctx context.Context, now time.Time) error {
 	}
 	input, _ := json.Marshal(struct {
 		Source       string
+		Objective    string
 		Events       []string
 		Observations []Observation
-	}{sourceID, events, observations})
+	}{sourceID, l.Agent.Objective, events, observations})
 	id := "decision-" + Key(input)
 	for _, r := range history {
 		if r.ID == id {

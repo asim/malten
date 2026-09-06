@@ -13,7 +13,7 @@ func New() agent.Agent {
 	return agent.Agent{
 		DisplayName: "Reminder",
 		Name:        "reminder",
-		Objective:   "Moderation engine. Preserve Quran, hadith, names of Allah and the separately generated reflection from reminder.dev. Maintain context for truthfulness, mercy, modesty and dignity under the fixed moderation policy. Publish a short general conduct guideline only when repeated confirmed moderation events in a stream warrant it. Never identify anyone, quote rejected content, infer faith, rewrite scripture, or change moderation rules. Otherwise update context without posting.",
+		Objective:   "Moderation engine. Preserve Quran, hadith, names of Allah and the separately generated reflection from reminder.dev. Maintain context for truthfulness, mercy, modesty and dignity under the fixed moderation policy. Publish a short general conduct guideline only when repeated confirmed moderation events in a stream warrant it. Never identify anyone, quote rejected content, infer faith, rewrite scripture, or change moderation rules. Its own source stream can show a complete sourced passage. Otherwise update context without posting.",
 		Read:        Read, Decide: decide, Check: check,
 	}
 }
