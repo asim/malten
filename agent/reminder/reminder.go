@@ -1,52 +1,49 @@
-// Package reminder shares reflections from reminder.dev.
+// Package reminder maintains the spiritual source context supporting conduct.
 package reminder
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/asim/malten/agent"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 )
 
-var Streams = []agent.Stream{{Tag: "reminder"}}
-
-func Run(ctx context.Context, publish agent.PublishPhoto) {
-	agent.RunSource(ctx, "reminder", Fetch, publish)
+func New() agent.Agent {
+	return agent.Agent{
+		Name:      "reminder",
+		Objective: "Moderation engine. Preserve Quran, hadith, names of Allah and the separately generated reflection from reminder.dev. Maintain context for truthfulness, mercy, modesty and dignity under the fixed moderation policy. Publish a short general conduct guideline only when repeated confirmed moderation events in a stream warrant it. Never identify anyone, quote rejected content, infer faith, rewrite scripture, or change moderation rules. Otherwise update context without posting.",
+		Read:      Read, Check: check,
+	}
 }
-
-func latest(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://reminder.dev/api/latest", nil)
+func Read(ctx context.Context, _ time.Time) (json.RawMessage, error) {
+	raw, err := agent.ReadJSON(ctx, "GET", "https://reminder.dev/api/latest", "")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
+	var data struct{ Verse, Hadith, Name, Message string }
+	if json.Unmarshal(raw, &data) != nil || data.Verse == "" || data.Hadith == "" || data.Name == "" {
+		return nil, errors.New("incomplete reminder source")
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", nil
-	}
-	var reminder struct {
-		Message string `json:"message"`
-	}
-	if err = json.NewDecoder(io.LimitReader(resp.Body, 128*1024)).Decode(&reminder); err != nil {
-		return "", err
-	}
-	message := strings.TrimSpace(reminder.Message)
-	if message == "" || len([]rune(message)) > 1100 {
-		return "", nil
-	}
-	// Generated prose is explicitly attributed; scripture is not rewritten.
-	return message + "\n\nhttps://reminder.dev", nil
+	return json.Marshal(struct {
+		Source string
+		Data   json.RawMessage
+	}{"https://reminder.dev/api/latest", raw})
 }
-
-func Fetch(ctx context.Context, _ time.Time) (agent.Post, error) {
-	text, err := latest(ctx)
-	return agent.Post{Text: text, Name: "Reminder · AI reflection"}, err
+func check(v agent.View, d agent.Decision) bool {
+	// Individual rejections never prompt a public admonishment. Only anonymised
+	// repeated confirmed incidents can warrant a general guideline.
+	count := 0
+	for _, r := range v.Records {
+		if r.Kind == "moderation" && v.Now.Sub(r.At) < time.Hour {
+			var event struct{ Stream string }
+			if json.Unmarshal(r.Data, &event) == nil && event.Stream == d.Action.Stream {
+				count++
+			}
+		}
+		if r.Action != nil && r.Action.Stream == d.Action.Stream {
+			return false
+		}
+	}
+	return count >= 3
 }

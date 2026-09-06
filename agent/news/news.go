@@ -1,3 +1,4 @@
+// Package news maintains a current, attributed view of headline changes.
 package news
 
 import (
@@ -5,46 +6,21 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/asim/malten/agent"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
 	"time"
 )
 
-var Streams = []agent.Stream{{Tag: "news"}}
-
-func Run(ctx context.Context, publish agent.PublishPhoto) {
-	agent.RunSource(ctx, "news", Fetch, publish)
+func New() agent.Agent {
+	return agent.Agent{
+		Name:      "news",
+		Objective: "Brief generation. Track new and changing stories against earlier headlines and summaries. Maintain a concise view of now, preserving sources and uncertainty. Post a short headline-based brief in news only when there is a meaningful development. Headlines alone are not full reporting: do not invent context, causal explanations or details. Cite original article links. Avoid sensationalism and repeated briefs about unchanged stories.",
+		Read:      Read,
+	}
 }
-
-// Fetch supplies headlines only to the news agent's own stream.
-func Fetch(ctx context.Context, _ time.Time) (agent.Post, error) {
-	text, err := newsHeadlines(ctx)
-	return agent.Post{Text: text, Name: "News · Micro"}, err
-}
-
-func newsHeadlines(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://micro.mu/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"news_headlines","arguments":{}}}`))
+func Read(ctx context.Context, _ time.Time) (json.RawMessage, error) {
+	raw, err := agent.ReadJSON(ctx, "POST", "https://micro.mu/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"news_headlines","arguments":{}}}`)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return "", errors.New("headlines request failed")
-	}
-	return readHeadlines(io.LimitReader(res.Body, 256*1024))
-}
-
-func readHeadlines(reader io.Reader) (string, error) {
 	var response struct {
 		Error  json.RawMessage
 		Result struct {
@@ -52,48 +28,21 @@ func readHeadlines(reader io.Reader) (string, error) {
 			Content []struct{ Type, Text string }
 		}
 	}
-	if err := json.NewDecoder(reader).Decode(&response); err != nil {
-		return "", err
+	if json.Unmarshal(raw, &response) != nil || (len(response.Error) > 0 && string(response.Error) != "null") || response.Result.IsError {
+		return nil, errors.New("news tool failed")
 	}
-	if (len(response.Error) > 0 && string(response.Error) != "null") || response.Result.IsError {
-		return "", errors.New("headlines tool failed")
-	}
-	text := "Headlines"
-	seen := map[string]bool{}
-	count := 0
-	for _, content := range response.Result.Content {
-		if content.Type != "text" {
-			continue
-		}
-		var headlines struct {
-			Items []struct{ Category, Title, URL string }
-		}
-		if err := json.Unmarshal([]byte(content.Text), &headlines); err != nil {
-			return "", err
-		}
-		for _, item := range headlines.Items {
-			category, title := strings.TrimSpace(item.Category), strings.TrimSpace(item.Title)
-			link, err := url.Parse(item.URL)
-			if err != nil || link.Host == "" || (link.Scheme != "https" && link.Scheme != "http") || link.User != nil {
-				continue
-			}
-			if category == "" || title == "" || seen[strings.ToLower(category)] {
-				continue
-			}
-			entry := "\n\n" + category + " · " + title + "\n" + link.String()
-			if len([]rune(text+entry)) > 1200 {
-				continue
-			}
-			text += entry
-			seen[strings.ToLower(category)] = true
-			count++
-			if count == 3 {
-				return text, nil
-			}
+	usable := false
+	for _, c := range response.Result.Content {
+		var headlines struct{ Items []json.RawMessage }
+		if c.Type == "text" && json.Unmarshal([]byte(c.Text), &headlines) == nil && len(headlines.Items) > 0 {
+			usable = true
 		}
 	}
-	if count == 0 {
-		return "", errors.New("no usable headlines")
+	if !usable {
+		return nil, errors.New("empty headlines")
 	}
-	return text, nil
+	return json.Marshal(struct {
+		Source string
+		Data   json.RawMessage
+	}{"https://micro.mu/mcp — news_headlines", raw})
 }
