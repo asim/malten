@@ -16,6 +16,7 @@
   </form>
 
   <nav class="stream-options" aria-label="Stream view"><button id="all" type="button" aria-pressed="true">All</button><button id="you" type="button" aria-pressed="false">You</button><button id="saved" type="button" hidden>Saved on this device</button></nav>
+  <nav class="reflection-event" aria-label="Regions">Regions · <a class="stream-link" id="region"></a></nav>
   {{if .AgentStreams}}<nav class="reflection-event" aria-label="Agent streams">
     {{range .AgentStreams}}<a class="stream-link" href="/#{{.Tag}}">#{{.Tag}}</a> {{end}}
   </nav>{{end}}
@@ -37,12 +38,15 @@
   let token='',hidden=[];
   let timezone='UTC';
   try { timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; } catch(_) {}
-  const homeStream=timezone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-');
+  const homeStream='home';
+  const regionStream=timezone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-');
   try {
     token=localStorage.getItem('malten_author')||'';
     if(!/^[a-f0-9]{64}$/.test(token)){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('malten_author',token);}
     hidden=JSON.parse(localStorage.getItem('malten_hidden')||'[]');if(!Array.isArray(hidden))hidden=[];
   } catch(_) { token=''; $('status').textContent='Browser storage is unavailable. Sharing needs storage to keep your delete key.'; }
+  $('region').textContent='#'+regionStream;
+  $('region').href='/#'+regionStream;
   const headers={'Content-Type':'application/json','Authorization':'Bearer '+token,'X-Timezone':timezone};
   const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
   function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase()||homeStream;}catch(_){return homeStream;}}
@@ -61,7 +65,7 @@
   function render(){
     $('stream').replaceChildren();
     const active=activeStream();
-    $('current-stream').textContent='#'+active;
+    $('current-stream').textContent=active===homeStream?'Home':'#'+active;
     $('visibility').hidden=view!=='saved';
     for(const name of ['all','you','saved'])$(name).setAttribute('aria-pressed',String(view===name));
     const entries=view==='saved'?saved.filter(p=>(p.stream||'')===(window.location.hash?active:'')):[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
@@ -178,7 +182,7 @@
   }else{$('voice').disabled=true;$('voice').title='Voice transcription is unavailable in this browser';}
   $('saved').hidden=!saved.length;
   for(const name of ['all','you','saved'])$(name).onclick=()=>{view=name;render();};
-  $('home').onclick=e=>{e.preventDefault();view='all';window.location.hash='';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
+  $('home').onclick=e=>{e.preventDefault();view='all';window.history.replaceState(null,'','/');joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
   window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
   async function restore(){
     try {
