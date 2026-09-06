@@ -38,12 +38,15 @@ on the browser that created them.
 
 The server limits concurrent moderation calls and rate-limits posting/reporting
 by IP. Only loopback proxy requests can supply X-Real-IP; nginx must overwrite it.
-HTTPS is needed for camera, microphone and location permissions. The existing
+HTTPS is needed for camera and microphone permissions. The existing
 1 MB nginx upload limit accommodates the capped JSON photo uploads.
 
-The local stream uses 0.01-degree cells (about 1.1 km north–south, narrower
-east–west depending on latitude). It is approximate, public and not proof of
-presence. Exact coordinates are never sent by the UI. Server-side JPEG
+The browser uses its configured IANA timezone as its home stream: lowercase,
+slashes and underscores become hyphens (Europe/London becomes europe-london).
+Plus signs become -plus- for fixed-offset timezone names. The UTC offset is not
+used, so daylight-saving changes do not change streams. No GPS or IP geolocation
+is used. The readable stream name is sent, not coordinates.
+Server-side JPEG
 re-encoding removes photo metadata. Voice recognition may use the browser's
 speech provider. Shared text and photos are sent to Anthropic for moderation.
 

@@ -19,7 +19,7 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
 (async()=>{
  vm.runInNewContext(source.replace('{{.AgentStreams}}',JSON.stringify([{Tag:'scheduled',Start:0,End:24}])),context);await new Promise(setImmediate);
  assert.equal(elements.get('stream').children.length,0,'private captures must not be public');
- assert(lastURL.endsWith('&seed=scheduled'),'feed selection uses registered agent metadata');
+ assert(lastURL.endsWith('&seed='),'hashtag navigation does not inject home reminders');
  let release;hold=new Promise(resolve=>{release=resolve});
  elements.get('thought').value='a reflection';
  elements.get('composer').onsubmit({preventDefault(){}});
@@ -50,6 +50,27 @@ const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s
  assert.equal(elements.get('stream').children.length,3);
  window.location.hash='#%';listeners.hashchange();await new Promise(setImmediate);
  assert(source.includes('for(let i=0;i<e.results.length;i++)'),'voice retains finalized segments');
- assert(!source.includes('/api/location'),'exact location is never sent');
+ assert(!source.includes('geolocation'),'location permission is never requested');
+ // Home is automatically selected and remains stable for a timezone.
+ window.location.hash='';elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
+ const home=Intl.DateTimeFormat().resolvedOptions().timeZone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-');
+ assert(lastURL.includes('stream='+home+'&seed=scheduled'),'home loads timezone stream and its reminder');
+ assert.equal(elements.get('current-stream').textContent,'#'+home);
+ fail=false;elements.get('thought').value='in my timezone';
+ elements.get('composer').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ assert.equal(sent.stream,home,'home posts belong to the timezone');
+ window.location.hash='#city';listeners.hashchange();await new Promise(setImmediate);
+ elements.get('home').onclick({preventDefault(){}});await new Promise(setImmediate);
+ assert(lastURL.includes('stream='+home+'&seed=scheduled'),'brand returns from a hashtag to timezone');
+ elements.get('saved').onclick();
+ assert.equal(elements.get('stream').children.length,1,'old private default captures remain accessible');
+ for(const [zone,expected] of [['Europe/London','europe-london'],['America/Los_Angeles','america-los-angeles'],['Etc/GMT+5','etc-gmt-plus-5']]){
+   const testWindow={...window,location:{hash:''}};
+   function DateTimeFormat(...args){return args.length?new Intl.DateTimeFormat(...args):{resolvedOptions:()=>({timeZone:zone})};}
+   vm.runInNewContext(source.replace('{{.AgentStreams}}','[]'),{...context,window:testWindow,Intl:{DateTimeFormat}});
+   await new Promise(setImmediate);
+   assert(lastURL.includes('stream='+expected+'&seed='),'automatic timezone arrival: '+zone);
+ }
+
  console.log('Queued posting, moderation outcomes, stream isolation and private migration: passed');
 })().catch(err=>{console.error(err);process.exitCode=1;});

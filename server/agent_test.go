@@ -13,7 +13,7 @@ func TestAgentSeedKeepsStreamsIndependent(t *testing.T) {
 	s.AgentStreams = []agent.Stream{{Tag: "morning"}}
 	now := time.Now().UnixMilli()
 	s.stream.posts = []Post{
-		{ID: "local", Stream: "near-test", Text: "local", Created: now},
+		{ID: "local", Stream: "europe-london", Text: "local", Created: now},
 		{ID: "old", Stream: "morning", Agent: "Test agent", Created: now},
 		{ID: "new", Stream: "morning", Agent: "Test agent", Created: now},
 		{ID: "human", Stream: "morning", Text: "human", Created: now},
@@ -23,11 +23,11 @@ func TestAgentSeedKeepsStreamsIndependent(t *testing.T) {
 		path string
 		want int
 	}{
-		{"/api/posts?stream=near-test&seed=morning", 2},
+		{"/api/posts?stream=europe-london&seed=morning", 2},
 		{"/api/posts?stream=&seed=morning", 1},
-		{"/api/posts?stream=other&seed=morning", 0},
+		{"/api/posts?stream=other", 0},
 		{"/api/posts?stream=morning", 3},
-		{"/api/posts?stream=near-test&seed=anything", 1},
+		{"/api/posts?stream=europe-london&seed=anything", 1},
 	} {
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, httptest.NewRequest("GET", tc.path, nil))

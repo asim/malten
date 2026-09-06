@@ -33,7 +33,10 @@
   const saved=Malten.getNetwork().points;
   let posts=[],photo=null,view='all',sending=false,revision='',request=0;
   let outbox=[];
-  let token='',hidden=[],stayDefault=false;
+  let token='',hidden=[];
+  let timezone='UTC';
+  try { timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'; } catch(_) {}
+  const homeStream=timezone.toLowerCase().replace(/[\/_]/g,'-').replace(/\+/g,'-plus-');
   try {
     token=localStorage.getItem('malten_author')||'';
     if(!/^[a-f0-9]{64}$/.test(token)){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('malten_author',token);}
@@ -41,7 +44,7 @@
   } catch(_) { token=''; $('status').textContent='Browser storage is unavailable. Sharing needs storage to keep your delete key.'; }
   const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
   const when=t=>new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
-  function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase();}catch(_){return '';}}
+  function activeStream(){try{return decodeURIComponent(window.location.hash.slice(1)).toLowerCase()||homeStream;}catch(_){return homeStream;}}
   function appendText(element,text){
     let at=0;
     for(const match of (text||'').matchAll(/https?:\/\/[^\s<>]+|(^|\s)#[\p{L}\p{N}_-]+/gu)){
@@ -57,10 +60,10 @@
   function render(){
     $('stream').replaceChildren();
     const active=activeStream();
-    $('current-stream').textContent=active?'#'+active:'';
-    $('visibility').textContent=view==='saved'?'Private · saved on this device':'Public · disappears within 24 hours'+(active.startsWith('near-')?' · approximate area':'');
+    $('current-stream').textContent='#'+active;
+    $('visibility').textContent=view==='saved'?'Private · saved on this device':'Public · disappears within 24 hours';
     for(const name of ['all','you','saved'])$(name).setAttribute('aria-pressed',String(view===name));
-    const entries=view==='saved'?saved.filter(p=>(p.stream||'')===active):[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
+    const entries=view==='saved'?saved.filter(p=>(p.stream||'')===(window.location.hash?active:'')):[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
     [...entries].sort((a,b)=>b.created_at-a.created_at).forEach(p=>{
       const article=document.createElement('article');article.className='reflection';
       const text=document.createElement('div');text.className='reflection-text';appendText(text,p.text);article.appendChild(text);
@@ -96,7 +99,7 @@
   }
   async function refresh(){
     const n=++request,active=activeStream();
-    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&seed='+encodeURIComponent(seedStream()),{headers});
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&seed='+encodeURIComponent(active===homeStream?seedStream():''),{headers});
       if(!response.ok)throw new Error('Could not load this stream.');
       const data=await response.json();if(n!==request||active!==activeStream())return;
       const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}
@@ -169,14 +172,8 @@
   }else{$('voice').disabled=true;$('voice').title='Voice transcription is unavailable in this browser';}
   $('saved').hidden=!saved.length;
   for(const name of ['all','you','saved'])$(name).onclick=()=>{view=name;render();};
-  $('home').onclick=e=>{e.preventDefault();stayDefault=true;window.location.hash='';posts=[];revision='';render();refresh();};
+  $('home').onclick=e=>{e.preventDefault();view='all';window.location.hash='';posts=[];revision='';render();refresh();};
   window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
-  // A coarse code selects a starting stream. Exact coordinates never leave JS.
-  if(!window.location.hash&&navigator.geolocation)navigator.geolocation.getCurrentPosition(pos=>{
-    if(stayDefault||window.location.hash||input.value||photo||outbox.length||sending)return;
-    const lat=Math.min(17999,Math.floor((pos.coords.latitude+90)*100)),lng=Math.min(35999,Math.floor((pos.coords.longitude+180)*100));
-    window.location.hash='near-'+lat.toString(36)+'-'+lng.toString(36);
-  },()=>{},{enableHighAccuracy:false,maximumAge:120000,timeout:12000});
   render();refresh();setInterval(()=>{if(!document.hidden)refresh();},15000);
 })();
 </script>
