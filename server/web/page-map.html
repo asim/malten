@@ -175,7 +175,7 @@
   for(const name of ['all','you','saved'])$(name).onclick=()=>{view=name;render();};
   $('home').onclick=e=>{e.preventDefault();view='all';window.location.hash='';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();};
   window.addEventListener('hashchange',()=>{posts=[];revision='';render();refresh();});
-  render();refresh();setInterval(()=>{if(!document.hidden)refresh();},5000);
+  render();refresh();setInterval(()=>{if(!document.hidden)refresh();},10000);
 })();
 </script>
 {{end}}
