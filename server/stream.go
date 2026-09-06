@@ -154,6 +154,11 @@ func (b *streamStore) allowAt(key string, now time.Time) bool {
 }
 func (b *streamStore) duplicate(p Post) bool {
 	if p.Agent == "" {
+		for _, existing := range b.posts {
+			if p.key != "" && existing.key == p.key && existing.owner == p.owner && existing.Agent == "" {
+				return true
+			}
+		}
 		return false
 	}
 	for _, existing := range b.posts {
@@ -279,6 +284,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "JSON required", 415)
 		return
 	}
+	key := r.Header.Get("Idempotency-Key")
+	if len(key) > 64 {
+		http.Error(w, "invalid send identifier", 400)
+		return
+	}
 	if !b.allow(r) {
 		w.Header().Set("Retry-After", "10")
 		http.Error(w, "Please wait a few seconds before trying again.", 429)
@@ -289,13 +299,17 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid capture", 400)
 		return
 	}
-	p = Post{Stream: strings.ToLower(p.Stream), Text: strings.TrimSpace(p.Text), Photo: p.Photo, owner: who}
+	p = Post{Stream: strings.ToLower(p.Stream), Text: strings.TrimSpace(p.Text), Photo: p.Photo, owner: who, key: key}
 	if !validPost(p) {
 		http.Error(w, "Use text or a JPEG photo up to 400 KB.", 400)
 		return
 	}
 	if err := b.publish(r.Context(), p); err != nil {
-		http.Error(w, err.Error()+". Your draft has been kept.", 503)
+		status := http.StatusServiceUnavailable
+		if err.Error() == "capture not suitable for sharing" || err.Error() == "invalid photo" || err.Error() == "photo too large" {
+			status = http.StatusUnprocessableEntity
+		}
+		http.Error(w, err.Error()+". Your draft has been kept.", status)
 		return
 	}
 	w.WriteHeader(201)
