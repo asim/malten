@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/asim/malten/agent"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,51 +17,10 @@ import (
 //go:embed photos/*.jpg
 var photos embed.FS
 
-var Streams = []agent.Stream{
-	{Tag: "sunrise"},
-	{Tag: "morning"},
-	{Tag: "afternoon"},
-	{Tag: "sunset"},
-	{Tag: "evening"},
-}
+var Streams = []agent.Stream{{Tag: "aslam"}}
 
-// Run keeps a small set of sourced reminders available across time zones.
-// Browsers select a theme using local time; these are not astronomical times.
 func Run(ctx context.Context, publish agent.PublishPhoto) {
-	timer := time.NewTimer(0)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			for i, stream := range Streams {
-				if ctx.Err() != nil {
-					return
-				}
-				query, role := "morning", "daily dua"
-				if i < 2 {
-					query, role = "blessings", "morning dhikr"
-				}
-				if stream.Tag == "sunset" || stream.Tag == "evening" {
-					query, role = "evening", "evening dhikr"
-				}
-				text, err := aslamReminder(ctx, query, role, time.Now().UTC().YearDay()+i)
-				if err == nil {
-					file := "photos/trees.jpg"
-					if i < 2 {
-						file = "photos/sunrise.jpg"
-					}
-					raw, _ := photos.ReadFile(file)
-					err = publish(ctx, stream.Tag, text, "Aslam · adhkar", "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(raw), time.Now().UTC().Format("2006-01-02"))
-				}
-				if err != nil && ctx.Err() == nil {
-					log.Printf("aslam: %s reminder unavailable", stream.Tag)
-				}
-			}
-			timer.Reset(6 * time.Hour)
-		}
-	}
+	agent.RunSource(ctx, "aslam", Fetch, publish)
 }
 
 func aslamReminder(ctx context.Context, query, role string, pick int) (string, error) {
@@ -107,7 +65,7 @@ func readReminder(r io.Reader, role string, pick int) (string, error) {
 		}
 	}
 	if len(choices) == 0 {
-		return "", fmt.Errorf("no complete adhkar found")
+		return "", fmt.Errorf("no complete reminder found")
 	}
 	return choices[pick%len(choices)], nil
 }
@@ -115,10 +73,14 @@ func readReminder(r io.Reader, role string, pick int) (string, error) {
 // Fetch selects a sourced reminder for the viewer's local part of the day.
 func Fetch(ctx context.Context, local time.Time) (agent.Post, error) {
 	query, role := "morning", "daily dua"
-	if local.Hour() >= 5 && local.Hour() < 12 {
+	timed := !local.IsZero()
+	if !timed {
+		local = time.Now().UTC()
+	}
+	if timed && local.Hour() >= 5 && local.Hour() < 12 {
 		query, role = "blessings", "morning dhikr"
 	}
-	if local.Hour() >= 18 || local.Hour() < 5 {
+	if timed && (local.Hour() >= 18 || local.Hour() < 5) {
 		query, role = "evening", "evening dhikr"
 	}
 	text, err := aslamReminder(ctx, query, role, local.YearDay()+local.Hour())
@@ -126,9 +88,9 @@ func Fetch(ctx context.Context, local time.Time) (agent.Post, error) {
 		return agent.Post{}, err
 	}
 	file := "photos/trees.jpg"
-	if local.Hour() >= 5 && local.Hour() < 12 {
+	if timed && local.Hour() >= 5 && local.Hour() < 12 {
 		file = "photos/sunrise.jpg"
 	}
 	raw, err := photos.ReadFile(file)
-	return agent.Post{Text: text, Name: "Aslam · adhkar", Photo: "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(raw)}, err
+	return agent.Post{Text: text, Name: "Aslam", Photo: "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(raw)}, err
 }

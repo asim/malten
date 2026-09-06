@@ -21,7 +21,7 @@ type zone struct {
 	checked  string
 }
 
-// Live gives the sources a shared hourly allowance in each quiet timezone stream.
+// Live offers occasional reflections in quiet shared and city streams.
 type Live struct {
 	sync.Mutex
 	zones   map[string]zone
@@ -33,11 +33,22 @@ type Live struct {
 func NewLive(recent func(string) []Post, publish PublishPhoto, sources ...Source) *Live {
 	return &Live{zones: map[string]zone{}, sources: sources, recent: recent, publish: publish}
 }
-func (l *Live) Observe(stream, name string) {
-	if name == "" || name == "Local" || len(name) > 100 {
-		return
+func (l *Live) Observe(stream string) {
+	// Resolve the destination on the server, never from a visitor's clock.
+	name := ""
+	known := stream == "home"
+	for _, region := range Regions {
+		if region.Tag == stream {
+			known = true
+		}
 	}
-	if strings.NewReplacer("/", "-", "_", "-", "+", "-plus-").Replace(strings.ToLower(name)) != stream {
+	for _, city := range Cities {
+		if city.Tag == stream {
+			name = city.Timezone
+			known = true
+		}
+	}
+	if !known {
 		return
 	}
 	l.Lock()
@@ -50,9 +61,13 @@ func (l *Live) Observe(stream, name string) {
 	if len(l.zones) >= 256 {
 		return
 	}
-	loc, err := time.LoadLocation(name)
-	if err != nil {
-		return
+	var loc *time.Location
+	if name != "" {
+		var err error
+		loc, err = time.LoadLocation(name)
+		if err != nil {
+			return
+		}
 	}
 	l.zones[stream] = zone{location: loc, seen: time.Now()}
 }
@@ -84,7 +99,12 @@ func (l *Live) check(ctx context.Context, now time.Time) {
 		if ctx.Err() != nil {
 			return
 		}
-		local := now.In(z.location)
+		local := now.UTC()
+		sourceTime := time.Time{}
+		if z.location != nil {
+			local = now.In(z.location)
+			sourceTime = local
+		}
 		key := local.Format("2006-01-02T15-0700")
 		if z.checked == key || len(l.sources) == 0 {
 			continue
@@ -92,7 +112,7 @@ func (l *Live) check(ctx context.Context, now time.Time) {
 		recent := l.recent(stream)
 		quiet := true
 		for _, p := range recent {
-			if now.Sub(time.UnixMilli(p.Created)) < time.Hour {
+			if now.Sub(time.UnixMilli(p.Created)) < ReflectionPause {
 				quiet = false
 				break
 			}
@@ -111,7 +131,7 @@ func (l *Live) check(ctx context.Context, now time.Time) {
 			if ctx.Err() != nil {
 				return
 			}
-			post, err := l.sources[(local.Hour()+i)%len(l.sources)](ctx, local)
+			post, err := l.sources[(local.Hour()+i)%len(l.sources)](ctx, sourceTime)
 			if err != nil || strings.TrimSpace(post.Text) == "" {
 				continue
 			}

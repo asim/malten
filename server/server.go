@@ -38,7 +38,7 @@ func computeAssetVer() string {
 // Server serves the app.
 type Server struct {
 	// ObserveStream lets an agent learn which streams are being viewed.
-	ObserveStream func(string, string)
+	ObserveStream func(string)
 	AgentStreams  []agent.Stream
 	started       time.Time
 	stream        *streamStore
@@ -77,7 +77,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := page.ExecuteTemplate(w, "base.html", map[string]any{"Title": "Malten", "Ver": assetVer, "AgentStreams": s.AgentStreams}); err != nil {
+	if err := page.ExecuteTemplate(w, "base.html", map[string]any{"Title": "Malten", "Ver": assetVer, "AgentStreams": s.AgentStreams, "Regions": agent.Regions, "Cities": agent.Cities}); err != nil {
 		log.Printf("malten: render: %v", err)
 	}
 }

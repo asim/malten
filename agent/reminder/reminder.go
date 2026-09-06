@@ -6,35 +6,15 @@ import (
 	"encoding/json"
 	"github.com/asim/malten/agent"
 	"io"
-	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
 
 var Streams = []agent.Stream{{Tag: "reminder"}}
 
-// Run shares an occasional sourced reflection in #reminder. Its caller
-// owns the lifecycle: cancellation stops the wait and any active request.
-func Run(ctx context.Context, publish agent.Publish) {
-	timer := time.NewTimer(0)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			text, err := latest(ctx)
-			if err == nil && text != "" {
-				err = publish(ctx, "reminder", text, "Reminder · AI reflection", strconv.FormatInt(time.Now().Unix()/int64(time.Hour/time.Second), 10))
-			}
-			if err != nil && ctx.Err() == nil {
-				log.Print("reminder: could not share reflection")
-			}
-			timer.Reset(10 * time.Minute)
-		}
-	}
+func Run(ctx context.Context, publish agent.PublishPhoto) {
+	agent.RunSource(ctx, "reminder", Fetch, publish)
 }
 
 func latest(ctx context.Context) (string, error) {
