@@ -1,6 +1,6 @@
 {{define "content"}}
 <main class="page">
-  <header class="topbar"><a class="brand" id="home" href="/">Malten</a>
+  <header class="topbar"><a class="brand" id="home" href="/">Malten</a><button class="current-stream" id="current-stream" type="button" aria-label="Copy stream link"></button>
   <nav class="stream-navigation reflection-event" aria-label="Navigation">
     <a class="stream-link" id="home-link" href="/">Home</a><span>·</span>
     <button class="stream-link" id="goto" type="button" aria-expanded="false" aria-controls="goto-form">Go to</button><span>·</span>
@@ -26,13 +26,9 @@
     <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
   </form>
 
-  <nav class="stream-options" aria-label="Stream view"><button id="all" type="button" aria-pressed="true">All</button><button id="you" type="button" aria-pressed="false">You</button><button id="drafts" type="button" aria-pressed="false">Drafts</button></nav>
+  <nav class="stream-options" aria-label="Stream view"><button id="all" type="button" aria-pressed="true">All</button><button id="you" type="button" aria-pressed="false">You</button><button id="drafts" type="button" aria-pressed="false">Drafts</button><button id="summarise" type="button" hidden>Summarise</button></nav>
   <p class="reflection-event" id="drafts-empty" hidden>No drafts.</p>
   <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
-  <div class="stream-heading" id="stream-heading">
-    <h1><button class="current-stream" id="current-stream" type="button" aria-label="Copy stream link"></button></h1>
-    <button class="stream-link" id="summarise" type="button" hidden>Summarise</button>
-  </div>
   <p class="reflection-event" id="summary-status" role="status" aria-live="polite"></p>
   <section class="stream-summary" id="summary" aria-label="Stream summary" hidden></section>
   <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
@@ -83,10 +79,10 @@
   function render(){
     $('stream').replaceChildren();
     const active=activeStream();
-    $('current-stream').title=active;
-    $('current-stream').textContent=streamLabels[active]||active;
+    $('current-stream').title='Copy link to #'+active;
+    $('current-stream').setAttribute('aria-label','#'+active+' · copy stream link');
+    $('current-stream').textContent='#'+active;
     $('drafts-empty').hidden=view!=='drafts'||outbox.length>0;
-    $('stream-heading').hidden=view==='drafts';
     renderSummary();
     for(const name of ['all','you','drafts'])$(name).setAttribute('aria-pressed',String(view===name));
     const entries=view==='drafts'?outbox:[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];

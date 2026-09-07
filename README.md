@@ -40,7 +40,7 @@ a private stream. “Drafts” shows pending and failed posts saved on this devi
 across all streams. Successfully shared posts leave Drafts automatically.
 
 Home is shared by everyone. Tap New to open a stream with a short, random ten-character alphanumeric name
-and start capturing immediately. Its identifier appears above the stream; tap it to copy the link. Anyone
+and start capturing immediately. Its identifier appears as a hashtag beside Malten; tap it to copy the link. Anyone
 with the link can read and post there: unlisted does not mean access-controlled
 privacy. Random streams are excluded from agents' general public observations.
 Go to accepts a stream name, code or Malten link. Named streams and hashtag links
