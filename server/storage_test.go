@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestRestartPreservesCaptureAndModeration(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := restarted.stream.posts[0]
-	if got != p {
+	if !reflect.DeepEqual(got, p) {
 		t.Fatal("capture, original expiry or moderation state changed")
 	}
 	w := request(t, restarted, "GET", "/api/posts?stream=park", "", token)

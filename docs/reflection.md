@@ -11,7 +11,7 @@ in someone's life. Difficult feelings remain valid subjects for reflection.
 
 ## One request, three stages
 
-1. **Understand.** Summarise sends the IDs of the latest 40 approved human posts
+1. **Understand.** Summarise sends the IDs of up to 40 recent approved human posts (60,000 characters total)
    in the reader's current view. The server resolves them within that stream.
    The supervisor reads the text and up to three photos, produces a faithful
    account of what was expressed, and identifies focused questions. Each question
@@ -52,8 +52,10 @@ those background streams. Fresh request-time retrieval is also temporary.
 The supervisor has no search tools. Each investigator has only its own read-only
 tools, with at most two retrieval rounds and six calls. Planning has a 20-second
 budget, concurrent investigations 50 seconds each, and synthesis 30 seconds.
-Two summary requests can run simultaneously; their rate limit is separate from
-posting. No extra process, scheduler or service is required.
+Two summary jobs can run simultaneously, with at most 20 pending entries. Their
+rate limit is separate from posting; retries reuse the same saved entry before
+rate limiting. The existing server lifecycle runs the jobs, with a 150-second
+budget including moderation. No extra process or service is required.
 
 Failures from individual investigators are isolated. The supervisor can use the
 remaining findings while retaining uncertainty. If none provide evidence, only
@@ -61,10 +63,14 @@ the faithful account of what was expressed is returned, without added source
 context. Model-generated citations are checked against retrieved IDs; this checks
 provenance, not whether an interpretation is correct.
 
-The result is shown only to the requesting reader, replacing the previous summary.
-It is cleared on navigation or reload. Deleted, reported or expired captures
-invalidate it. Drafts never enter the process. Nothing runs automatically on a
-person's random stream, and no investigation publishes a response elsewhere.
+The browser saves summary requests in its existing offline outbox. The server
+persists a pending entry before returning HTTP 202; generation does not depend
+on the HTTP connection. Pending entries resume after server restart. Completion
+replaces the pending entry after moderation, and failures are recorded there.
+Readers returning after more than an hour can still see summary entries within
+their lifetime. Results are shared in the selected stream, not across streams.
+Deleted, reported or expired source posts invalidate their summaries. Drafts
+never enter generation. On-demand findings still do not enter background memory.
 
 ## Code
 
@@ -73,5 +79,4 @@ person's random stream, and no investigation publishes a response elsewhere.
 - `agent/{reminder,aslam,news,nature}/research.go`: focused objectives and tools.
 - `server/summary.go`: stream isolation, request limits and expiry checks.
 
-The interface remains a stream with one Summarise action. Agent conversations and
-internal investigation steps are not added to the timeline.
+The interface remains a stream with one Summarise action. The final result goes into the stream; internal investigation steps do not.

@@ -45,9 +45,6 @@ button{cursor:pointer}
 
 .goto-form{display:flex;align-items:center;gap:14px;margin:-12px 0 22px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
 .goto-form input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:14px}
-.stream-summary{padding:12px 0 18px;border-bottom:1px solid var(--line)}
-.stream-summary p{margin:8px 0}
-.summary-context{margin-top:14px;padding-left:12px;border-left:2px solid var(--line);color:#555}
 #summary-status:empty{display:none}
 
 #summarise{margin-left:auto}
