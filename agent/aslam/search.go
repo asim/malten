@@ -16,6 +16,10 @@ func Search(ctx context.Context, query string) ([]agent.Source, error) {
 	if err != nil {
 		return nil, err
 	}
+	return searchResults(raw)
+}
+
+func searchResults(raw json.RawMessage) ([]agent.Source, error) {
 	var data struct {
 		Results []struct{ Title, URL, Content, Kind string }
 	}
