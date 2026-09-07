@@ -145,7 +145,7 @@
     const selected=summarySelection();if(!selected.length)return;
     const active=activeStream(),selectedView=view,ids=selected.map(p=>p.id);
     const controller=new AbortController();summaryRequest=controller;
-    const timer=setTimeout(()=>controller.abort(),85000);
+    const timer=setTimeout(()=>controller.abort(),115000);
     $('summarise').textContent='Summarising…';$('summary-status').textContent='';renderSummary();
     try{
       const response=await fetch('/api/summary',{method:'POST',headers,signal:controller.signal,body:JSON.stringify({stream:active,ids})});

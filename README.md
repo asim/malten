@@ -56,20 +56,26 @@ excluded. A compact summary appears above the stream; summarising again replaces
 it. It is only shown to the requesting reader and is cleared on navigation or
 reload. It is never published or stored in the source agents' memory.
 
-The reflection process can call Reminder and Aslam search for relevant religious
-texts and understanding, and read retained News or Nature context when useful.
-Searches request source material, not another generated answer. Islamic values
-shape the reflection throughout; any additional sourced context is shown
-separately from the summary of what people expressed. Search instructions use
-short general themes rather than personal details. Citations must come from
-retrieved results. Missing sources are acknowledged rather than invented.
+Reflection is grounded in Islamic belief: Allah as Creator, life with purpose,
+worship, tests, accountability and our return to Him. It does not claim to know
+Allah's particular reason for someone's experience.
+
+A supervisor identifies focused questions from the captures and asks relevant
+agents to investigate. Reminder finds primary texts; Aslam supplies surrounding
+understanding; News and Nature establish relevant real-world context. Each agent
+chooses whether to use retained sources, search or fetch current material, then
+returns findings, references and uncertainty. The supervisor combines these into
+a reflection, keeping sourced context separate from what people expressed.
+
+Investigations stay within the request and do not publish or enter background
+memory. Only retrieved references can support the result. [How reflection works](docs/reflection.md).
 
 ## Agents
 
 Each background source agent runs the same loop: read its source, save it to its own private stream,
 read the past 24 hours of context, decide, and act when useful.
 
-- [Reflection](agent/reflection/) summarises a stream on request and uses the source agents as read-only tools. Its work ends with the request.
+- [Reflection](agent/reflection/) identifies questions, delegates focused investigations and synthesises a sourced reflection on request. Its work ends with the request.
 - [Reminder](agent/reminder/) retains Quran, hadith, names of Allah and the separate reflection from [reminder.dev](https://reminder.dev). Its public stream shows a sourced passage. Its search tool retrieves relevant Quran, hadith and names directly. It also supports moderation under a fixed policy and can publish general conduct guidance after repeated confirmed incidents.
 - [Aslam](agent/aslam/) maintains sourced knowledge for praise and gratitude from [aslam.org](https://aslam.org), responding when context makes a reflection useful. Its search tool retrieves attributed knowledge excerpts.
 - [News](agent/news/) tracks headline changes from Micro and generates short, sourced briefs in News. Headlines are not treated as full articles.

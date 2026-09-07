@@ -56,8 +56,8 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Retrieval can take more than one model call; leave posting's timeout alone.
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(90 * time.Second))
-	ctx, cancel := context.WithTimeout(r.Context(), 80*time.Second)
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(120 * time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), 110*time.Second)
 	defer cancel()
 	result, err := s.summarise(ctx, captures)
 	if err != nil {
