@@ -13,10 +13,11 @@ import (
 // Disk-only fields never appear in public API responses.
 type storedPost struct {
 	Post
-	Key      string
-	Owner    string
-	Hidden   bool
-	Reviewed bool
+	Key        string
+	Owner      string
+	Hidden     bool
+	Reviewed   bool
+	SummaryIDs []string
 }
 
 type snapshot struct {
@@ -60,6 +61,7 @@ func Open(path string) (*Server, error) {
 				return nil, errors.New("invalid stored capture")
 			}
 			p.owner, p.hidden, p.reviewed, p.key = record.Owner, record.Hidden, record.Reviewed, record.Key
+			p.summaryIDs = record.SummaryIDs
 			p.Mine = false
 			b.posts = append(b.posts, p)
 		}
@@ -92,7 +94,7 @@ func (b *streamStore) save() error {
 	saved := snapshot{Version: 1, Posts: make([]storedPost, 0, len(b.posts))}
 	for _, p := range b.posts {
 		p.Mine = false
-		saved.Posts = append(saved.Posts, storedPost{Post: p, Key: p.key, Owner: p.owner, Hidden: p.hidden, Reviewed: p.reviewed})
+		saved.Posts = append(saved.Posts, storedPost{Post: p, Key: p.key, Owner: p.owner, Hidden: p.hidden, Reviewed: p.reviewed, SummaryIDs: p.summaryIDs})
 	}
 	dir := filepath.Dir(b.path)
 	file, err := os.CreateTemp(dir, "."+filepath.Base(b.path)+"-")

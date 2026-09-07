@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -39,12 +40,13 @@ func computeAssetVer() string {
 
 // Server serves the app.
 type Server struct {
-	AgentStatus  func() any
-	AgentStreams []agent.Stream
-	started      time.Time
-	stream       *streamStore
-	summarySlots chan struct{}
-	summarise    func(context.Context, []agent.Observation) (reflection.Result, error)
+	AgentStatus    func() any
+	AgentStreams   []agent.Stream
+	started        time.Time
+	stream         *streamStore
+	summaryWorkers sync.WaitGroup
+	summarySlots   chan struct{}
+	summarise      func(context.Context, []agent.Observation) (reflection.Result, error)
 }
 
 func New() *Server {

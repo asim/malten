@@ -26,21 +26,25 @@ import (
 const lifetime = 24 * time.Hour
 const capacity = 500
 const maxPhoto = 400 * 1024
+const maxText = 20000
 
 // Posts and media expire 24 hours after their original capture time.
 type Post struct {
-	ID       string `json:"id"`
-	Stream   string `json:"stream"`
-	Text     string `json:"text"`
-	Photo    string `json:"photo,omitempty"`
-	Created  int64  `json:"created_at"`
-	Agent    string `json:"agent,omitempty"`
-	Mine     bool   `json:"mine,omitempty"`
-	guidance string
-	key      string
-	owner    string
-	hidden   bool
-	reviewed bool
+	ID             string `json:"id"`
+	Stream         string `json:"stream"`
+	Text           string `json:"text"`
+	Photo          string `json:"photo,omitempty"`
+	Created        int64  `json:"created_at"`
+	Agent          string `json:"agent,omitempty"`
+	Mine           bool   `json:"mine,omitempty"`
+	Summary        string `json:"summary_state,omitempty"`
+	summaryIDs     []string
+	summaryRunning bool
+	guidance       string
+	key            string
+	owner          string
+	hidden         bool
+	reviewed       bool
 }
 type streamStore struct {
 	sync.Mutex
@@ -56,9 +60,22 @@ func newStreamStore() *streamStore {
 }
 func (b *streamStore) prune(now time.Time) {
 	before := len(b.posts)
+	sources := map[string]bool{}
+	for _, p := range b.posts {
+		if p.Agent == "" && !p.hidden && now.Sub(time.UnixMilli(p.Created)) < lifetime {
+			sources[p.ID] = true
+		}
+	}
 	keep := b.posts[:0]
 	for _, p := range b.posts {
-		if now.Sub(time.UnixMilli(p.Created)) < lifetime {
+		valid := true
+		for _, id := range p.summaryIDs {
+			if !sources[id] {
+				valid = false
+				break
+			}
+		}
+		if valid && now.Sub(time.UnixMilli(p.Created)) < lifetime {
 			keep = append(keep, p)
 		}
 	}
@@ -87,7 +104,7 @@ func validStream(s string) bool {
 	return true
 }
 func validPost(p Post) bool {
-	if !validStream(p.Stream) || len([]rune(p.Text)) > 1200 || strings.TrimSpace(p.Text) == "" && p.Photo == "" {
+	if !validStream(p.Stream) || len([]rune(p.Text)) > maxText || strings.TrimSpace(p.Text) == "" && p.Photo == "" {
 		return false
 	}
 	if p.Photo != "" {
@@ -280,7 +297,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		for _, p := range b.posts {
-			if p.Stream == active && !p.hidden && (p.Created > last || p.ID == latest) {
+			if p.Stream == active && !p.hidden && (p.Created > last || p.ID == latest || p.Summary != "") {
 				p.Mine = who != "" && p.owner == who
 				if p.Photo != "" {
 					p.Photo = "/api/posts/" + p.ID + "/photo"
@@ -322,7 +339,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 	p = Post{Stream: strings.ToLower(p.Stream), Text: strings.TrimSpace(p.Text), Photo: p.Photo, owner: who, key: key}
 	if !validPost(p) {
-		http.Error(w, "Use text or a JPEG photo up to 400 KB.", 400)
+		http.Error(w, "Use up to 20,000 characters or a JPEG photo up to 400 KB.", 400)
 		return
 	}
 	if err := b.publish(r.Context(), p); err != nil {
@@ -409,6 +426,9 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Run(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
+	jobsDone := make(chan struct{})
+	go func() { defer close(jobsDone); s.runSummaries(ctx) }()
+	defer func() { <-jobsDone }()
 	for {
 		select {
 		case <-ctx.Done():

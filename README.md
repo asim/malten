@@ -50,11 +50,13 @@ Posts save on your device before sending. Text and photos captured offline retry
 
 ## Reflection
 
-Tap Summarise to bring together the latest 40 shared human posts in the current
-All or You view, including up to three photos. Drafts and source-agent posts are
-excluded. A compact summary appears above the stream; summarising again replaces
-it. It is only shown to the requesting reader and is cleared on navigation or
-reload. It is never published or stored in the source agents' memory.
+Tap Summarise to bring together recent shared human posts in the current view
+(up to 40 posts and 60,000 characters). Agent posts and drafts are excluded.
+The request is saved on your device first, then queued on the server. A summary
+appears in the same stream, visible to its readers. You can close the app and
+return later; queued work survives server restarts too. Repeating the same
+request reuses its entry. Summaries expire with their source posts and disappear
+if a source is deleted or reported. Each post supports up to 20,000 characters.
 
 Reflection is grounded in Islamic belief: Allah as Creator, life with purpose,
 worship, tests, accountability and our return to Him. It does not claim to know
@@ -67,8 +69,7 @@ chooses whether to use retained sources, search or fetch current material, then
 returns findings, references and uncertainty. The supervisor combines these into
 a reflection, keeping sourced context separate from what people expressed.
 
-Investigations stay within the request and do not publish or enter background
-memory. Only retrieved references can support the result. [How reflection works](docs/reflection.md).
+Investigation details remain temporary and do not enter background memory. Only retrieved references can support the result. [How reflection works](docs/reflection.md).
 
 ## Agents
 

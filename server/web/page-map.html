@@ -19,7 +19,7 @@
         <button class="capture-tool" id="camera" type="button" aria-label="Take a photo" title="Take a photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h3l1.4-2h7.2l1.4 2h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <button class="capture-tool" id="voice" type="button" aria-label="Capture with voice" title="Capture with voice"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v4M9 21h6"/></svg></button>
       </div>
-      <textarea id="thought" rows="1" maxlength="1200" placeholder="What's on your mind?" aria-label="What's on your mind?"></textarea>
+      <textarea id="thought" rows="1" placeholder="What's on your mind?" aria-label="What's on your mind?"></textarea>
       <button class="capture-submit" type="submit" aria-label="Capture">↑</button>
     </div>
     <div class="capture-preview" id="capture-preview" hidden><img id="photo-preview" alt="Photo ready to capture"><button id="photo-clear" type="button" aria-label="Remove photo">×</button></div>
@@ -30,7 +30,6 @@
   <p class="reflection-event" id="drafts-empty" hidden>No drafts.</p>
   <p class="reflection-event" id="status" role="status" aria-live="polite"></p>
   <p class="reflection-event" id="summary-status" role="status" aria-live="polite"></p>
-  <section class="stream-summary" id="summary" aria-label="Stream summary" hidden></section>
   <section class="stream" id="stream" aria-label="Thoughts and reflections"></section>
 
 </main>
@@ -43,7 +42,7 @@
   let posts=[],photo=null,view='all',sending=false,revision='',request=0;
   let outbox=[],ready=false,saving=false;
   let joined=Date.now()-60*60*1000;
-  let summary=null,summaryRequest=null;
+
   let token='',hidden=[];
   const homeStream='home',streamLabels={home:'Home',uk:'UK',us:'US',mena:'Middle East',nyc:'New York',sf:'San Francisco'};
   try {
@@ -91,7 +90,7 @@
       const text=document.createElement('div');text.className='reflection-text';appendText(text,p.text);article.appendChild(text);
       if(p.photo){const img=document.createElement('img');img.src=p.photo;img.alt='Shared photo';img.className='reflection-photo';img.loading='lazy';article.appendChild(img);}
       const event=document.createElement('div');event.className='reflection-event';
-      event.textContent=[when(p.created_at),p.agent==='Aslam · adhkar'?'Aslam':p.agent].filter(Boolean).join(' · ');
+      event.textContent=[when(p.created_at),p.summary_state?'Summary · AI':p.agent==='Aslam · adhkar'?'Aslam':p.agent].filter(Boolean).join(' · ');
       if(view==='drafts'){event.append(document.createTextNode(' · '));appendText(event,'#'+p.stream);}
       if(p.delivery){
         event.append(document.createTextNode(' · '+p.delivery));
@@ -115,47 +114,26 @@
       article.appendChild(event);$('stream').appendChild(article);
     });
   }
-  function summarySelection(){return posts.filter(p=>!p.agent&&!hidden.includes(p.id)&&(view!=='you'||p.mine)).slice(-40);}
-  function clearSummary(){
-    if(summaryRequest)summaryRequest.abort();summaryRequest=null;summary=null;
-    $('summary-status').textContent='';$('summarise').textContent='Summarise';
+  function summarySelection(){
+    const selected=posts.filter(p=>!p.agent&&!hidden.includes(p.id)&&(view!=='you'||p.mine)).slice(-40);
+    let size=selected.reduce((n,p)=>n+[...(p.text||'')].length,0);
+    while(size>60000&&selected.length>1)size-=[...(selected.shift().text||'')].length;
+    return selected;
   }
+  function clearSummary(){ $('summary-status').textContent=''; }
   function renderSummary(){
-    const selected=summarySelection();
-    if(summary&&(summary.stream!==activeStream()||summary.view!==view||Date.now()>=summary.expires||summary.ids.some(id=>!selected.some(p=>p.id===id))))summary=null;
-    $('summarise').hidden=view==='drafts'||selected.length===0;
-    $('summarise').disabled=!!summaryRequest;
-    const box=$('summary');box.replaceChildren();box.hidden=!summary||view==='drafts';
-    if(!summary)return;
-    const label=document.createElement('div');label.className='reflection-event';label.textContent='Summary · AI';label.title='Only shown to you; not posted to the stream';box.append(label);
-    const text=document.createElement('p');text.className='reflection-text';text.textContent=summary.summary;box.append(text);
-    for(const note of summary.context||[]){
-      const part=document.createElement('div');part.className='summary-context';
-      const text=document.createElement('p');text.className='reflection-text';text.textContent=note.text;part.append(text);
-      for(const source of note.sources||[]){
-        let url;try{url=new URL(source.url);}catch(_){continue;}
-        if(!['https:','http:'].includes(url.protocol)||url.username||url.password)continue;
-        const a=document.createElement('a');a.className='source-link';a.href=url.href;a.textContent=source.title;a.target='_blank';a.rel='noopener noreferrer nofollow';part.append(a,document.createTextNode(' '));
-      }
-      box.append(part);
-    }
+    $('summarise').hidden=view==='drafts'||summarySelection().length===0;
+    const pending=posts.some(p=>p.summary_state==='pending')||outbox.some(p=>p.kind==='summary'&&p.stream===activeStream()&&!p.failed);
+    $('summarise').disabled=pending;
+    $('summarise').textContent=pending?'Summarising…':'Summarise';
   }
   $('summarise').onclick=async()=>{
-    if(summaryRequest||view==='drafts')return;
+    if(view==='drafts'||$('summarise').disabled)return;
     const selected=summarySelection();if(!selected.length)return;
-    const active=activeStream(),selectedView=view,ids=selected.map(p=>p.id);
-    const controller=new AbortController();summaryRequest=controller;
-    const timer=setTimeout(()=>controller.abort(),115000);
-    $('summarise').textContent='Summarising…';$('summary-status').textContent='';renderSummary();
-    try{
-      const response=await fetch('/api/summary',{method:'POST',headers,signal:controller.signal,body:JSON.stringify({stream:active,ids})});
-      if(!response.ok)throw new Error((await response.text()).trim()||'Could not summarise just now.');
-      const result=await response.json();
-      if(controller!==summaryRequest||active!==activeStream()||selectedView!==view)return;
-      summary={...result,stream:active,view:selectedView,ids,expires:Math.min(...selected.map(p=>p.created_at))+24*60*60*1000};
-      $('summary-status').textContent=result.unavailable?.length?'Some sources were unavailable.':'';
-    }catch(err){if(controller===summaryRequest)$('summary-status').textContent=controller.signal.aborted?'Summary timed out. Try again.':err.message;}
-    finally{clearTimeout(timer);if(controller===summaryRequest){summaryRequest=null;$('summarise').textContent='Summarise';renderSummary();}}
+    if(!ready||!token){$('summary-status').textContent='Device storage is unavailable.';return;}
+    const p={id:crypto.randomUUID(),kind:'summary',stream:activeStream(),ids:selected.map(p=>p.id),text:'Summary requested',created_at:Date.now(),mine:true,delivery:'Saved on this device · waiting to send'};
+    try {await Malten.outbox.put(p);outbox.push(p);render();await sendQueued();}
+    catch(_){$('summary-status').textContent='Could not save the summary request.';}
   };
   async function refresh(){
     const n=++request,active=activeStream();
@@ -179,7 +157,7 @@
         p.delivery='Sending…';render();
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),35000);
         try {
-          const response=await fetch('/api/posts',{method:'POST',headers:{...headers,'Idempotency-Key':p.id},signal:controller.signal,body:JSON.stringify({stream:p.stream,text:p.text,photo:p.photo})});
+          const response=await fetch(p.kind==='summary'?'/api/summary':'/api/posts',{method:'POST',headers:{...headers,'Idempotency-Key':p.id},signal:controller.signal,body:JSON.stringify(p.kind==='summary'?{stream:p.stream,ids:p.ids}:{stream:p.stream,text:p.text,photo:p.photo})});
           if(response.status===429||response.status>=500)throw new Error('retry');
           if(!response.ok){
             p.failed=true;p.delivery='Not shared · '+(await response.text()).replace(/\. Your draft has been kept\./g,'').trim();
@@ -199,6 +177,7 @@
   form.onsubmit=async e=>{
     e.preventDefault();
     const text=input.value.trim();if((!text&&!photo)||saving)return;
+    if([...text].length>20000){$('status').textContent='Please keep each post within 20,000 characters. Your text has been kept.';return;}
     if(!token||!ready){$('status').textContent='Device storage is unavailable. Your draft stays here.';return;}
     saving=true;
     const draft=input.value,capturedPhoto=photo;
