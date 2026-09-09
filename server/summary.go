@@ -44,7 +44,8 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(input.IDs)
 	raw, _ := json.Marshal(input)
-	key := agent.Key(append([]byte(who), raw...))
+	// A new generation revision lets readers retry results made before the photo fix.
+	key := agent.Key(append([]byte("reflection-v2:"+who), raw...))
 	b := s.stream
 	// Deduplicate before rate limiting, including retries after a lost response.
 	b.Lock()

@@ -197,3 +197,75 @@ func TestInvestigationsRunConcurrentlyAndPartialFailureSurvives(t *testing.T) {
 	}
 	<-finished
 }
+
+// Exercise the actual multimodal wire format at both supervisor stages. Source
+// investigation is stubbed so the test isolates the handoff that lost photos.
+func TestPhotoOnlySummaryKeepsImagesAndContentVoice(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	old := http.DefaultClient
+	defer func() { http.DefaultClient = old }()
+	for _, grounded := range []bool{true, false} {
+		calls := 0
+		http.DefaultClient = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+			var req struct {
+				System   string
+				Messages []struct {
+					Content []struct {
+						Type, Text string
+						Source     struct{ Data string }
+					}
+				}
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			calls++
+			if !strings.Contains(req.System, voice) {
+				t.Fatal("missing content-directed voice")
+			}
+			images := []string{}
+			for _, block := range req.Messages[0].Content {
+				if block.Type == "image" {
+					images = append(images, block.Source.Data)
+				}
+			}
+			if strings.Join(images, ",") != "photo4,photo3,photo2" {
+				t.Fatalf("lost latest images: %v", images)
+			}
+			if strings.Contains(req.Messages[0].Content[0].Text, "data:image") {
+				t.Fatal("duplicated image bytes in text")
+			}
+			if calls == 1 {
+				return completed(plan{Summary: "Sunlight across water.", Questions: []question{{Agent: "reminder", Question: "What do primary sources say about water?", Captures: []string{"four"}}}}), nil
+			}
+			if !strings.Contains(req.Messages[0].Content[0].Text, "Sunlight across water.") {
+				t.Fatal("initial visual account lost")
+			}
+			return completed(map[string]any{"summary": "Sunlight across water.", "context": []any{}}), nil
+		})}
+		captures := []agent.Observation{}
+		for i, id := range []string{"one", "two", "three", "four"} {
+			captures = append(captures, agent.Observation{ID: id, Photo: fmt.Sprintf("data:image/jpeg;base64,photo%d", i+1)})
+		}
+		result, err := summarise(context.Background(), captures, func(context.Context, question) (agent.Finding, error) {
+			f := agent.Finding{}
+			if grounded {
+				f.Sources = []agent.Source{agent.NewSource("Fixture", "https://reminder.dev/quran/21#30", "Fixture text", false)}
+			}
+			return f, nil
+		})
+		if err != nil || result.Summary != "Sunlight across water." {
+			t.Fatalf("photo lost: %+v %v", result, err)
+		}
+		want := 1
+		if grounded {
+			want = 2
+		}
+		if calls != want {
+			t.Fatalf("calls: %d", calls)
+		}
+		if !strings.HasPrefix(captures[0].Photo, "data:image") {
+			t.Fatal("original capture modified")
+		}
+	}
+}
