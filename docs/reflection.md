@@ -13,7 +13,7 @@ in someone's life. Difficult feelings remain valid subjects for reflection.
 
 1. **Understand.** Summarise sends the IDs of up to 40 recent approved human posts (60,000 characters total)
    in the reader's current view. The server resolves them within that stream.
-   The supervisor reads the text and up to three photos, produces a faithful
+   The supervisor reads the text and up to three most recent photos, produces a faithful
    account of what was expressed, and identifies focused questions. Each question
    must refer to captures that prompted it. The stream address is omitted from
    model input.
@@ -22,7 +22,9 @@ in someone's life. Difficult feelings remain valid subjects for reflection.
    chooses its own retrieval path and returns a short finding, supporting source
    references and uncertainty. A question about primary Islamic sources always
    goes to Reminder. The other agents are included only when relevant.
-3. **Reflect.** The supervisor receives the findings and their supporting texts.
+3. **Reflect.** The supervisor receives the findings, their supporting texts, the initial account
+   and the same photos. Photo-only captures are described from visible details;
+   an absent caption does not make them empty.
    It distinguishes original evidence from the investigators' interpretations,
    then produces a compact summary with up to two separately attributed
    reflections. Only source IDs actually retrieved and cited by investigators
@@ -78,5 +80,8 @@ never enter generation. On-demand findings still do not enter background memory.
 - `agent/research.go`: the shared investigation loop and Islamic foundation.
 - `agent/{reminder,aslam,news,nature}/research.go`: focused objectives and tools.
 - `server/summary.go`: stream isolation, request limits and expiry checks.
+
+Summaries speak directly about ideas and visible scenes, without narrating what
+"the user" supplied or addressing the reader.
 
 The interface remains a stream with one Summarise action. The final result goes into the stream; internal investigation steps do not.
