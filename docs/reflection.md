@@ -82,7 +82,7 @@ never enter generation. On-demand findings still do not enter background memory.
 
 - `agent/reflection/reflection.go`: routing and synthesis, with validated plans.
 - `agent/research.go`: the shared investigation loop and Islamic foundation.
-- `agent/{reminder,aslam,news,nature}/research.go`: focused objectives and tools.
+- `agent/{reminder,aslam,micro,nature}/research.go`: focused objectives and tools.
 - `server/summary.go`: stream isolation, request limits and expiry checks.
 
 Summaries speak directly about ideas and visible scenes, without narrating what

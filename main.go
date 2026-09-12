@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/asim/malten/agent/aslam"
+	"github.com/asim/malten/agent/micro"
 	"github.com/asim/malten/agent/nature"
-	"github.com/asim/malten/agent/news"
 	"github.com/asim/malten/agent/reminder"
 	"github.com/asim/malten/server"
 )
@@ -41,7 +41,7 @@ func main() {
 	srv.UseAgentContext(memory)
 	srv.AgentStatus = func() any { return memory.Status() }
 	start(srv.Run)
-	for _, worker := range []agent.Agent{reminder.New(), aslam.New(), news.New(), nature.New()} {
+	for _, worker := range []agent.Agent{reminder.New(), aslam.New(), micro.New(), nature.New()} {
 		srv.AgentStreams = append(srv.AgentStreams, agent.Stream{Tag: worker.Name})
 		observe := func() []agent.Observation {
 			observations := srv.AgentObservations()
