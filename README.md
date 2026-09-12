@@ -48,6 +48,12 @@ still work. Tap Home or Malten to return.
 
 Posts save on your device before sending. Text and photos captured offline retry when connected, or when you reopen the app. Unsent captures older than 24 hours stay on your device for dismissal instead of posting late. Voice transcription depends on browser support and may require a connection.
 
+The timeline you have seen is remembered on this device, including photos that
+finish downloading. Local copies can remain after public posts expire. They are
+never reposted automatically. Up to 100 entries per stream and 500 total are kept,
+within 50 MB; the oldest leave first. Forget removes a local memory. Browser
+storage can be cleared or evicted, so this is not a permanent backup.
+
 ## Reflection
 
 Tap Summarise to bring together recent shared human posts in the current view
@@ -128,3 +134,10 @@ node tests/streams.cjs
 
 [Deployment](deploy/DEPLOY.md) · [Direction](STRATEGY.md) ·
 [AGPL-3.0 license](LICENSE)
+
+## Micro
+
+Set `MU_API_KEY` to use Micro's public news search, place lookup and weather tools
+through MCP. The key stays on the server. Religious texts still come directly
+from Reminder and Aslam; Sonnet handles photos and reflection. See
+[the integration notes](docs/micro.md) for the current HTTP agent limitations.

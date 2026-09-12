@@ -280,6 +280,21 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			}
 			last = parsed
 		}
+		known := map[string]bool{}
+		if value := r.URL.Query().Get("known"); value != "" {
+			ids := strings.Split(value, ",")
+			if len(ids) > 100 {
+				http.Error(w, "too many known posts", 400)
+				return
+			}
+			for _, id := range ids {
+				if len(id) > 64 {
+					http.Error(w, "invalid known post", 400)
+					return
+				}
+				known[id] = true
+			}
+		}
 		who := owner(r)
 		b.Lock()
 		b.prune(time.Now())
@@ -297,7 +312,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		for _, p := range b.posts {
-			if p.Stream == active && !p.hidden && (p.Created > last || p.ID == latest || p.Summary != "") {
+			if p.Stream == active && !p.hidden && (p.Created > last || p.ID == latest || p.Summary != "" || known[p.ID]) {
 				p.Mine = who != "" && p.owner == who
 				if p.Photo != "" {
 					p.Photo = "/api/posts/" + p.ID + "/photo"

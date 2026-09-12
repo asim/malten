@@ -17,7 +17,16 @@ func New() agent.Agent {
 	}
 }
 func Read(ctx context.Context, _ time.Time) (json.RawMessage, error) {
-	raw, err := agent.ReadJSON(ctx, "POST", "https://micro.mu/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"news_headlines","arguments":{}}}`)
+	var raw json.RawMessage
+	var err error
+	if agent.MuAvailable() {
+		var text string
+		text, err = agent.MuCall(ctx, "news_list", map[string]any{"limit": 20})
+		raw, _ = json.Marshal(map[string]any{"result": map[string]any{"content": []any{map[string]string{"type": "text", "text": text}}}})
+	} else {
+		raw, err = agent.ReadJSON(ctx, "POST", "https://micro.mu/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"news_headlines","arguments":{}}}`)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -44,5 +53,5 @@ func Read(ctx context.Context, _ time.Time) (json.RawMessage, error) {
 	return json.Marshal(struct {
 		Source string
 		Data   json.RawMessage
-	}{"https://micro.mu/mcp — news_headlines", raw})
+	}{"https://micro.mu/mcp — news", raw})
 }
