@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/asim/malten/agent"
+	"github.com/asim/malten/agent/micro"
 	"github.com/asim/malten/agent/nature"
-	"github.com/asim/malten/agent/news"
 	"io"
 	"net/http"
 	"strings"
@@ -49,14 +49,14 @@ func TestMuScopedSources(t *testing.T) {
 	if _, err := agent.MuCall(context.Background(), "mail_inbox", nil); err == nil || calls != 0 {
 		t.Fatal("private tool reached Mu")
 	}
-	raw, err := news.Read(context.Background(), time.Now())
+	raw, err := micro.Read(context.Background(), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(news.Context(agent.Record{Data: raw, At: time.Now()})) != 1 {
+	if len(micro.Context(agent.Record{Data: raw, At: time.Now()})) != 1 {
 		t.Fatal("news_list source lost")
 	}
-	sources, err := news.Researcher().Search(context.Background(), "nature")
+	sources, err := micro.Researcher().Search(context.Background(), "nature")
 	if err != nil || len(sources) != 1 || !strings.Contains(sources[0].Text, "2026-09-12") {
 		t.Fatal("dated news search lost", err)
 	}

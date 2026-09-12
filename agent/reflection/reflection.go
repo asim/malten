@@ -11,8 +11,8 @@ import (
 
 	"github.com/asim/malten/agent"
 	"github.com/asim/malten/agent/aslam"
+	"github.com/asim/malten/agent/micro"
 	"github.com/asim/malten/agent/nature"
-	"github.com/asim/malten/agent/news"
 	"github.com/asim/malten/agent/reminder"
 )
 
@@ -53,7 +53,7 @@ type plan struct {
 // No human captures, questions or findings enter background source memory.
 func Summarise(ctx context.Context, captures []agent.Observation, memory *agent.Memory) (Result, error) {
 	investigators := map[string]agent.Researcher{}
-	for _, r := range []agent.Researcher{reminder.Researcher(), aslam.Researcher(), news.Researcher(), nature.Researcher()} {
+	for _, r := range []agent.Researcher{reminder.Researcher(), aslam.Researcher(), micro.Researcher(), nature.Researcher()} {
 		investigators[r.Name] = r
 	}
 	return summarise(ctx, captures, func(ctx context.Context, q question) (agent.Finding, error) {

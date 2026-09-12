@@ -1,5 +1,5 @@
-// Package news maintains a current, attributed view of headline changes.
-package news
+// Package micro maintains a current, attributed view of headline changes.
+package micro
 
 import (
 	"context"

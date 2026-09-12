@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"github.com/asim/malten/agent"
 	"github.com/asim/malten/agent/aslam"
+	"github.com/asim/malten/agent/micro"
 	"github.com/asim/malten/agent/nature"
-	"github.com/asim/malten/agent/news"
 	"github.com/asim/malten/agent/reminder"
 	"io"
 	"net/http"
@@ -29,7 +29,7 @@ func TestSourcesPreserveDocuments(t *testing.T) {
 	http.DefaultClient = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(fixtures[r.URL.Host]))}, nil
 	})}
-	for _, worker := range []agent.Agent{reminder.New(), aslam.New(), news.New()} {
+	for _, worker := range []agent.Agent{reminder.New(), aslam.New(), micro.New()} {
 		raw, err := worker.Read(context.Background(), time.Now())
 		if err != nil {
 			t.Fatalf("%s: %v", worker.Name, err)
@@ -57,7 +57,7 @@ func TestSourcesPreserveDocuments(t *testing.T) {
 		}
 	}
 	fixtures["micro.mu"] = `{"result":{"isError":true}}`
-	if _, err := news.Read(context.Background(), time.Now()); err == nil {
+	if _, err := micro.Read(context.Background(), time.Now()); err == nil {
 		t.Fatal("accepted news error")
 	}
 	fixtures["reminder.dev"] = `{"message":"only a reflection"}`
