@@ -24,7 +24,10 @@ func Context(record agent.Record) []agent.Source {
 			continue
 		}
 		var data struct {
-			Items []struct{ Title, URL, Category string }
+			Items []struct {
+				Title, URL, Category string
+				PostedAt             string `json:"posted_at"`
+			}
 		}
 		if json.Unmarshal([]byte(c.Text), &data) != nil {
 			continue
@@ -34,7 +37,7 @@ func Context(record agent.Record) []agent.Source {
 			if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || item.Title == "" || len(item.Title) > 1000 {
 				continue
 			}
-			out = append(out, agent.NewSource(item.Title, u.String(), "Headline only: "+item.Title+". Retrieved "+record.At.UTC().Format(time.RFC3339), true))
+			out = append(out, agent.NewSource(item.Title, u.String(), "Headline only: "+item.Title+". Publication date (if supplied): "+item.PostedAt+". Retrieved "+record.At.UTC().Format(time.RFC3339), true))
 			if len(out) == 8 {
 				return out
 			}

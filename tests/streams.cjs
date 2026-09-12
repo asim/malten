@@ -14,13 +14,16 @@ const pending=new Map();
 const outbox={list:async()=>structuredClone([...pending.values()]),put:async p=>pending.set(p.id,structuredClone(p)),remove:async id=>pending.delete(id)};
 const shared=[{id:'before-arrival',stream:'x',text:'old',created_at:Date.now()-2*60*60*1000}];
 const storage=new Map();
-const context={document,window,navigator:{},URL,Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,clearTimeout,AbortController,Malten:{getNetwork:()=>data,outbox},fetch:async(url,opts)=>{
+const memoryWindow={};vm.runInNewContext(readFileSync('server/web/app.js','utf8'),{window:memoryWindow,TextEncoder});
+let memories=[];
+const memory={list:async()=>structuredClone(memories),save:async rows=>{memories=structuredClone(rows)}};
+const context={document,window,navigator:{},URL,Intl,Date,Uint8Array,crypto:webcrypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setInterval(){},setTimeout,clearTimeout,AbortController,Malten:{getNetwork:()=>data,outbox,memory,timeline:memoryWindow.Malten.timeline},fetch:async(url,opts)=>{
  lastURL=url;
  if(!opts.method)streamTimezone=opts.headers['X-Timezone'];
  if(offline)throw new Error('offline');
  if(url==='/api/summary'){summarySent=JSON.parse(opts.body);if(summaryHold)await summaryHold;return {ok:!summaryFail,status:summaryFail?503:200,text:async()=> 'Try again shortly.',json:async()=>({summary_state:'pending'})};}
  if(opts.method==='POST'){sent=JSON.parse(opts.body);if(unavailable)return {ok:false,status:503};if(hold)await hold;if(!fail)shared.push({id:String(shared.length),...sent,created_at:Date.now(),mine:true});return {ok:!fail,status:fail?422:201,text:async()=> 'capture not suitable for sharing'};}
- return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]) && p.created_at>Number(new URL(url,'https://malten.test').searchParams.get('last')))};
+ return {ok:true,json:async()=>shared.filter(p=>p.stream===decodeURIComponent(url.split('=')[1].split('&')[0]) && (p.created_at>Number(new URL(url,'https://malten.test').searchParams.get('last'))||new URL(url,'https://malten.test').searchParams.get('known')?.split(',').includes(p.id)))};
 }};
 const source=readFileSync('server/web/page-map.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 // Exercise formatting without interpreting submitted HTML or unsafe link schemes.
@@ -86,7 +89,7 @@ assert(!credentials.children.some(c=>c.href),'credential URLs are not linked');
  const queued=[...pending.values()].find(p=>p.text==='a moment without signal');
  queued.photo='data:image/jpeg;base64,saved-photo';await outbox.put(queued);
  vm.runInNewContext(source,context);await new Promise(setImmediate);
- assert.equal(elements.get('stream').children.length,2,'saved outbox returns after reload while offline');
+ assert.equal(elements.get('stream').children.length,4,'seen timeline and saved outbox return after reload while offline');
  window.location.hash='#elsewhere';listeners.hashchange();
  elements.get('drafts').onclick();
  assert.equal(elements.get('stream').children.length,2,'Drafts includes pending and rejected captures across streams');
@@ -183,3 +186,16 @@ assert(!credentials.children.some(c=>c.href),'credential URLs are not linked');
 
  console.log('Queued posting, moderation outcomes, stream isolation and private migration: passed');
 })().catch(err=>{console.error(err);process.exitCode=1;});
+
+// Seen content survives public expiry, but missing live posts are withdrawn.
+const now=Date.now(),timeline=memoryWindow.Malten.timeline;
+const remembered=timeline.merge([
+ {id:'expired',stream:'park',created_at:now-90000000,text:'A quiet walk',photo_data:'data:image/jpeg;base64,kept'},
+ {id:'removed',stream:'park',created_at:now-10000,text:'removed'},
+ {id:'photo',stream:'park',created_at:now-5000,photo_data:'data:image/jpeg;base64,kept'}
+],[{id:'photo',stream:'park',created_at:now-5000,text:'updated'}],now);
+assert.equal(remembered.length,2);
+assert(remembered.find(p=>p.id==='expired').local_only);
+assert.equal(remembered.find(p=>p.id==='photo').photo_data,'data:image/jpeg;base64,kept');
+assert(!remembered.some(p=>p.id==='removed'));
+assert.equal(timeline.bound(Array.from({length:120},(_,i)=>({id:String(i),stream:'park',created_at:i}))).length,100);

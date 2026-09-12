@@ -40,7 +40,7 @@
 (function () {
   const $=id=>document.getElementById(id), input=$('thought'), form=$('composer');
   let posts=[],photo=null,view='all',sending=false,revision='',request=0;
-  let outbox=[],ready=false,saving=false;
+  let outbox=[],ready=false,loaded=false,saving=false,memories=[],photosSaving=false;
   let joined=Date.now()-60*60*1000;
 
   let token='',hidden=[];
@@ -87,12 +87,16 @@
     const entries=view==='drafts'?outbox:[...posts.filter(p=>!hidden.includes(p.id)&&(view!=='you'||p.mine)),...outbox.filter(p=>p.stream===active)];
     [...entries].sort((a,b)=>b.created_at-a.created_at).forEach(p=>{
       const article=document.createElement('article');article.className='reflection';
-      const text=document.createElement('div');text.className='reflection-text';appendText(text,p.text);article.appendChild(text);
-      if(p.photo){const img=document.createElement('img');img.src=p.photo;img.alt='Shared photo';img.className='reflection-photo';img.loading='lazy';article.appendChild(img);}
+      const text=document.createElement('div');text.className='reflection-text';appendText(text,p.local_only&&p.summary_state==='pending'?'Summary requested.':p.text);article.appendChild(text);
+      if(p.photo_data||p.photo&&!p.local_only){const img=document.createElement('img');img.src=p.photo_data||p.photo;img.alt='Shared photo';img.className='reflection-photo';img.loading='lazy';article.appendChild(img);}
       const event=document.createElement('div');event.className='reflection-event';
       event.textContent=[when(p.created_at),p.summary_state?'Summary · AI':p.agent==='Aslam · adhkar'?'Aslam':p.agent].filter(Boolean).join(' · ');
       if(view==='drafts'){event.append(document.createTextNode(' · '));appendText(event,'#'+p.stream);}
-      if(p.delivery){
+      if(p.local_only){
+        event.append(document.createTextNode(' · On this device'));
+        const forget=document.createElement('button');forget.type='button';forget.className='post-action';forget.textContent='Forget';
+        forget.onclick=async()=>{try{await forgetMemory(p.id,true);posts=posts.filter(x=>x.id!==p.id);render();}catch(_){$('status').textContent='Could not forget this memory.';}};event.appendChild(forget);
+      }else if(p.delivery){
         event.append(document.createTextNode(' · '+p.delivery));
         if(p.failed){
           const dismiss=document.createElement('button');dismiss.type='button';dismiss.className='post-action';dismiss.textContent='Dismiss';
@@ -101,11 +105,11 @@
       }else{
         const action=document.createElement('button');action.type='button';action.className='post-action';action.textContent=p.mine?'Delete':'Report';
         action.onclick=async()=>{
-          if(!p.mine){hidden=[...hidden.slice(-499),p.id];try{localStorage.setItem('malten_hidden',JSON.stringify(hidden));}catch(_){}render();}
+          if(!p.mine){await forgetMemory(p.id);hidden=[...hidden.slice(-499),p.id];try{localStorage.setItem('malten_hidden',JSON.stringify(hidden));}catch(_){}render();}
           action.disabled=true;
           try {const response=await fetch('/api/posts/'+p.id+'/'+(p.mine?'delete':'report'),{method:'POST',headers});
             if(!response.ok)throw new Error(await response.text());
-            if(p.mine)posts=posts.filter(x=>x.id!==p.id);
+            if(p.mine){await forgetMemory(p.id);posts=posts.filter(x=>x.id!==p.id);}
             $('status').textContent=p.mine?'Deleted.':'Hidden for you and reported for review.';render();
           }catch(err){$('status').textContent=(p.mine?'':'Hidden for you. Report was not sent. ')+err.message;action.disabled=false;}
         };
@@ -115,7 +119,7 @@
     });
   }
   function summarySelection(){
-    const selected=posts.filter(p=>!p.agent&&!hidden.includes(p.id)&&(view!=='you'||p.mine)).slice(-40);
+    const selected=posts.filter(p=>!p.local_only&&!p.agent&&!hidden.includes(p.id)&&(view!=='you'||p.mine)).slice(-40);
     let size=selected.reduce((n,p)=>n+[...(p.text||'')].length,0);
     while(size>60000&&selected.length>1)size-=[...(selected.shift().text||'')].length;
     return selected;
@@ -123,7 +127,7 @@
   function clearSummary(){ $('summary-status').textContent=''; }
   function renderSummary(){
     $('summarise').hidden=view==='drafts'||summarySelection().length===0;
-    const pending=posts.some(p=>p.summary_state==='pending')||outbox.some(p=>p.kind==='summary'&&p.stream===activeStream()&&!p.failed);
+    const pending=posts.some(p=>!p.local_only&&p.summary_state==='pending')||outbox.some(p=>p.kind==='summary'&&p.stream===activeStream()&&!p.failed);
     $('summarise').disabled=pending;
     $('summarise').textContent=pending?'Summarising…':'Summarise';
   }
@@ -135,12 +139,40 @@
     try {await Malten.outbox.put(p);outbox.push(p);render();await sendQueued();}
     catch(_){$('summary-status').textContent='Could not save the summary request.';}
   };
+  function localPosts(active){return memories.filter(p=>p.stream===active&&!hidden.includes(p.id)).map(p=>({...p,local_only:true}));}
+  async function saveMemory(active,entries){
+    memories=Malten.timeline.bound([...memories.filter(p=>p.stream!==active),...entries]);
+    await Malten.memory.save(memories);
+  }
+  async function forgetMemory(id,hide=false){if(hide){hidden=[...hidden.slice(-499),id];localStorage.setItem('malten_hidden',JSON.stringify(hidden));}memories=memories.filter(p=>p.id!==id);await Malten.memory.save(memories);}
+  async function cachePhotos(){
+    if(photosSaving)return;photosSaving=true;
+    try{
+      for(const p of memories.filter(p=>p.photo?.startsWith('/api/posts/')&&!p.photo_data&&!p.local_only).slice(-3)){
+        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+        try{
+          const response=await fetch(p.photo,{headers,signal:controller.signal});if(!response.ok)continue;
+          const blob=await response.blob();if(blob.size>550000||blob.type!=='image/jpeg')continue;
+          const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});
+          const current=memories.find(x=>x.id===p.id);if(!current)continue;
+          current.photo_data=data;await Malten.memory.save(memories);
+          const shown=posts.find(x=>x.id===p.id);if(shown){shown.photo_data=data;render();}
+        }catch(_){}finally{clearTimeout(timer);}
+      }
+    }finally{photosSaving=false;}
+  }
   async function refresh(){
-    const n=++request,active=activeStream();
-    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined,{headers});
+    if(!loaded)return;
+    const n=++request,active=activeStream(),cached=memories.filter(p=>p.stream===active);
+    const known=cached.filter(p=>Date.now()-p.created_at<86400000).map(p=>p.id).join(',');
+    try {const response=await fetch('/api/posts?stream='+encodeURIComponent(active)+'&last='+joined+'&known='+encodeURIComponent(known),{headers});
       if(!response.ok)throw new Error('Could not load this stream.');
-      const data=await response.json();if(n!==request||active!==activeStream())return;
-      const next=JSON.stringify(data);if(next!==revision){posts=data;revision=next;render();}
+      const data=(await response.json()).filter(p=>!hidden.includes(p.id));if(n!==request||active!==activeStream())return;
+      const next=JSON.stringify(data);if(next!==revision){
+        posts=Malten.timeline.merge(cached,data);revision=next;render();
+        try{await saveMemory(active,posts);}catch(_){$('status').textContent='Could not save this timeline on the device.';}
+      }
+      cachePhotos();
     }catch(_){if(n===request)$('status').textContent='Offline · posts will send when connected.';}
   }
   function clearPhoto(){photo=null;$('photo-input').value='';$('photo-preview').removeAttribute('src');$('capture-preview').hidden=true;}
@@ -219,7 +251,7 @@
     form.addEventListener('submit',()=>recognition.stop());
   }else{$('voice').disabled=true;$('voice').title='Voice transcription is unavailable in this browser';}
   for(const name of ['all','you','drafts'])$(name).onclick=()=>{if(view!==name)clearSummary();view=name;render();};
-  function changeStream(){clearSummary();view='all';joined=Date.now()-60*60*1000;posts=[];revision='';render();refresh();}
+  function changeStream(){clearSummary();view='all';joined=Date.now()-60*60*1000;posts=localPosts(activeStream());revision='';render();refresh();}
   $('home').onclick=e=>{e.preventDefault();window.history.replaceState(null,'','/');changeStream();};
   $('home-link').onclick=$('home').onclick;
   $('new-stream').onclick=()=>{
@@ -251,15 +283,18 @@
     try{await navigator.clipboard.writeText(link);$('status').textContent='Link copied.';}catch(_){$('status').textContent=link;}
   };
   async function restore(){
+    try{memories=Malten.timeline.bound(await Malten.memory.list());posts=localPosts(activeStream());}
+    catch(_){$('status').textContent='Could not restore this device’s timeline.';}
     try {
       outbox=(await Malten.outbox.list()).sort((a,b)=>a.created_at-b.created_at);
       for(const p of outbox)if(!p.failed)p.delivery='Saved on this device · waiting to send';
-      ready=true;render();sendQueued();
+      ready=true;
     }catch(_){$('status').textContent='Device storage is unavailable. Your draft stays here.';}
+    loaded=true;render();refresh();sendQueued();
   }
   window.addEventListener('online',()=>{refresh();sendQueued();});
   window.addEventListener('pageshow',()=>{if(ready)sendQueued();});
-  render();refresh();restore();
+  render();restore();
   setInterval(()=>{if(!document.hidden){renderSummary();refresh();sendQueued();}},10000);
 })();
 </script>

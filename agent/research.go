@@ -16,9 +16,17 @@ const Foundation = `Malten is grounded in Islamic truth and fitrah: Allah is the
 // It shares source memory with the background loop, never human conversations.
 type Researcher struct {
 	Name, Objective string
+	Lookups         []Lookup
 	Read            func(context.Context, time.Time) (json.RawMessage, error)
 	Sources         func(Record) []Source
 	Search          func(context.Context, string) ([]Source, error)
+}
+
+// Lookup returns attributable evidence through a source-specific read-only tool.
+type Lookup struct {
+	Name, Description string
+	InputSchema       json.RawMessage
+	Read              func(context.Context, json.RawMessage) ([]Source, error)
 }
 
 type Finding struct {
@@ -89,6 +97,12 @@ func (r Researcher) Investigate(ctx context.Context, question string, memory *Me
 				return result(nil, err)
 			}
 			return result(r.Sources(Record{Kind: "source", At: now, Data: raw}), nil)
+		}})
+	}
+	for _, lookup := range r.Lookups {
+		tools = append(tools, Tool{Name: lookup.Name, Description: lookup.Description, InputSchema: lookup.InputSchema, Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+			sources, err := lookup.Read(ctx, raw)
+			return result(sources, err)
 		}})
 	}
 	var at *time.Time

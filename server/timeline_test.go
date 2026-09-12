@@ -79,3 +79,20 @@ func TestAgentKeySurvivesRestartBeforeModeration(t *testing.T) {
 		t.Fatal("internal key exposed publicly")
 	}
 }
+
+func TestKnownPostsKeepOnlySeenLiveContext(t *testing.T) {
+	s := New()
+	now := time.Now().UnixMilli()
+	s.stream.posts = []Post{
+		{ID: "seen", Stream: "park", Text: "remembered", Created: now - 7200000},
+		{ID: "unseen", Stream: "park", Text: "not seen", Created: now - 7200000},
+		{ID: "elsewhere", Stream: "other", Text: "other stream", Created: now - 7200000},
+		{ID: "hidden", Stream: "park", Text: "reported", Created: now - 7200000, hidden: true},
+	}
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/api/posts?stream=park&known=seen,elsewhere,hidden", nil))
+	var posts []Post
+	if json.Unmarshal(w.Body.Bytes(), &posts) != nil || len(posts) != 1 || posts[0].ID != "seen" {
+		t.Fatal("known IDs widened visibility", w.Body)
+	}
+}

@@ -34,8 +34,8 @@ in someone's life. Difficult feelings remain valid subjects for reflection.
 | --- | --- | --- |
 | Reminder | What do the Quran, hadith and names of Allah establish here? | Retained primary texts, indexed search, latest source fetch |
 | Aslam | What further Islamic explanation helps understanding? | Retained knowledge, indexed search, latest source fetch |
-| News | What do the available headlines establish about this event? | Retained headlines, fresh headlines |
-| Nature | What are the relevant weather and daylight conditions? | Retained conditions, fresh conditions for supported cities |
+| News | What do the available headlines establish about this event? | Retained headlines, fresh headlines, Mu news search when configured |
+| Nature | What are the relevant weather and daylight conditions? | Retained conditions, fresh conditions for supported cities, Mu place lookup and forecast when configured |
 
 Reminder search disables the API's generated answer and retrieves texts directly.
 Aslam search supplies attributed excerpts, which may not settle a question.
@@ -44,6 +44,10 @@ location or extrapolate beyond supported places and times. An agent may report
 that its sources do not answer the question.
 
 ## Context and boundaries
+
+Mu integration and managed-agent constraints are documented in [micro.md](micro.md).
+Only live server captures enter summary jobs; locally remembered expired posts are
+never uploaded automatically for generation.
 
 The existing source agents still run every ten minutes and retain 24 hours of
 source data. On-demand investigations can read their source records, but not
