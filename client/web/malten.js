@@ -410,7 +410,7 @@ function postMessage(command) {
     $.post(command ? commandUrl : messageUrl, payload).done(function() {
         text.value = ''; streamComposer.setImage(''); words.textContent = ''; chars(); loadMessages();
     }).fail(function(error) { words.textContent = error.responseText || 'Could not send. Your draft is still here.'; })
-    .always(function() { sending = false; streamComposer.setBusy(false); text.disabled = false; document.getElementById('send').disabled = false; });
+    .always(function() { sending = false; streamComposer.setBusy(false); text.disabled = false; document.getElementById('send').disabled = false; text.focus({preventScroll:true}); });
     return false;
 }
 

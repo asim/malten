@@ -114,7 +114,7 @@
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       await render().catch(() => status('Saved on this device. Reopen the app to refresh the timeline.'));
     } catch (_) { status('Could not save. Your text is still in the box. Export existing thoughts if storage is full.', true); }
-    finally { busy = false; composer.setBusy(false); $('save').disabled = false; $('thought').disabled = false; }
+    finally { busy = false; composer.setBusy(false); $('save').disabled = false; $('thought').disabled = false; $('thought').focus({preventScroll:true}); }
   };
   $('search').oninput = () => render().catch(() => status('Could not read your thoughts. Try reopening the app.', true));
   $('export').onclick = async () => {
@@ -164,6 +164,7 @@
       }
     } catch (_) { /* Entries remain usable when browser draft storage is unavailable. */ }
     persistDraft(); resize(); await render();
+    if (document.activeElement === document.body) $('thought').focus({preventScroll:true});
   } catch (_) { status('This browser could not open local storage. Your thoughts have not been sent anywhere. Try a regular browser window with site storage enabled.', true); $('timeline').textContent = ''; }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
   window.addEventListener('pageshow', () => { if (db) render().catch(() => {}); });

@@ -25,7 +25,7 @@
     <section class="capture" aria-label="Write to a stream">
       <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
         <label class="sr-only" for="prompt">What’s on your mind?</label>
-        <textarea id="prompt" name="prompt" rows="2" placeholder="Speak your mind" maxlength="1024" autocomplete="off"></textarea>
+        <textarea autofocus id="prompt" name="prompt" rows="2" placeholder="Speak your mind" maxlength="1024" autocomplete="off"></textarea>
         <input id="message" name="message" type="hidden">
         <input id="stream" name="stream" type="hidden">
         <div class="composer-footer"><span class="hint sr-only"><span id="chars">1024</span> characters left</span><div><button id="send" class="primary" type="submit">Send</button></div></div>
