@@ -19,7 +19,11 @@ func GetCommandsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid request", 400)
+		return
+	}
 
 	stream := r.Form.Get("stream")
 	command := r.Form.Get("prompt")
@@ -39,8 +43,12 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		command = command[:MaxMessageSize]
 	}
 
+	msg := NewCommand(command, stream)
+	if !moderatePost(w, r, msg) {
+		return
+	}
 	select {
-	case Default.Events <- NewCommand(command, stream):
+	case Default.Events <- msg:
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating message", 504)
 	}
@@ -182,11 +190,20 @@ func NewStreamHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func PostHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	r.Body = http.MaxBytesReader(w, r.Body, 3<<20)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid or oversized request", 413)
+		return
+	}
 	message := r.Form.Get("message")
+	photo := r.Form.Get("image")
+	if err := validatePhoto(photo); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	stream := r.Form.Get("stream")
 
-	if len(message) == 0 {
+	if len(message) == 0 && photo == "" {
 		http.Error(w, "Message cannot be blank", 400)
 		return
 	}
@@ -201,8 +218,13 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 		message = message[:MaxMessageSize]
 	}
 
+	msg := NewMessage(message, stream)
+	msg.Image = photo
+	if !moderatePost(w, r, msg) {
+		return
+	}
 	select {
-	case Default.Events <- NewMessage(message, stream):
+	case Default.Events <- msg:
 	case <-time.After(time.Second):
 		http.Error(w, "Timed out creating message", 504)
 	}

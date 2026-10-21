@@ -1,16 +1,13 @@
 /* The personal timeline never uses the stream APIs. */
 (async function () {
   'use strict';
-  if (location.hash) {
-    location.replace('/streams.html' + location.hash);
-    return;
-  }
   const $ = id => document.getElementById(id);
   const draftKey = 'malten-draft-v1';
   const handoffKey = 'malten-stream-draft-v1';
+  let composer;
   let db, editing = null, sharing = null, renderVersion = 0, busy = false;
   const status = (message, error = false) => { $('status').textContent = message; $('status').className = error ? 'error' : ''; };
-  const resize = () => { $('thought').style.height = 'auto'; $('thought').style.height = Math.max(125, $('thought').scrollHeight) + 'px'; };
+  const resize = () => { $('thought').style.height = 'auto'; $('thought').style.height = Math.max(64, $('thought').scrollHeight) + 'px'; };
   function persistDraft() {
     try {
       localStorage.setItem(draftKey, JSON.stringify({text: $('thought').value, editing}));
@@ -19,16 +16,17 @@
   }
   function resetComposer() {
     editing = null;
+    composer.setImage('');
     $('thought').value = '';
     $('save').textContent = 'Save';
     $('composer-label').textContent = 'What’s on your mind?';
     $('cancel-edit').hidden = true;
     persistDraft(); resize();
   }
-  function transaction(mode, work) {
+  function transaction(mode, work, name = 'entries') {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction('entries', mode);
-      const store = tx.objectStore('entries');
+      const tx = db.transaction(name, mode);
+      const store = tx.objectStore(name);
       let request;
       tx.oncomplete = () => resolve(request && request.result);
       tx.onerror = () => reject(tx.error || new Error('Storage failed'));
@@ -68,6 +66,7 @@
         const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
         button.onclick = () => { if (!busy) Promise.resolve(action()).catch(() => status('That did not complete. Your thought is still here.', true)); }; actions.append(button);
       }
+      if (validPhoto(entry.image)) { const img = document.createElement('img'); img.src = entry.image; img.alt = 'Photo'; img.className = 'attached-photo'; article.append(img); }
       meta.append(time, actions); article.append(text, meta); fragment.append(article);
     }
     if (!filtered.length) {
@@ -76,8 +75,8 @@
     $('timeline').replaceChildren(fragment);
   }
   function edit(entry) {
-    if ($('thought').value && !confirm('Replace the current draft with this thought?')) return;
-    editing = entry.id; $('thought').value = entry.text; $('save').textContent = 'Save changes'; $('composer-label').textContent = 'Edit your thought'; $('cancel-edit').hidden = false;
+    if (($('thought').value || composer.image) && !confirm('Replace the current draft with this thought?')) return;
+    composer.setImage(entry.image); editing = entry.id; $('thought').value = entry.text; $('save').textContent = 'Save changes'; $('composer-label').textContent = 'Edit your thought'; $('cancel-edit').hidden = false;
     persistDraft(); resize(); $('thought').focus(); $('capture').scrollIntoView({block:'center'});
   }
   async function remove(entry) {
@@ -95,33 +94,33 @@
     if (new TextEncoder().encode(sharing.text).length > 1024) {
       $('share-error').textContent = 'This thought is too long for a stream message (1,024 bytes). Copy a shorter excerpt into Public streams. Your full thought stays here.'; return;
     }
-    try { sessionStorage.setItem(handoffKey, JSON.stringify({text:sharing.text, stream:name})); }
+    try { sessionStorage.setItem(handoffKey, JSON.stringify({text:sharing.text, image:sharing.image, stream:name})); }
     catch (_) { $('share-error').textContent = 'Could not prepare a copy. Nothing has been posted.'; return; }
-    location.href = '/streams.html#' + encodeURIComponent(name);
+    location.href = '/#' + encodeURIComponent(name);
   };
   $('thought').oninput = () => { persistDraft(); resize(); };
   $('cancel-edit').onclick = () => { if (confirm('Discard these edits? The saved thought will stay unchanged.')) resetComposer(); };
   $('capture').onsubmit = async event => {
     event.preventDefault();
-    if (busy || !db || !$('thought').value.trim()) return;
+    if (busy || !db || composer.loading || (!$('thought').value.trim() && !composer.image)) return;
     const text = $('thought').value, id = editing;
-    busy = true; $('save').disabled = true; $('thought').disabled = true;
+    busy = true; composer.setBusy(true); $('save').disabled = true; $('thought').disabled = true;
     try {
       const previous = id ? await transaction('readonly', store => store.get(id)) : null;
       const now = Date.now();
-      await transaction('readwrite', store => store.put({id:previous ? previous.id : crypto.randomUUID(), text, created:previous ? previous.created : now, updated:now}));
+      await transaction('readwrite', store => store.put({id:previous ? previous.id : crypto.randomUUID(), text, image:composer.image, created:previous ? previous.created : now, updated:now}));
       resetComposer(); status('Saved on this device.');
       // Ask the browser to protect storage from automatic eviction; a denial is OK.
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       await render().catch(() => status('Saved on this device. Reopen the app to refresh the timeline.'));
     } catch (_) { status('Could not save. Your text is still in the box. Export existing thoughts if storage is full.', true); }
-    finally { busy = false; $('save').disabled = false; $('thought').disabled = false; }
+    finally { busy = false; composer.setBusy(false); $('save').disabled = false; $('thought').disabled = false; }
   };
   $('search').oninput = () => render().catch(() => status('Could not read your thoughts. Try reopening the app.', true));
   $('export').onclick = async () => {
     try {
       const entries = await transaction('readonly', store => store.getAll());
-      const blob = new Blob([JSON.stringify({format:'malten-timeline',version:1,exported:new Date().toISOString(),entries}, null, 2)], {type:'application/json'});
+      const blob = new Blob([JSON.stringify({format:'malten-timeline',version:2,exported:new Date().toISOString(),entries}, null, 2)], {type:'application/json'});
       const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'malten-thoughts-' + new Date().toISOString().slice(0,10) + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
       status('Export prepared. Keep the file somewhere safe.');
     } catch (_) { status('Could not export your thoughts. Please try again.', true); }
@@ -131,12 +130,12 @@
     const file = $('import-file').files[0]; if (!file || busy) return;
     busy = true; $('save').disabled = true;
     try {
-      if (file.size > 20 * 1024 * 1024) throw new Error('File is too large (20 MB maximum).');
+      if (file.size > 100 * 1024 * 1024) throw new Error('File is too large (100 MB maximum).');
       const data = JSON.parse(await file.text());
-      if (data.format !== 'malten-timeline' || data.version !== 1 || !Array.isArray(data.entries) || data.entries.length > 100000) throw new Error('Choose a Malten timeline export.');
+      if (data.format !== 'malten-timeline' || ![1,2].includes(data.version) || !Array.isArray(data.entries) || data.entries.length > 100000) throw new Error('Choose a Malten timeline export.');
       const entries = data.entries.map(e => {
-        if (!e || typeof e.id !== 'string' || !e.id || e.id.length > 200 || typeof e.text !== 'string' || !e.text.trim() || !Number.isSafeInteger(e.created) || e.created < 0 || e.created > 8640000000000000 || !Number.isSafeInteger(e.updated) || e.updated < e.created || e.updated > 8640000000000000) throw new Error('The export contains an invalid thought. Nothing was imported.');
-        return {id:e.id,text:e.text,created:e.created,updated:e.updated};
+        if (!e || typeof e.id !== 'string' || !e.id || e.id.length > 200 || typeof e.text !== 'string' || (!e.text.trim() && !e.image) || (e.image && !validPhoto(e.image)) || !Number.isSafeInteger(e.created) || e.created < 0 || e.created > 8640000000000000 || !Number.isSafeInteger(e.updated) || e.updated < e.created || e.updated > 8640000000000000) throw new Error('The export contains an invalid thought. Nothing was imported.');
+        return {id:e.id,text:e.text,image:e.image || '',created:e.created,updated:e.updated};
       });
       // Keep existing IDs untouched; repeated imports cannot overwrite local edits.
       await transaction('readwrite', store => { for (const entry of entries) { const req = store.get(entry.id); req.onsuccess = () => { if (!req.result) store.put(entry); }; } });
@@ -146,11 +145,13 @@
   };
   try {
     db = await new Promise((resolve,reject) => {
-      const request = indexedDB.open('malten-personal', 1);
-      request.onupgradeneeded = () => request.result.createObjectStore('entries', {keyPath:'id'});
+      const request = indexedDB.open('malten-personal', 2);
+      request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains('entries')) request.result.createObjectStore('entries', {keyPath:'id'}); request.result.createObjectStore('drafts'); };
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
       request.onblocked = () => status('Close other Malten tabs, then reopen this page to finish opening storage.', true);
     });
+    composer = createComposer($('thought'), message => status(message, true), image => { transaction('readwrite', store => store.put(image, 'photo'), 'drafts').catch(() => status('Photo draft could not be saved. Keep this page open.', true)); });
+    composer.setImage(await transaction('readonly', store => store.get('photo'), 'drafts'));
     db.onversionchange = () => { db.close(); location.reload(); };
     for (const id of ['thought','save','search','export','import']) $(id).disabled = false;
     try {

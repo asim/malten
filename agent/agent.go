@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/asim/malten/server"
-	"github.com/gorilla/websocket"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -22,19 +20,9 @@ var (
 	Client *openai.Client
 )
 
-const (
-	// Time allowed to write a message to the peer.
-	writeWait = 10 * time.Second
+const DefaultModel = "gpt-6-astra-light"
 
-	// Time allowed to read the next pong message from the peer.
-	pongWait = 60 * time.Second
-
-	// Send pings to peer with this period. Must be less than pongWait.
-	pingPeriod = (pongWait * 9) / 10
-
-	// Maximum message size allowed from peer.
-	maxMessageSize = 4096
-)
+var stateMu sync.Mutex
 
 type AI struct {
 	context map[string][]Context
@@ -51,11 +39,6 @@ var (
 	newline = []byte{'\n'}
 	space   = []byte{' '}
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  4096,
-	WriteBufferSize: 4096,
-}
 
 var ignore = map[string]bool{
 	"connect": true,
@@ -93,7 +76,7 @@ func complete(prompt, user, persona string, ctx ...Context) openai.ChatCompletio
 	})
 
 	return openai.ChatCompletionRequest{
-		Model:     openai.GPT3Dot5Turbo,
+		Model:     DefaultModel,
 		Messages:  message,
 		User:      user,
 		MaxTokens: MaxTokens,
@@ -112,7 +95,10 @@ func (ai *AI) Listen() error {
 		streams := server.Default.List()
 
 		mtx.Lock()
-		listeners := agents
+		listeners := make(map[string]bool, len(agents))
+		for name, active := range agents {
+			listeners[name] = active
+		}
 		mtx.Unlock()
 
 		for name, _ := range streams {
@@ -147,77 +133,29 @@ func (ai *AI) Listen() error {
 }
 
 func (ai *AI) listen(stream string) error {
-	if ai.context == nil {
-		ai.context = make(map[string][]Context)
-	}
-
-	conn, _, err := websocket.DefaultDialer.Dial("ws://localhost:9090/events?stream="+stream, http.Header{})
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		conn.Close()
-	}()
-
-	conn.SetReadLimit(maxMessageSize)
-	conn.SetReadDeadline(time.Now().Add(pongWait))
-	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
-
-	exit := make(chan bool, 1)
-
-	// write loop
-	go func() {
-		t := time.NewTicker(pingPeriod)
-		defer t.Stop()
-
-		for {
-			select {
-			case <-exit:
-				fmt.Println("ws exited")
-				return
-			case <-t.C:
-				conn.SetWriteDeadline(time.Now().Add(writeWait))
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					fmt.Println("ws write error", err)
-					return
-				}
-			}
-		}
-	}()
-
+	o := server.NewObserver(stream)
+	o.Internal = true
+	server.Default.Observe(o)
+	defer close(o.Kill)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				return err
+		select {
+		case msg := <-o.Events:
+			if msg.Text != "" {
+				ai.execute(msg.Stream, msg.Text)
 			}
-			fmt.Println("websocket error", err)
-			return err
+		case <-ticker.C:
+			if _, exists := server.Default.List()[stream]; !exists {
+				return nil
+			}
 		}
-
-		if len(message) == 0 {
-			continue
-		}
-
-		// decode message
-		var msg *server.Message
-		if err := json.Unmarshal(message, &msg); err != nil {
-			fmt.Println(err)
-			return err
-		}
-
-		// think and respond
-		//if msg.Type == "command" {
-		ai.execute(msg.Stream, msg.Text)
-		//} else {
-		// just a message
-		//	ai.observe(msg.Stream, msg.Text)
-		//}
 	}
 }
 
 func (ai *AI) observe(stream, prompt string) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
 	// if seen before ignore it
 	if ignore[prompt] {
 		fmt.Println("ignoring:", prompt)
@@ -239,31 +177,37 @@ func (ai *AI) observe(stream, prompt string) {
 }
 
 func (ai *AI) execute(stream, prompt string) {
+	stateMu.Lock()
 	// if seen before ignore it
 	if ignore[prompt] {
+		stateMu.Unlock()
 		fmt.Println("ignoring:", prompt)
 		return
 	}
 
+	history := append([]Context(nil), ai.context[stream]...)
+	stateMu.Unlock()
 	fmt.Printf("you#%s: %v\n", stream, prompt)
 
 	// ask openai
 	resp, err := Client.CreateChatCompletion(
 		context.Background(),
-		complete(prompt, stream, ai.persona, ai.context[stream]...),
+		complete(prompt, stream, ai.persona, history...),
 	)
 
 	var reply string
 	if err != nil {
 		reply = err.Error()
-	} else {
+	} else if len(resp.Choices) > 0 {
 		reply = resp.Choices[0].Message.Content
 	}
 
 	fmt.Printf("ai#%s: %v\n", stream, reply)
 
 	// ignore self
+	stateMu.Lock()
 	ignore[reply] = true
+	stateMu.Unlock()
 
 	http.PostForm("http://127.0.0.1:9090/messages", url.Values{
 		"message": []string{reply},
@@ -271,6 +215,8 @@ func (ai *AI) execute(stream, prompt string) {
 	})
 
 	// append context
+	stateMu.Lock()
+	defer stateMu.Unlock()
 	ctx := append(ai.context[stream], Context{
 		Prompt: prompt,
 		Reply:  reply,
@@ -295,6 +241,7 @@ func New(persona string) (*AI, error) {
 
 	ai := new(AI)
 	ai.persona = persona
+	ai.context = make(map[string][]Context)
 
 	return ai, nil
 }

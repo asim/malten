@@ -41,7 +41,7 @@ String.prototype.parseHashTag = function() {
     return this.replace(/[#]+[A-Za-z0-9-_]+/g, function(t) {
         //var tag = t.replace("#","%23")
         var url = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
-        return t.link(url + '/streams.html' + t);
+        return t.link(url + '/' + t);
     });
 };
 
@@ -93,8 +93,11 @@ function clearMessages() {
 
 function clipMessages() {
     var list = document.getElementById('messages');
-    while (list.length > maxMessages) {
-        list.removeChild(list.lastChild);
+    var bytes = Object.values(seen).reduce((sum, message) => sum + (message.Image || '').length + message.Text.length, 0);
+    while (list.children.length > maxMessages || (bytes > 8 * 1024 * 1024 && list.children.length > 1)) {
+        var item = list.lastElementChild, message = seen[item.dataset.id];
+        if(message) { bytes -= (message.Image || '').length + message.Text.length; delete seen[item.dataset.id]; }
+        item.remove();
     }
 };
 
@@ -129,6 +132,7 @@ function displayMessages(array, direction) {
         array[i].Text = tagText(array[i].Text);
 
         var item = document.createElement('li');
+        item.dataset.id = array[i].Id;
         var html = escapeHTML(array[i].Text);
         var d1 = document.createElement('div');
         var d2 = document.createElement('div');
@@ -140,6 +144,7 @@ function displayMessages(array, direction) {
         d2.innerHTML = html.parseURL(embed).parseHashTag();
         item.appendChild(d1);
         item.appendChild(d2);
+        if(validPhoto(array[i].Image)) { var photo = document.createElement('img'); photo.src = array[i].Image; photo.alt = 'Photo'; photo.className = 'attached-photo'; item.appendChild(photo); }
 
         if (array[i].Metadata != null && array[i].Metadata.Type != "player") {
             var a1 = document.createElement('a');
@@ -177,38 +182,6 @@ function displayMessages(array, direction) {
         last = array[array.length - 1].Created;
     }
 };
-
-function getSpeech() {
-    var speak = document.getElementById("speak");
-    var words = document.getElementById("words");
-    var text = document.getElementById("prompt");
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) { words.innerText = "Dictation is not supported in this browser."; return; }
-    let recognition = new SpeechRecognition();
-    recognition.onstart = () => {
-        console.log("mic on");
-	words.innerText = "Start speaking";
-	speak.disabled = true;
-    }
-    recognition.onspeechend = () => {
-        console.log("mic off");
-        recognition.stop();
-	words.innerText = "";
-	speak.disabled = false;
-    }
-    recognition.onresult = (result) => {
-        console.log(result.results[0][0].transcript);
-	text.value = result.results[0][0].transcript;
-	chars();
-	words.innerText = "Review your words, then press Send."
-    }
-
-    recognition.onerror = () => { speak.disabled = false; words.innerText = "Could not hear you. Try again or type."; };
-    recognition.onend = () => { speak.disabled = false; };
-    recognition.start();
-}
 
 function getStream() {
     var stream = window.location.hash.replace('#', '');
@@ -260,7 +233,9 @@ function gotoStream(t) {
     var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
     if (stream.length > 0) {
         document.getElementById('goto').elements['gstream'].value = '';
-        window.location = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/streams.html#' + encodeURIComponent(stream);
+        window.location = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/#' + encodeURIComponent(stream);
+        document.getElementById('goto').hidden = true;
+        document.getElementById('goto-toggle').setAttribute('aria-expanded', 'false');
         clearMessages();
     };
     return false;
@@ -278,7 +253,7 @@ function newStream() {
             ttl: ttl
         })
         .done(function(data) {
-            window.location = location.protocol + '//' + location.host + '/streams.html#' + encodeURIComponent(data.stream);
+            window.location = location.protocol + '//' + location.host + '/#' + encodeURIComponent(data.stream);
             return false;
         })
         .fail(function() {
@@ -311,17 +286,20 @@ function loadListeners() {
     }, false);
 
     shareListener();
+    document.getElementById('goto-toggle').onclick = function(event) {
+        event.preventDefault();
+        var form = document.getElementById('goto'); form.hidden = !form.hidden;
+        this.setAttribute('aria-expanded', String(!form.hidden));
+        if(!form.hidden) document.getElementById('gstream').focus();
+    };
 
-    window.addEventListener("beforeunload", function(e) {
+    window.addEventListener("pagehide", function(e) {
         if (source != undefined) {
-            source.close;
+            source.close();
         }
     });
 
-    document.getElementById("speak").addEventListener("click", function(ev) {
-	ev.preventDefault();
-	getSpeech();
-    });
+
 };
 
 function loadMore() {
@@ -413,38 +391,28 @@ function pollMessages() {
     }, 5000);
 }
 
-function postCommand() {
-    var form = document.getElementById('form');
-    if (form.elements["prompt"].value == '') {
-        return false
-    }
-    $.post(commandUrl, $("#form").serialize());
-    form.elements["prompt"].value = '';
+var streamComposer, sending = false;
+function initStreamComposer() {
+    streamComposer = createComposer(document.getElementById('prompt'), function(message) { document.getElementById('words').textContent = message; });
+    fetch('/config').then(r => r.json()).then(config => { document.getElementById('moderation').textContent = config.moderation ? 'Public posts and photos are sent to OpenAI for moderation before sharing.' : 'AI moderation is off.'; }).catch(() => {});
+    window.addEventListener('pageshow', event => { if(event.persisted) observeEvents(); });
+}
+function postMessage(command) {
+    if(sending || streamComposer.loading) return false;
+    var text = document.getElementById('prompt');
+    var words = document.getElementById('words');
+    if(!text.value.trim() && !streamComposer.image) return false;
+    if(command && streamComposer.image) { words.textContent = 'Send photos as a stream post.'; return false; }
+    if(new TextEncoder().encode(text.value).length > 1024) { words.textContent = 'Message is too long (1,024 bytes maximum).'; return false; }
+    sending = true; streamComposer.setBusy(true); text.disabled = true; document.getElementById('send').disabled = true; words.textContent = 'Sending…';
+    var payload = {stream:getStream(), message:text.value, image:streamComposer.image};
+    if(command) payload.prompt = text.value.replace(/^\/malten\s/, '');
+    $.post(command ? commandUrl : messageUrl, payload).done(function() {
+        text.value = ''; streamComposer.setImage(''); words.textContent = ''; chars(); loadMessages();
+    }).fail(function(error) { words.textContent = error.responseText || 'Could not send. Your draft is still here.'; })
+    .always(function() { sending = false; streamComposer.setBusy(false); text.disabled = false; document.getElementById('send').disabled = false; });
     return false;
 }
-
-function postMessage() {
-    var form = document.getElementById('form');
-    var el = form.elements;
-    if (el["prompt"].value == '') {
-        return false
-    }
-
-    // set message field
-    el["message"].value = el["prompt"].value;
-    // clear prompt
-    el["prompt"].value = '';
-
-    var stream = form.elements["stream"];
-    $.post(messageUrl, $("#form").serialize());
-
-    // clear message
-    form.elements["message"].value = '';
-
-    // reload messages
-    loadMessages();
-    return false;
-};
 
 function processEvent(stream, event) {
     console.log(event);
@@ -516,27 +484,8 @@ function stop() {
 };
 
 function submitCommand() {
-    var form = document.getElementById('form');
-    var el = form.elements;
-
-    if (el["prompt"].value.length <= 0) {
-        return false;
-    }
-
-    if (el["prompt"].value.match(/^\s+$/)) {
-        return false;
-    }
-
-    if (el["prompt"].value.match(/^\/malten\s/)) {
-	// strip /malten
-	el["prompt"].value = el["prompt"].value.replace(/^\/malten\s/, "");	
-
-        postCommand();
-        return false;
-    }
-
-    return postMessage();
-};
+    return postMessage(/^\/malten\s/.test(document.getElementById('prompt').value));
+}
 
 function tagText(text) {
     var parts = text.split(" ");
@@ -563,7 +512,7 @@ function shareListener() {
                 })
                 .catch(console.error);
         } else {
-            // fallback
+            navigator.clipboard.writeText(window.location.href).then(() => { document.getElementById('words').textContent = 'Link copied.'; }).catch(() => { window.prompt('Copy stream link', window.location.href); });
         }
 
         return false;
@@ -575,6 +524,7 @@ function restoreStreamDraft() {
         var draft = JSON.parse(sessionStorage.getItem('malten-stream-draft-v1'));
         if (draft && draft.stream === getStream() && typeof draft.text === 'string') {
             document.getElementById('prompt').value = draft.text;
+            streamComposer.setImage(draft.image);
             sessionStorage.removeItem('malten-stream-draft-v1');
             chars();
         }

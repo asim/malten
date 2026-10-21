@@ -47,6 +47,7 @@ type Stream struct {
 
 type Message struct {
 	Id       string
+	Image    string `json:",omitempty"`
 	Text     string
 	Type     string
 	Created  int64 `json:",string"`
@@ -55,10 +56,12 @@ type Message struct {
 }
 
 type Observer struct {
-	Id     string
-	Stream string
-	Events chan *Message
-	Kill   chan bool
+	// Internal listeners (such as the AI) are not people in the stream.
+	Internal bool
+	Id       string
+	Stream   string
+	Events   chan *Message
+	Kill     chan bool
 }
 
 type Server struct {
@@ -256,7 +259,12 @@ func (s *Server) Metadata(t *Message) {
 
 func (s *Server) List() map[string]*Stream {
 	s.mtx.RLock()
-	streams := s.streams
+	streams := make(map[string]*Stream, len(s.streams))
+	for id, stream := range s.streams {
+		copy := *stream
+		copy.Messages = append([]*Message(nil), stream.Messages...)
+		streams[id] = &copy
+	}
 	s.mtx.RUnlock()
 	return streams
 }
@@ -271,7 +279,9 @@ func (s *Server) Observe(o *Observer) {
 	}
 
 	// update observer count
-	st.Observers++
+	if !o.Internal {
+		st.Observers++
+	}
 	s.streams[o.Stream] = st
 
 	s.mtx.Unlock()
@@ -286,7 +296,7 @@ func (s *Server) Observe(o *Observer) {
 
 		// update observer count
 		st, ok := s.streams[o.Stream]
-		if ok {
+		if ok && !o.Internal && st.Observers > 0 {
 			st.Observers--
 			s.streams[o.Stream] = st
 		}
@@ -315,6 +325,16 @@ func (s *Server) Store(message *Message) {
 		stream.Messages = stream.Messages[1:]
 	}
 
+	// Keep photo-heavy streams bounded as well as limiting message count.
+	bytes := 0
+	for _, msg := range stream.Messages {
+		bytes += len(msg.Text) + len(msg.Image)
+	}
+	for bytes > 8<<20 && len(stream.Messages) > 1 {
+		bytes -= len(stream.Messages[0].Text) + len(stream.Messages[0].Image)
+		stream.Messages[0] = nil
+		stream.Messages = stream.Messages[1:]
+	}
 	stream.Updated = time.Now().UnixNano()
 }
 
