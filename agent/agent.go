@@ -20,6 +20,8 @@ var (
 	Client *openai.Client
 )
 
+const DefaultModel = "gpt-6-astra-light"
+
 var stateMu sync.Mutex
 
 type AI struct {
@@ -74,7 +76,7 @@ func complete(prompt, user, persona string, ctx ...Context) openai.ChatCompletio
 	})
 
 	return openai.ChatCompletionRequest{
-		Model:     openai.GPT3Dot5Turbo,
+		Model:     DefaultModel,
 		Messages:  message,
 		User:      user,
 		MaxTokens: MaxTokens,

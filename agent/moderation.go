@@ -22,7 +22,7 @@ func NewPublicModerator(key, model string) func(context.Context, *server.Message
 
 func newPublicModerator(client *openai.Client, model string) func(context.Context, *server.Message) error {
 	if model == "" {
-		model = "gpt-4.1-mini"
+		model = DefaultModel
 	}
 	slots := make(chan struct{}, 4)
 	return func(ctx context.Context, message *server.Message) error {
