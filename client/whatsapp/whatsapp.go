@@ -43,7 +43,7 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 4096
+	maxMessageSize = 2 << 20
 )
 
 func Key(id string) string {
@@ -132,7 +132,7 @@ func observe(jid types.JID) {
 		}
 
 		// do not forward that
-		if msg.Type == "command" {
+		if msg.Type == "command" || msg.Text == "" {
 			continue
 		}
 

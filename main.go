@@ -5,9 +5,11 @@ import (
 	"embed"
 	"io/fs"
 	//"io/ioutil"
+	"encoding/json"
 	"log"
 	"mime"
 	"net/http"
+	"os"
 
 	"github.com/asim/malten/agent"
 	"github.com/asim/malten/client/whatsapp"
@@ -18,6 +20,17 @@ import (
 var html embed.FS
 
 func main() {
+	key := os.Getenv("OPENAI_API_KEY")
+	if os.Getenv("PUBLIC_MODERATION") != "false" && key != "" {
+		server.Moderate = agent.NewPublicModerator(key, os.Getenv("MODERATION_MODEL"))
+	} else if os.Getenv("PUBLIC_MODERATION") == "true" {
+		log.Fatal("PUBLIC_MODERATION requires OPENAI_API_KEY")
+	}
+	http.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(map[string]bool{"moderation": server.Moderate != nil})
+	})
 	// Do not rely on the host OS having the webmanifest MIME type registered.
 	mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	htmlContent, err := fs.Sub(html, "client/web")
@@ -27,6 +40,9 @@ func main() {
 
 	// serve the html directory by default
 	http.Handle("/", http.FileServer(http.FS(htmlContent)))
+	http.HandleFunc("/private", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, htmlContent, "private.html")
+	})
 
 	http.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 		server.GetEvents(w, r)

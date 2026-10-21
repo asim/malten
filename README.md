@@ -6,11 +6,11 @@ Anonymous ephemeral messaging
 
 Malten is a small place to get thoughts out: keep them on your device, or share in anonymous ephemeral streams.
 
-The home page is a personal text timeline stored in IndexedDB in this browser. It never sends entries to the server or AI automatically. Public streams remain available through the **Public streams** link. Existing `/#stream` links still open the stream view.
+Public streams open at `/`, with named streams at `/#stream`. **For me** opens `/private`, a personal timeline stored in IndexedDB on this device. Local entries are never sent to the server or AI automatically. Old `/streams.html#stream` links redirect to `/#stream`.
 
 The stream backend remains ephemeral.
 Streams have an idle lifetime of 1024 seconds. Each stream supports 1024 messages as a FIFO and 
-1024 characters per message. Streams can be discovered through exploration or via the API.
+1024 UTF-8 bytes per text message. Photo-heavy streams also have an 8 MiB content budget, evicting the oldest posts first. Streams can be discovered through exploration or via the API.
 
 ## Features
 
@@ -163,6 +163,7 @@ Params for messages
 ```
 stream: string e.g stream=foo
 message: string e.g message=helloworld
+image: optional JPEG/PNG data URL (512 KiB decoded maximum; image-only posts allowed)
 ```
 
 An example
@@ -197,12 +198,13 @@ an iPhone or iPad, use Safari's Share menu and **Add to Home Screen**. The app
 opens in its own window with the Malten icon.
 
 After the first online visit finishes caching the app, the personal timeline can open
-and save text offline. A small service worker caches only the personal app shell;
+and save text and photos offline. Opening the app offline offers a link to **For me**. A small service worker caches only the personal app shell;
 it never caches stream API responses. Public streams still require a connection
 and expire according to their TTL.
 
 ## Personal timeline
 
+- Attach one photo, take a photo, or use Talk in either composer. Photos are resized and re-encoded on-device (up to 512 KiB); this removes original metadata. Camera availability depends on the device/browser. Talk uses browser speech recognition, which may send audio to the browser provider; review the transcript before saving or sending.
 - Save text without a title or character limit imposed by the stream transport.
 - Recover an unfinished draft after closing and reopening the app.
 - Search, edit, and delete thoughts locally.
@@ -214,7 +216,7 @@ and expire according to their TTL.
 Storage belongs to this browser and origin, and is not synced across devices.
 Clearing site data removes it. Export backups before changing devices or domains.
 Browser storage is not an encrypted vault or a separate account on a shared device.
-Photo capture and AI actions on local entries are not implemented in this first step.
+Photos and photo drafts stay in IndexedDB with local text, and are included in timeline exports. AI actions on local entries are not implemented. WhatsApp forwarding currently supports text only.
 Anonymous public sharing remains a core part of Malten: named/unlisted streams are
 accessible to anyone who knows their link, rather than being access-controlled.
 
@@ -228,3 +230,13 @@ then `npx playwright install chromium`. Build with `go build -o malten .` and ru
 profiles and never enables OpenAI or WhatsApp. `CHROMIUM_PATH` and `MALTEN_BINARY`
 can select existing test binaries. `JQUERY_PATH` can supply the existing public
 stream's jQuery CDN asset when testing without browser internet access.
+
+### Public moderation
+
+When `OPENAI_API_KEY` is set, the agent checks public-stream text, photos, and commands before they enter the event queue. This applies to all server streams, including unlisted streams: unlisted does not mean private. Device-local **For me** entries are excluded. The UI discloses when public content goes to OpenAI.
+
+The policy allows venting, profanity, distress, and requests for support. It blocks targeted abuse, credible threats, harmful instructions, exploitation, explicit imagery, graphic gore, doxxing and spam. AI decisions can be wrong; the checks are not a guarantee of safety. Rejected posts return HTTP 422. Upstream errors, invalid decisions, timeouts, and a full moderation queue return HTTP 503 without publishing. The composer retains text and photos for editing or retrying. No moderation history is stored.
+
+`MODERATION_MODEL` selects a vision-capable chat model (default `gpt-4.1-mini`). Requests have a 15-second timeout and at most four run concurrently. `PUBLIC_MODERATION=true` requires an API key at startup; `PUBLIC_MODERATION=false` explicitly disables checks. Without an API key, moderation is off and the UI says so. Public moderation uses paid API calls; the concurrency cap is not a rate limit or spending cap.
+
+Presence counts connected browser/client sessions, excluding the internal AI listener. Two open tabs can still count as two connections.

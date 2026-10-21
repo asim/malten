@@ -4,15 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#faf9f6">
-  <meta name="description" content="Personal thoughts and anonymous ephemeral streams.">
-  <title>Malten</title>
+  <title>Public streams | Malten</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/timeline.css">
-  <script src="/timeline.js" defer></script>
-  <script src="/install.js" defer></script>
 </head>
-<body>
+<body onhashchange="loadStream();">
   <main>
     <header>
       <a class="brand" href="/">malten</a>
@@ -20,38 +17,47 @@
         <summary aria-label="Open menu">Menu</summary>
         <div class="menu-panel">
           <button id="install" type="button" hidden>Install app</button>
-          <button id="export" type="button" disabled>Export thoughts</button>
-          <button id="import" type="button" disabled>Import thoughts</button>
-          <p>Thoughts stay in this browser on this device. Export a copy to keep a backup or move devices. Clearing site data removes them.</p>
+          <a class="menu-link" href="/new">New stream</a>
+          <a class="menu-link" href="/#_" id="share">Share stream link</a>
         </div>
       </details>
     </header>
-    <nav aria-label="Spaces"><a class="selected" href="/" aria-current="page">For me</a><a href="/streams.html#_">Public streams</a></nav>
-    <section class="capture" aria-label="Capture a thought">
-      <form id="capture">
-        <label for="thought" id="composer-label">What’s on your mind?</label>
-        <textarea id="thought" rows="4" disabled></textarea>
-        <div class="composer-footer"><span id="draft-status">Loading…</span><div><button id="cancel-edit" type="button" hidden>Cancel edit</button><button id="save" class="primary" type="submit" disabled>Save</button></div></div>
+    <nav aria-label="Spaces"><a href="/private">For me</a><a class="selected" href="/#_" aria-current="page">Public streams</a></nav>
+    <section class="capture" aria-label="Write to a stream">
+      <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
+        <label class="composer-label" for="prompt">What’s on your mind?</label>
+        <textarea id="prompt" name="prompt" rows="4" placeholder="Speak your mind" maxlength="1024" autocomplete="off"></textarea>
+        <input id="message" name="message" type="hidden">
+        <input id="stream" name="stream" type="hidden">
+        <div class="composer-footer"><span class="hint"><span id="chars">1024</span> characters left</span><div><button id="send" class="primary" type="submit">Send</button></div></div>
+        <span id="words" role="status" aria-live="polite"></span>
       </form>
     </section>
-    <p class="boundary">Stored on this device.</p>
-    <p id="status" role="status" aria-live="polite"></p>
-    <section class="history" aria-label="Your thoughts">
-      <div class="history-heading"><h1>Your thoughts</h1><label class="search-label"><span class="sr-only">Search your thoughts</span><input type="search" id="search" placeholder="Search" disabled></label></div>
-      <div id="timeline"><p class="empty">Loading…</p></div>
+    <p class="boundary">Anonymous and shared. Messages expire; anyone with the link can read and copy them.</p>
+    <p id="moderation" class="boundary"></p>
+    <section class="history" aria-label="Stream messages">
+      <div class="history-heading stream-heading">
+        <div><h1><a id="current" href="/#_">Public stream</a></h1><span id="present"></span></div>
+        <form id="goto" onsubmit="return gotoStream(this);"><label class="sr-only" for="gstream">Stream name</label><input id="gstream" name="gstream" type="text" placeholder="Stream name"><button type="submit">Go</button></form>
+      </div>
+      <ul id="messages"></ul>
     </section>
   </main>
-  <input id="import-file" type="file" accept="application/json,.json" hidden>
-  <dialog id="share-dialog">
-    <form method="dialog">
-      <h2>Put this into a stream?</h2>
-      <p>This opens a copy in the anonymous stream composer. It is only posted when you press Send there. Your original stays on this device.</p>
-      <p>Streams are shared spaces, not private storage. Messages expire on the server; other people may still copy them.</p>
-      <label for="share-stream">Stream name</label><input id="share-stream" value="_" maxlength="100" autocomplete="off">
-      <p class="hint">_ is the public stream. A named stream is accessible to anyone with its link.</p>
-      <p id="share-error" role="alert"></p>
-      <div class="dialog-actions"><button value="cancel">Cancel</button><button id="share-continue" type="button" class="primary">Open stream composer</button></div>
-    </form>
-  </dialog>
+  <script src="/install.js" defer></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+  <script src="/composer.js"></script>
+  <script src="/malten.js?v=0.60.0"></script>
+  <script>
+    $(document).ready(function() {
+      initStreamComposer();
+      restoreStreamDraft();
+      setCurrent();
+      getStreams();
+      loadListeners();
+      loadMessages();
+      observeEvents();
+      pollMessages();
+    });
+  </script>
 </body>
 </html>
