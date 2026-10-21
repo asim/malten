@@ -17,3 +17,8 @@ main{padding-top:24px}header{margin-bottom:18px}nav{margin-bottom:16px}nav a{pad
 #draft-status{order:3;flex-basis:100%;max-width:none}#draft-status:empty,#status:empty{display:none}
 .history{margin-top:20px}.history-heading{margin-bottom:8px}.day-heading{margin-top:12px}
 @media(max-width:540px){main{padding-top:20px}header{margin-bottom:16px}.header-actions{gap:12px}.capture{padding:12px}nav{margin-bottom:14px}}
+
+#gstream:focus, #gstream:focus-visible { outline:none; }
+
+.message{white-space:pre-wrap}.message-actions{position:absolute;right:0;top:12px;font-size:12px}.message-actions summary{cursor:pointer;list-style:none;padding:0 8px}.message-actions[open]{background:var(--paper);border:1px solid var(--line);border-radius:6px;z-index:1}.message-actions button{display:block;border:0;padding:5px 10px}#messages li{position:relative}#messages .time{padding-right:30px}.header-actions{gap:12px}.header-actions .menu summary{padding:0;font-size:13px}.stream-heading{margin-bottom:0}.history{margin-top:14px}#gstream:focus,#gstream:focus-visible{outline:none}
+@media(max-width:380px){.header-actions{gap:8px}.brand{font-size:26px}}

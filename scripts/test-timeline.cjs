@@ -1,135 +1,81 @@
-// Run against a locally built binary: MALTEN_BINARY=/path/to/malten node scripts/test-timeline.cjs
-const {chromium} = require('playwright');
-const {spawn} = require('node:child_process');
-const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-(async () => {
-  const server = spawn(process.env.MALTEN_BINARY || './malten', [], {env:{...process.env, OPENAI_API_KEY:'', WHATSAPP_CLIENT:'false'},stdio:'ignore'});
-  let browser;
-  try {
-    for (let i=0;i<50;i++) { try { if ((await fetch('http://localhost:9090/')).ok) break; } catch {} await new Promise(r=>setTimeout(r,100)); }
-    browser = await chromium.launch({headless:true, executablePath:process.env.CHROMIUM_PATH || undefined, args:['--no-sandbox']});
-    const context = await browser.newContext({viewport:{width:390,height:844}});
-    const page = await context.newPage();
-    // Optional local CDN fixture for network-restricted test environments.
-    if (process.env.JQUERY_PATH) await page.route('**/ajax/libs/jquery/2.1.3/jquery.min.js', route => route.fulfill({path:process.env.JQUERY_PATH,contentType:'application/javascript'}));
-    const apiRequests = [], errors=[];
-    page.on('request', r=>{if (/\/(messages|events|commands|streams)(\?|$)/.test(r.url())) apiRequests.push(r.url());});
-    page.on('pageerror', e=>errors.push(e.message));
-    await page.goto('http://localhost:9090/private');
-    await page.waitForFunction(()=>!document.getElementById('thought').disabled);
-    await page.locator('#thought').fill('First line');
-    await page.locator('#thought').press('Shift+Enter');
-    assert.equal(await page.locator('#thought').inputValue(),'First line\n');
-    await page.locator('#thought').evaluate(el => el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true})));
-    assert.equal(await page.locator('.entry').count(),0);
-    await page.locator('#thought').fill('An unfinished thought');
-    await page.reload();
-    await page.waitForFunction(()=>document.getElementById('thought').value==='An unfinished thought');
-    await page.locator('#thought').press('Enter');
-    await page.waitForFunction(()=>document.querySelector('.entry-text')?.textContent==='An unfinished thought');
-    await page.reload();
-    await page.waitForSelector('.entry');
-    assert.equal(await page.locator('#thought').inputValue(),'');
-    await page.locator('.entry').getByRole('button',{name:'Edit',exact:true}).click();
-    await page.locator('#thought').fill('I need a little room to think.');
-    await page.locator('#save').click();
-    await page.waitForFunction(()=>document.querySelector('.entry-text')?.textContent==='I need a little room to think.');
-    // A failed local write must retain the user's draft.
-    await page.evaluate(()=>{window.originalTransaction=IDBDatabase.prototype.transaction;IDBDatabase.prototype.transaction=function(names,mode,...rest){if(mode==='readwrite')throw new Error('Simulated disk failure');return window.originalTransaction.call(this,names,mode,...rest);};});
-    await page.locator('#thought').fill('Keep this draft if storage fails.'); await page.locator('#save').click();
-    await page.waitForFunction(()=>document.getElementById('status').textContent.startsWith('Could not save'));
-    assert.equal(await page.locator('#thought').inputValue(),'Keep this draft if storage fails.');
-    await page.evaluate(()=>{IDBDatabase.prototype.transaction=window.originalTransaction;});
-    const attack='<img src=x onerror="window.injected=true">';
-    await page.locator('#thought').fill(attack);
-    await page.locator('#save').click();
-    await page.waitForFunction(()=>document.querySelectorAll('.entry').length===2);
-    assert.equal(await page.locator('.entry img').count(),0);
-    assert.equal(await page.evaluate(()=>window.injected),undefined);
-    await page.locator('#search').fill('little room');
-    await page.waitForFunction(()=>document.querySelectorAll('.entry').length===1);
-    await page.locator('#search').fill('');
-    await page.waitForFunction(()=>document.querySelectorAll('.entry').length===2);
-    // Export can move the timeline to a fresh browser profile, and repeated import is idempotent.
-    await page.locator('summary').click();
-    const downloadWait=page.waitForEvent('download'); await page.locator('#export').click();
-    const download=await downloadWait; const exported=JSON.parse(await fs.readFile(await download.path(),'utf8'));
-    assert.equal(exported.entries.length,2);
-    await page.locator('summary').click();
-    await page.locator('#import-file').setInputFiles({name:'thoughts.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(exported))});
-    await page.waitForFunction(()=>document.getElementById('status').textContent.startsWith('Import complete'));
-    assert.equal(await page.locator('.entry').count(),2);
-    const other=await browser.newContext(); const fresh=await other.newPage(); await fresh.goto('http://localhost:9090/private');
-    await fresh.waitForFunction(()=>!document.getElementById('thought').disabled);
-    assert.equal(await fresh.locator('.entry').count(),0);
-    await fresh.locator('#import-file').setInputFiles({name:'thoughts.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(exported))});
-    await fresh.waitForFunction(()=>document.querySelectorAll('.entry').length===2);
-    await other.close();
-    // Local capture never calls the ephemeral APIs, including while offline.
-    assert.deepEqual(apiRequests,[]);
-    await page.evaluate(()=>navigator.serviceWorker.ready);
-    await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
-    const cdp=await context.newCDPSession(page);
-    assert.deepEqual((await cdp.send('Page.getInstallabilityErrors')).installabilityErrors,[]);
-    await context.setOffline(true); await page.reload();
-    await page.waitForFunction(()=>!document.getElementById('thought').disabled);
-    await page.locator('#thought').fill('A thought saved without a connection.'); await page.locator('#save').click();
-    await page.waitForFunction(()=>document.querySelectorAll('.entry').length===3);
-    await page.reload(); await page.waitForFunction(()=>document.querySelectorAll('.entry').length===3);
-    assert.deepEqual(apiRequests,[]); await context.setOffline(false);
-    page.once('dialog', d=>d.accept()); await page.locator('.entry').first().getByRole('button',{name:'Delete',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelectorAll('.entry').length===2);
-    // Mobile layout and screenshot for review.
-    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
-    if (process.env.SCREENSHOT_PATH) await page.screenshot({path:process.env.SCREENSHOT_PATH,fullPage:true});
-    // Photo drafts, image-only entries, and dictation work on device.
-    const png = await page.evaluate(() => { const c=document.createElement('canvas'); c.width=8;c.height=8;c.getContext('2d').fillRect(0,0,8,8);return c.toDataURL().split(',')[1]; });
-    await page.locator('input[type=file][accept="image/*"]').first().setInputFiles({name:'photo.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
-    await page.waitForSelector('form .attached-photo:visible');
-    await page.reload(); await page.waitForSelector('form .attached-photo:visible');
-    await page.locator('#save').click(); await page.waitForSelector('.entry .attached-photo');
-    await page.evaluate(() => { window.SpeechRecognition=class {start(){this.onresult({results:[[{transcript:'Spoken draft'}]]});this.onend();}stop(){this.onend();}}; });
-    await page.getByRole('button',{name:'Talk',exact:true}).click();
-    assert.equal(await page.locator('#thought').inputValue(),'Spoken draft');
-    assert.equal(await page.locator('.entry').count(),3);
-    assert.equal(await page.locator('#thought').evaluate(el=>getComputedStyle(el).outlineStyle),'none');
-    assert.equal(await page.locator('input[capture]').getAttribute('capture'),'environment');
-    await page.locator('summary').click();
-    const photoDownloadWait = page.waitForEvent('download'); await page.locator('#export').click();
-    const photoDownload = await photoDownloadWait;
-    const photoExport = JSON.parse(await fs.readFile(await photoDownload.path(),'utf8'));
-    assert.equal(photoExport.version,2); assert.equal(photoExport.entries.filter(e=>e.image).length,1);
-    await page.locator('summary').click();
-    const photoContext = await browser.newContext(); const photoPage = await photoContext.newPage();
-    await photoPage.goto('http://localhost:9090/private'); await photoPage.waitForFunction(()=>!document.getElementById('thought').disabled);
-    await photoPage.locator('#import-file').setInputFiles({name:'photos.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(photoExport))});
-    await photoPage.waitForSelector('.entry .attached-photo'); await photoContext.close();
-    // Sharing stages a draft; it must never submit it on the user's behalf.
-    await page.locator('.entry').filter({hasText:'little room'}).getByRole('button',{name:'Share…',exact:true}).click();
-    const posts=[]; page.on('request',r=>{if(r.method()==='POST')posts.push(r.url());});
-    await page.locator('#share-continue').click();
-    await page.waitForURL('**/#_');
-    await page.waitForFunction(()=>document.getElementById('prompt').value==='I need a little room to think.');
-    assert.deepEqual(posts,[]);
-    await page.waitForFunction(()=>document.getElementById('present').textContent==='1 here');
-    await page.locator('input[type=file][accept="image/*"]').first().setInputFiles({name:'photo.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
-    await page.waitForSelector('form .attached-photo:visible');
-    await page.route('**/messages', route => route.request().method()==='POST' ? route.fulfill({status:503,body:'Moderation is unavailable.'}) : route.continue());
-    await page.locator('#prompt').press('Enter'); await page.waitForFunction(()=>document.getElementById('words').textContent.includes('Moderation is unavailable'));
-    assert.equal(await page.locator('#prompt').inputValue(),'I need a little room to think.');
-    assert.equal(await page.locator('form .attached-photo:visible').count(),1);
-    await page.unroute('**/messages'); await page.locator('#send').click(); await page.waitForSelector('#messages .attached-photo');
-    assert.equal(await page.locator('#prompt').inputValue(),'');
-    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    // Public messages and metadata must not execute scripts in the local-storage origin.
-    await page.evaluate(text=>displayMessages([{Id:'xss-test',Text:text,Created:String(Date.now()*1e6),Metadata:{Type:'article',Site:'test',Title:text,Description:text,Image:'javascript:window.injected=true',Url:'javascript:window.injected=true'}}],1),attack);
-    assert.equal(await page.evaluate(()=>window.injected),undefined);
-    assert.equal(await page.locator('#messages [onerror]').count(),0);
-    await page.goto('http://localhost:9090/streams.html#old-stream'); await page.waitForURL('**/#old-stream');
-    await context.setOffline(true); await page.goto('http://localhost:9090/');
-    await page.getByRole('link',{name:'For me',exact:true}).click(); await page.waitForSelector('.entry .attached-photo');
-    assert.deepEqual(errors,[]);
-    console.log('PASS: drafts, save/reload, edits, search, safe rendering, export/import, isolated device stores, offline capture, deletion, mobile layout, explicit sharing and legacy stream links.');
-  } finally {if(browser) await browser.close(); server.kill();}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+// MALTEN_BINARY=/path/to/malten CHROMIUM_PATH=/path/to/chromium node scripts/test-timeline.cjs
+const {chromium}=require('playwright');
+const {spawn}=require('node:child_process');
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');
+(async()=>{
+ const server=spawn(process.env.MALTEN_BINARY||'./malten',[],{env:{...process.env,OPENAI_API_KEY:'',WHATSAPP_CLIENT:'false'},stdio:'ignore'});let browser;
+ try {
+  for(let i=0;i<50;i++){try{if((await fetch('http://localhost:9090/')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||undefined,args:['--no-sandbox']});
+  const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),errors=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('http://localhost:9090/manifest.webmanifest');
+  // Seed the previous personal timeline schema, including its unfinished photo draft.
+  await page.evaluate(async()=>{
+   const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6XcAAAAASUVORK5CYII=';
+   localStorage.setItem('malten-draft-v1',JSON.stringify({text:'Old draft'}));
+   await new Promise((resolve,reject)=>{const r=indexedDB.open('malten-personal',2);r.onupgradeneeded=()=>{r.result.createObjectStore('entries',{keyPath:'id'});r.result.createObjectStore('drafts');};r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,tx=db.transaction(['entries','drafts'],'readwrite');tx.objectStore('entries').put({id:'old',text:'Existing thought',created:100,updated:100});tx.objectStore('drafts').put(png,'photo');tx.oncomplete=()=>{db.close();resolve();};};});
+  });
+  const requests=[];page.on('request',r=>{if(/\/(messages|commands|events|streams|ask)(\?|$)/.test(r.url()))requests.push(r.url());});
+  await page.goto('http://localhost:9090/private');
+  await page.waitForFunction(()=>document.activeElement.id==='prompt'&&document.getElementById('prompt').value==='Old draft');
+  assert.equal(await page.locator('#messages .message').textContent(),'Existing thought');
+  await page.waitForSelector('form .attached-photo:visible');
+  await page.locator('#prompt').press('Enter');await page.waitForFunction(()=>document.querySelectorAll('#messages li').length===2);
+  await page.locator('#prompt').fill('Default-stream draft');
+  await page.getByRole('link',{name:'New',exact:true}).click();await page.waitForFunction(()=>document.getElementById('prompt').value==='');
+  const second=page.url();
+  await page.locator('#prompt').fill('Only in the second stream');await page.locator('#prompt').press('Enter');
+  await page.waitForFunction(()=>document.querySelectorAll('#messages li').length===1);
+  await page.locator('#prompt').fill('Line one');await page.locator('#prompt').press('Shift+Enter');
+  assert.equal(await page.locator('#prompt').inputValue(),'Line one\n');
+  await page.locator('#prompt').evaluate(el=>el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true})));
+  assert.equal(await page.locator('#messages li').count(),1);
+  await page.goto('http://localhost:9090/private');await page.waitForFunction(()=>document.getElementById('prompt').value==='Default-stream draft');
+  assert.equal(await page.locator('#messages li').count(),2);
+  await page.goto(second);await page.waitForFunction(()=>document.getElementById('prompt').value==='Line one\n');
+  assert.equal(await page.locator('#messages li').count(),1);
+  await page.evaluate(()=>{window.SpeechRecognition=class{start(){this.onresult({results:[[{transcript:'Spoken'}]]});this.onend();}stop(){this.onend();}};});
+  await page.locator('#prompt').fill('');await page.getByRole('button',{name:'Talk',exact:true}).click();assert.equal(await page.locator('#prompt').inputValue(),'Spoken');
+  const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=8;c.height=8;return c.toDataURL().split(',')[1];});
+  await page.locator('input[type=file][accept="image/*"]').first().setInputFiles({name:'photo.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});await page.waitForSelector('form .attached-photo:visible');
+  await page.reload();await page.waitForSelector('form .attached-photo:visible');await page.locator('#prompt').press('Enter');await page.waitForFunction(()=>document.querySelectorAll('#messages li').length===2);
+  assert.deepEqual(requests,[]);
+  let aiRequest;
+  await page.route('**/ask',route=>{aiRequest=route.request().postDataJSON();return route.fulfill({json:{text:'A contextual reply'}});});
+  await page.locator('#prompt').fill('/malten what did I say?');assert.equal(aiRequest,undefined);await page.locator('#prompt').press('Enter');
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('#messages .message')).some(el=>el.textContent==='A contextual reply'));
+  assert.equal(Object.keys(aiRequest).join(','),'messages');
+  assert(aiRequest.messages.some(m=>m.Text==='Only in the second stream'));
+  assert(!aiRequest.messages.some(m=>m.Text==='Existing thought'));
+  assert(!JSON.stringify(aiRequest).includes(second.split('#')[1]));
+  await page.reload();await page.waitForFunction(()=>document.querySelectorAll('#messages li').length===4);
+  const shell=await page.locator('main').boundingBox();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  if(process.env.SCREENSHOT_PATH)await page.screenshot({path:process.env.SCREENSHOT_PATH,fullPage:true});
+  await page.getByLabel('Open menu').click();const downloadWait=page.waitForEvent('download');await page.locator('#export').click();
+  const data=JSON.parse(await fs.readFile(await(await downloadWait).path(),'utf8'));assert.equal(data.version,3);assert.equal(data.streams.length,2);assert.equal(data.entries.length,6);
+  await page.getByLabel('Open menu').click();
+  const other=await browser.newContext(),fresh=await other.newPage();await fresh.goto('http://localhost:9090/private');await fresh.waitForFunction(()=>!document.getElementById('prompt').disabled);
+  await fresh.locator('#import-file').setInputFiles({name:'streams.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});await fresh.waitForFunction(()=>document.getElementById('words').textContent==='Imported.');
+  await fresh.goto(second);await fresh.waitForFunction(()=>document.querySelectorAll('#messages li').length===4);await other.close();
+  await page.evaluate(()=>navigator.serviceWorker.ready);await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
+  const cdp=await context.newCDPSession(page);assert.deepEqual((await cdp.send('Page.getInstallabilityErrors')).installabilityErrors,[]);
+  await context.setOffline(true);await page.reload();await page.waitForFunction(()=>document.querySelectorAll('#messages li').length===4);
+  await page.locator('#prompt').fill('Offline');await page.locator('#prompt').press('Enter');await page.waitForFunction(()=>document.querySelectorAll('#messages li').length===5);await context.setOffline(false);
+  // Local sharing requires confirmation; regular capture has used no public stream APIs.
+  assert(!requests.some(u=>/\/(messages|commands|streams|events)(\?|$)/.test(u)));
+  await page.getByRole('link',{name:'Share',exact:true}).click();await page.waitForSelector('#share-dialog[open]');
+  await page.locator('#share-confirm').click();await page.waitForURL('http://localhost:9090/#*');await page.waitForFunction(()=>document.querySelectorAll('#messages li').length===5);
+  assert.equal((await page.locator('main').boundingBox()).width,shell.width);
+  const publicID=decodeURIComponent(new URL(page.url()).hash.slice(1));const listing=await(await fetch('http://localhost:9090/streams')).json();assert(!listing[publicID]);
+  await page.locator('#prompt').fill('/malten a public question');await page.locator('#prompt').press('Enter');
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('#messages .message')).some(el=>el.textContent==='/malten a public question'));
+  await page.reload();await page.waitForFunction(()=>Array.from(document.querySelectorAll('#messages .message')).some(el=>el.textContent==='/malten a public question'));
+  await page.locator('#goto-toggle').click();assert.equal(await page.locator('#gstream').evaluate(el=>getComputedStyle(el).outlineStyle),'none');
+  const attack='<img src=x onerror="window.injected=true">';await page.locator('#prompt').fill(attack);await page.locator('#prompt').press('Enter');
+  await page.waitForFunction(text=>Array.from(document.querySelectorAll('#messages .message')).some(el=>el.textContent===text),attack);assert.equal(await page.evaluate(()=>window.injected),undefined);
+  assert.deepEqual(errors,[]);
+  console.log('PASS: migration, stream isolation, per-stream drafts/photos, Enter, dictation, local AI context, export/import, offline/PWA, explicit sharing, shared layout, unlisted streams and public commands.');
+ }finally{if(browser)await browser.close();server.kill();}
+})().catch(e=>{console.error(e);process.exitCode=1;});
