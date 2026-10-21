@@ -30,14 +30,14 @@
     <section class="capture" aria-label="Capture a thought">
       <form id="capture">
         <label for="thought" id="composer-label">What’s on your mind?</label>
-        <textarea id="thought" rows="4" placeholder="A thought, a tangle, a few words. Start anywhere." disabled></textarea>
-        <div class="composer-footer"><span id="draft-status">Opening your space…</span><div><button id="cancel-edit" type="button" hidden>Cancel edit</button><button id="save" class="primary" type="submit" disabled>Save</button></div></div>
+        <textarea id="thought" rows="4" disabled></textarea>
+        <div class="composer-footer"><span id="draft-status">Loading…</span><div><button id="cancel-edit" type="button" hidden>Cancel edit</button><button id="save" class="primary" type="submit" disabled>Save</button></div></div>
       </form>
     </section>
-    <p class="boundary">Only on this device. Share something when you choose.</p>
+    <p class="boundary">Stored on this device.</p>
     <p id="status" role="status" aria-live="polite"></p>
     <section class="history" aria-label="Your thoughts">
-      <div class="history-heading"><h1>Your thoughts</h1><label class="search-label"><span class="sr-only">Search your thoughts</span><input type="search" id="search" placeholder="Find a thought…" disabled></label></div>
+      <div class="history-heading"><h1>Your thoughts</h1><label class="search-label"><span class="sr-only">Search your thoughts</span><input type="search" id="search" placeholder="Search" disabled></label></div>
       <div id="timeline"><p class="empty">Loading…</p></div>
     </section>
   </main>
