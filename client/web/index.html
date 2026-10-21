@@ -1,60 +1,58 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta http-equiv="content-language" content="en">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>Malten</title>
-    <link rel="stylesheet" type="text/css" href="malten.css?v0.47.0">
-    <link rel="canonical" href="https://malten.com" />
-    <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-    <meta name="theme-color" content="#ffffff">
-    <meta name="apple-mobile-web-app-title" content="Malten">
-  </head>
-  <body onhashchange="loadStream();">
-    <div id="side">
-    </div>
-    <div id="main">
-      <div id="head">
-        <a href="/"><img src="logo.jpg" style="width:20px;height:20px;vertical-align:middle;"/></a>
-	<a href="/" id="current"></a>
-	<span id="present"></span>
-	<span id="nav">
-          <button id="install" type="button" hidden>Install</button>
-	  <b><a href="/share" id="share">share</a></b> | 
-	  <b><a href="/new" id="new">new</a></b> | 
-	  <b>goto</b><form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
-	</span>
-      </div>
-      <div id="think">
-        <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
-          <input id="prompt" name="prompt" value="" placeholder="Speak your mind" maxlength="1024" autocomplete="off" autofocus>
-	  <input id="message" name="message" type="hidden">
-          <input id="stream" name="stream" type="hidden">
-	  <div id="controls">
-            <button id="send">Send</button>
-            <button id="speak">Talk</button>
-	    <span id="words"></span>
-            <span id="chars">1024</span>
-          </div>
-        </form>
-      </div>
-      <div>
-        <ul id="messages"></ul>
-      </div>
-    </div>
-    <script src="/install.js" defer></script>
-    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
-    <script src="malten.js?v=0.58.0"></script>
-    <script type="text/javascript">
-	$(document).ready(function() {
-            setCurrent();
-	    getStreams();
-	    loadListeners();
-	    loadMessages();
-	    observeEvents();
-	    pollMessages();
-	});
-    </script>
-  </body>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#faf9f6">
+  <meta name="description" content="A little space to get things out. Keep thoughts on this device, or share in anonymous, ephemeral streams.">
+  <title>Malten</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/timeline.css">
+  <script src="/timeline.js" defer></script>
+  <script src="/install.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <a class="brand" href="/">malten<span>a little space to get things out</span></a>
+      <details class="menu">
+        <summary aria-label="Open menu">Menu</summary>
+        <div class="menu-panel">
+          <button id="install" type="button" hidden>Install app</button>
+          <button id="export" type="button" disabled>Export thoughts</button>
+          <button id="import" type="button" disabled>Import thoughts</button>
+          <p>Thoughts stay in this browser on this device. Export a copy to keep a backup or move devices. Clearing site data removes them.</p>
+        </div>
+      </details>
+    </header>
+    <nav aria-label="Spaces"><a class="selected" href="/" aria-current="page">For me</a><a href="/streams.html#_">Public streams <span aria-hidden="true">↗</span></a></nav>
+    <section class="capture" aria-label="Capture a thought">
+      <form id="capture">
+        <label for="thought" id="composer-label">What’s on your mind?</label>
+        <textarea id="thought" rows="4" placeholder="A thought, a tangle, a few words. Start anywhere." disabled></textarea>
+        <div class="composer-footer"><span id="draft-status">Opening your space…</span><div><button id="cancel-edit" type="button" hidden>Cancel edit</button><button id="save" class="primary" type="submit" disabled>Save</button></div></div>
+      </form>
+    </section>
+    <p class="boundary">Only on this device. Share something when you choose.</p>
+    <p id="status" role="status" aria-live="polite"></p>
+    <section class="history" aria-label="Your thoughts">
+      <div class="history-heading"><h1>Your thoughts</h1><label class="search-label"><span class="sr-only">Search your thoughts</span><input type="search" id="search" placeholder="Find a thought…" disabled></label></div>
+      <div id="timeline"><p class="empty">Loading…</p></div>
+    </section>
+    <footer>Room for unfinished thoughts.</footer>
+  </main>
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+  <dialog id="share-dialog">
+    <form method="dialog">
+      <h2>Put this into a stream?</h2>
+      <p>This opens a copy in the anonymous stream composer. It is only posted when you press Send there. Your original stays on this device.</p>
+      <p>Streams are shared spaces, not private storage. Messages expire on the server; other people may still copy them.</p>
+      <label for="share-stream">Stream name</label><input id="share-stream" value="_" maxlength="100" autocomplete="off">
+      <p class="hint">_ is the public stream. A named stream is accessible to anyone with its link.</p>
+      <p id="share-error" role="alert"></p>
+      <div class="dialog-actions"><button value="cancel">Cancel</button><button id="share-continue" type="button" class="primary">Open stream composer</button></div>
+    </form>
+  </dialog>
+</body>
 </html>

@@ -1,11 +1,11 @@
 {
   "name": "Malten",
   "short_name": "Malten",
-  "description": "Reflect with AI",
+  "description": "A little space to get things out. Keep thoughts on this device or share in anonymous, ephemeral streams.",
   "scope": "/",
   "start_url": "/",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#faf9f6",
+  "theme_color": "#faf9f6",
   "display": "standalone",
   "icons": [
     {

@@ -3,3 +3,6 @@ malten
 
 # Local release artifacts
 /dist/
+
+# Optional browser test tooling
+/node_modules/
