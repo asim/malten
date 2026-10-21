@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#faf9f6">
-  <meta name="description" content="A little space to get things out. Keep thoughts on this device, or share in anonymous, ephemeral streams.">
+  <meta name="description" content="Personal thoughts and anonymous ephemeral streams.">
   <title>Malten</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -15,7 +15,7 @@
 <body>
   <main>
     <header>
-      <a class="brand" href="/">malten<span>a little space to get things out</span></a>
+      <a class="brand" href="/">malten</a>
       <details class="menu">
         <summary aria-label="Open menu">Menu</summary>
         <div class="menu-panel">
@@ -26,7 +26,7 @@
         </div>
       </details>
     </header>
-    <nav aria-label="Spaces"><a class="selected" href="/" aria-current="page">For me</a><a href="/streams.html#_">Public streams <span aria-hidden="true">↗</span></a></nav>
+    <nav aria-label="Spaces"><a class="selected" href="/" aria-current="page">For me</a><a href="/streams.html#_">Public streams</a></nav>
     <section class="capture" aria-label="Capture a thought">
       <form id="capture">
         <label for="thought" id="composer-label">What’s on your mind?</label>
@@ -40,7 +40,6 @@
       <div class="history-heading"><h1>Your thoughts</h1><label class="search-label"><span class="sr-only">Search your thoughts</span><input type="search" id="search" placeholder="Find a thought…" disabled></label></div>
       <div id="timeline"><p class="empty">Loading…</p></div>
     </section>
-    <footer>Room for unfinished thoughts.</footer>
   </main>
   <input id="import-file" type="file" accept="application/json,.json" hidden>
   <dialog id="share-dialog">
