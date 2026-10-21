@@ -14,7 +14,7 @@
   function persistDraft() {
     try {
       localStorage.setItem(draftKey, JSON.stringify({text: $('thought').value, editing}));
-      $('draft-status').textContent = $('thought').value ? 'Draft saved on this device' : 'No need to make it tidy.';
+      $('draft-status').textContent = $('thought').value ? 'Draft saved on this device' : '';
     } catch (_) { $('draft-status').textContent = 'Draft could not be saved. Keep this page open.'; }
   }
   function resetComposer() {
@@ -71,7 +71,7 @@
       meta.append(time, actions); article.append(text, meta); fragment.append(article);
     }
     if (!filtered.length) {
-      const empty = document.createElement('p'); empty.className = 'empty'; empty.textContent = query ? 'No thoughts match that search.' : 'Nothing to catch up on. When you save a thought, it will be here when you come back.'; fragment.append(empty);
+      const empty = document.createElement('p'); empty.className = 'empty'; empty.textContent = query ? 'No matches.' : 'No entries yet.'; fragment.append(empty);
     }
     $('timeline').replaceChildren(fragment);
   }
