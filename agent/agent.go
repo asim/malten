@@ -20,7 +20,7 @@ var (
 	Client *openai.Client
 )
 
-const DefaultModel = "gpt-6-astra-light"
+const DefaultModel = "gpt-6-astra"
 
 var stateMu sync.Mutex
 
@@ -32,7 +32,7 @@ type AI struct {
 var (
 	DefaultPersona = `Listen. Be patient. Respond kindly. Limit responses to 1024 characters or less.`
 
-	MaxTokens = 1024
+	MaxTokens = 4096
 )
 
 var (
@@ -76,10 +76,11 @@ func complete(prompt, user, persona string, ctx ...Context) openai.ChatCompletio
 	})
 
 	return openai.ChatCompletionRequest{
-		Model:     DefaultModel,
-		Messages:  message,
-		User:      user,
-		MaxTokens: MaxTokens,
+		Model:               DefaultModel,
+		Messages:            message,
+		User:                user,
+		MaxCompletionTokens: MaxTokens,
+		ReasoningEffort:     "low",
 	}
 }
 
@@ -142,7 +143,7 @@ func (ai *AI) listen(stream string) error {
 	for {
 		select {
 		case msg := <-o.Events:
-			if msg.Text != "" {
+			if msg.Type == "command" && msg.Text != "" {
 				ai.execute(msg.Stream, msg.Text)
 			}
 		case <-ticker.C:

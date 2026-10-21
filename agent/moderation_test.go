@@ -26,13 +26,21 @@ func TestPublicModeratorDecisions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var req struct {
-					Messages []struct {
+					Model               string   `json:"model"`
+					MaxTokens           int      `json:"max_tokens"`
+					MaxCompletionTokens int      `json:"max_completion_tokens"`
+					ReasoningEffort     string   `json:"reasoning_effort"`
+					Temperature         *float64 `json:"temperature"`
+					Messages            []struct {
 						Role    string
 						Content json.RawMessage
 					}
 				}
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Error(err)
+				}
+				if req.Model != "gpt-6-astra" || req.MaxTokens != 0 || req.MaxCompletionTokens < 4096 || req.ReasoningEffort != "low" || req.Temperature != nil {
+					t.Error("incompatible reasoning-model request")
 				}
 				if len(req.Messages) != 2 || req.Messages[0].Role != "system" {
 					t.Error("policy missing")

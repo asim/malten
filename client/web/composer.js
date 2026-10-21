@@ -47,6 +47,11 @@ function createComposer(text, report, changed = () => {}) {
   controls.append(talk, remove); text.after(preview); root.querySelector('.composer-footer').prepend(controls);
   const resize = () => { text.style.height = 'auto'; text.style.height = Math.max(64, text.scrollHeight) + 'px'; };
   text.addEventListener('input', resize);
+  text.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    if (!event.repeat && !locked && !loading && !text.disabled) root.requestSubmit();
+  });
   window.addEventListener('pagehide', () => { if(recognition) recognition.abort(); });
   return {get image(){return photo;}, get loading(){return loading;}, setImage, setBusy(value){locked=value; if(value && recognition) recognition.stop(); sync();}};
 }
