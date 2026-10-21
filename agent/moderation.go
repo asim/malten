@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -32,7 +34,7 @@ func newPublicModerator(client *openai.Client, model string) func(context.Contex
 		default:
 			return server.ErrModerationUnavailable
 		}
-		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		parts := []openai.ChatMessagePart{}
 		if strings.TrimSpace(message.Text) != "" {
@@ -42,11 +44,20 @@ func newPublicModerator(client *openai.Client, model string) func(context.Contex
 			parts = append(parts, openai.ChatMessagePart{Type: openai.ChatMessagePartTypeImageURL, ImageURL: &openai.ChatMessageImageURL{URL: message.Image}})
 		}
 		rsp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-			Model: model, Temperature: 0, MaxTokens: 150,
+			Model: model, MaxCompletionTokens: 4096, ReasoningEffort: moderationEffort(model),
 			ResponseFormat: &openai.ChatCompletionResponseFormat{Type: openai.ChatCompletionResponseFormatTypeJSONObject},
 			Messages:       []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: moderationPolicy}, {Role: openai.ChatMessageRoleUser, MultiContent: parts}},
 		})
-		if err != nil || len(rsp.Choices) != 1 || rsp.Choices[0].FinishReason != openai.FinishReasonStop {
+		if err != nil {
+			logModerationError(model, err)
+			return server.ErrModerationUnavailable
+		}
+		if len(rsp.Choices) != 1 {
+			log.Printf("moderation: model=%s unexpected choice count=%d", model, len(rsp.Choices))
+			return server.ErrModerationUnavailable
+		}
+		if rsp.Choices[0].FinishReason != openai.FinishReasonStop {
+			log.Printf("moderation: model=%s finish_reason=%s", model, rsp.Choices[0].FinishReason)
 			return server.ErrModerationUnavailable
 		}
 		var decision struct {
@@ -54,6 +65,7 @@ func newPublicModerator(client *openai.Client, model string) func(context.Contex
 			Reason string `json:"reason"`
 		}
 		if json.Unmarshal([]byte(rsp.Choices[0].Message.Content), &decision) != nil || decision.Allow == nil {
+			log.Printf("moderation: model=%s invalid decision JSON", model)
 			return server.ErrModerationUnavailable
 		}
 		if *decision.Allow {
@@ -67,5 +79,30 @@ func newPublicModerator(client *openai.Client, model string) func(context.Contex
 			return server.ErrModerationRejected
 		}
 		return server.ErrModerationUnavailable
+	}
+}
+
+func moderationEffort(model string) string {
+	if strings.HasPrefix(model, "gpt-6") || strings.HasPrefix(model, "gpt-5") || strings.HasPrefix(model, "o3") || strings.HasPrefix(model, "o4") {
+		return "low"
+	}
+	return ""
+}
+
+// Log diagnostic fields, never the submitted text, photo, API key or response body.
+func logModerationError(model string, err error) {
+	var apiErr *openai.APIError
+	if errors.As(err, &apiErr) {
+		param := ""
+		if apiErr.Param != nil {
+			param = *apiErr.Param
+		}
+		log.Printf("moderation: model=%s status=%d code=%v type=%s param=%s", model, apiErr.HTTPStatusCode, apiErr.Code, apiErr.Type, param)
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		log.Printf("moderation: model=%s request timed out", model)
+	} else if errors.Is(err, context.Canceled) {
+		log.Printf("moderation: model=%s request canceled", model)
+	} else {
+		log.Printf("moderation: model=%s transport failure (%T)", model, err)
 	}
 }

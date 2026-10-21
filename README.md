@@ -50,9 +50,9 @@ To enable conversations using [ChatGPT](https://openai.com/blog/chatgpt) specify
 OPENAI_API_KEY=xxxx ./malten
 ```
 
-The default model for conversations and moderation is `gpt-6-astra-light`.
+The default model for conversations and moderation is `gpt-6-astra` with `low` reasoning effort.
 
-To invoke ChatGPT use `/malten` as the prefix to your command
+To invoke ChatGPT use `/malten` as the prefix to your command. The agent only replies to explicit commands; ordinary stream posts are moderated without an AI reply.
 
 ## WhatsApp
 
@@ -207,6 +207,7 @@ and expire according to their TTL.
 ## Personal timeline
 
 - Attach one photo, take a photo, or use Talk in either composer. Photos are resized and re-encoded on-device (up to 512 KiB); this removes original metadata. Camera availability depends on the device/browser. Talk uses browser speech recognition, which may send audio to the browser provider; review the transcript before saving or sending.
+- Enter saves or sends; Shift+Enter inserts a new line.
 - Save text without a title or character limit imposed by the stream transport.
 - Recover an unfinished draft after closing and reopening the app.
 - Search, edit, and delete thoughts locally.
@@ -239,6 +240,8 @@ When `OPENAI_API_KEY` is set, the agent checks public-stream text, photos, and c
 
 The policy allows venting, profanity, distress, and requests for support. It blocks targeted abuse, credible threats, harmful instructions, exploitation, explicit imagery, graphic gore, doxxing and spam. AI decisions can be wrong; the checks are not a guarantee of safety. Rejected posts return HTTP 422. Upstream errors, invalid decisions, timeouts, and a full moderation queue return HTTP 503 without publishing. The composer retains text and photos for editing or retrying. No moderation history is stored.
 
-`MODERATION_MODEL` selects a vision-capable chat model (default `gpt-6-astra-light`). Requests have a 15-second timeout and at most four run concurrently. `PUBLIC_MODERATION=true` requires an API key at startup; `PUBLIC_MODERATION=false` explicitly disables checks. Without an API key, moderation is off and the UI says so. Public moderation uses paid API calls; the concurrency cap is not a rate limit or spending cap.
+`MODERATION_MODEL` selects a vision-capable chat model (default `gpt-6-astra` with `low` reasoning effort). Requests have a 30-second timeout and at most four run concurrently. `PUBLIC_MODERATION=true` requires an API key at startup; `PUBLIC_MODERATION=false` explicitly disables checks. Without an API key, moderation is off and the UI says so. Public moderation uses paid API calls; the concurrency cap is not a rate limit or spending cap.
 
 Presence counts connected browser/client sessions, excluding the internal AI listener. Two open tabs can still count as two connections.
+
+Moderation failures log the API status, error code and parameter (or timeout/invalid-output category) on the server, without logging the submitted content or raw response. Check these diagnostics when the UI reports moderation unavailable.
