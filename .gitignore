@@ -1,2 +1,5 @@
 malten.db
 malten
+
+# Local release artifacts
+/dist/
