@@ -3,10 +3,13 @@
   <head>
     <meta http-equiv="content-language" content="en">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>Home</title>
+    <title>Malten</title>
     <link rel="stylesheet" type="text/css" href="malten.css?v0.47.0">
     <link rel="canonical" href="https://malten.com" />
     <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-title" content="Malten">
   </head>
   <body onhashchange="loadStream();">
     <div id="side">
@@ -17,6 +20,7 @@
 	<a href="/" id="current"></a>
 	<span id="present"></span>
 	<span id="nav">
+          <button id="install" type="button" hidden>Install</button>
 	  <b><a href="/share" id="share">share</a></b> | 
 	  <b><a href="/new" id="new">new</a></b> | 
 	  <b>goto</b><form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
@@ -39,6 +43,7 @@
         <ul id="messages"></ul>
       </div>
     </div>
+    <script src="/install.js" defer></script>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
     <script src="malten.js?v=0.58.0"></script>
     <script type="text/javascript">

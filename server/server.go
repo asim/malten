@@ -80,14 +80,13 @@ var Default = New()
 // random generate i length alphanum string
 func Random(i int) string {
 	bytes := make([]byte, i)
-	for {
-		rand.Read(bytes)
-		for i, b := range bytes {
-			bytes[i] = alphanum[b%byte(len(alphanum))]
-		}
-		return string(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		panic(err)
 	}
-	return uuid.New().String()
+	for i, b := range bytes {
+		bytes[i] = alphanum[b%byte(len(alphanum))]
+	}
+	return string(bytes)
 }
 
 func New() *Server {

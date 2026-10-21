@@ -20,10 +20,10 @@ Streams have an idle lifetime of 1024 seconds. Each stream supports 1024 message
 
 ## Usage
 
-Use the Go toolchain to install
+Use Go 1.26 or newer to install
 
 ```
-go get github.com/asim/malten
+go install github.com/asim/malten@latest
 ```
 
 Or download the latest release binary
@@ -166,3 +166,32 @@ An example
 ```
 POST /messages?stream=foo&message=helloworld
 ```
+
+## Development
+
+Run `bash tests.sh` to verify modules, vet, run race tests, and test/build with
+CGO disabled. Tests run locally without OpenAI credentials or WhatsApp login.
+CI also builds release archives on each push and pull request.
+
+WhatsApp uses pure Go SQLite, including in release binaries. Existing `malten.db`
+files are retained; back up the database before upgrading, as WhatsApp's store
+schema is migrated on startup.
+
+## Releases
+
+After merging and passing CI, push a semantic version tag (for example `v0.2.0`).
+The release workflow reruns tests and publishes archives and SHA-256 checksums.
+Archives target Linux (386, amd64, armv7, arm64), macOS (amd64, arm64), and
+Windows (386, amd64, arm64). To validate packaging without publishing, run
+`goreleaser release --snapshot --clean` with GoReleaser v2.
+
+## Install as an app
+
+Serve Malten over HTTPS (localhost also works for development). In Chrome or Edge,
+use the address-bar install icon or the **Install** button when it appears. On
+an iPhone or iPad, use Safari's Share menu and **Add to Home Screen**. The app
+opens in its own window with the Malten icon.
+
+Installation does not add offline storage: messages still live on the server and
+expire according to the stream TTL. A service worker is not required for modern
+browser installation; offline capture is not implemented yet.

@@ -14,15 +14,15 @@ import (
 
 	"github.com/asim/malten/server"
 	"github.com/gorilla/websocket"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
-	waproto "go.mau.fi/whatsmeow/binary/proto"
+	waproto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
+	_ "modernc.org/sqlite"
 )
 
 var (
@@ -210,13 +210,13 @@ func Run(ctx context.Context) {
 	}
 
 	dbLog := waLog.Stdout("Database", "ERROR", true)
-	// Make sure you add appropriate DB connector imports, e.g. github.com/mattn/go-sqlite3 for SQLite
-	container, err := sqlstore.New("sqlite3", "file:malten.db?_foreign_keys=on", dbLog)
+	// Use pure Go SQLite so release binaries work without CGO.
+	container, err := sqlstore.New(ctx, "sqlite", "file:malten.db?_pragma=foreign_keys(1)", dbLog)
 	if err != nil {
 		panic(err)
 	}
-	// If you want multiple sessions, remember their JIDs and use .GetDevice(jid) or .GetAllDevices() instead.
-	deviceStore, err := container.GetFirstDevice()
+	defer container.Close()
+	deviceStore, err := container.GetFirstDevice(ctx)
 	if err != nil {
 		panic(err)
 	}

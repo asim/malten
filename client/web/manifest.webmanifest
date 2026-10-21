@@ -6,12 +6,20 @@
   "start_url": "/",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
-  "display": "standalone", 
+  "display": "standalone",
   "icons": [
-      {
-        "src": "/logo.jpg",
-        "type": "image/jpeg",
-        "sizes": "300x300"
-      }
-  ]
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    }
+  ],
+  "id": "/"
 }

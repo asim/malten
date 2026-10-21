@@ -215,8 +215,6 @@ func (ai *AI) listen(stream string) error {
 		//	ai.observe(msg.Stream, msg.Text)
 		//}
 	}
-
-	return nil
 }
 
 func (ai *AI) observe(stream, prompt string) {
