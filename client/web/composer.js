@@ -44,7 +44,9 @@ function createComposer(text, report, changed = () => {}) {
     try { recognition.start(); } catch(_) { recognition = null; talk.textContent = 'Talk'; report('Could not start dictation.'); }
   };
   const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove photo'; remove.hidden = true; remove.onclick = () => setImage(''); buttons.push(remove);
-  controls.append(talk, remove); text.after(preview, controls);
+  controls.append(talk, remove); text.after(preview); root.querySelector('.composer-footer').prepend(controls);
+  const resize = () => { text.style.height = 'auto'; text.style.height = Math.max(64, text.scrollHeight) + 'px'; };
+  text.addEventListener('input', resize);
   window.addEventListener('pagehide', () => { if(recognition) recognition.abort(); });
   return {get image(){return photo;}, get loading(){return loading;}, setImage, setBusy(value){locked=value; if(value && recognition) recognition.stop(); sync();}};
 }

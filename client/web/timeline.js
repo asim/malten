@@ -7,7 +7,7 @@
   let composer;
   let db, editing = null, sharing = null, renderVersion = 0, busy = false;
   const status = (message, error = false) => { $('status').textContent = message; $('status').className = error ? 'error' : ''; };
-  const resize = () => { $('thought').style.height = 'auto'; $('thought').style.height = Math.max(125, $('thought').scrollHeight) + 'px'; };
+  const resize = () => { $('thought').style.height = 'auto'; $('thought').style.height = Math.max(64, $('thought').scrollHeight) + 'px'; };
   function persistDraft() {
     try {
       localStorage.setItem(draftKey, JSON.stringify({text: $('thought').value, editing}));

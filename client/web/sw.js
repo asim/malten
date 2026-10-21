@@ -1,5 +1,5 @@
 // Only cache the personal app shell. Never cache stream messages, commands or events.
-const CACHE = 'malten-personal-shell-v4';
+const CACHE = 'malten-personal-shell-v5';
 const SHELL = ['/private', '/composer.js', '/timeline.css', '/timeline.js', '/install.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL))); });
 self.addEventListener('activate', event => {
@@ -8,7 +8,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.mode === 'navigate' && url.origin === self.location.origin && (url.pathname === '/' || url.pathname === '/streams.html')) {
-    event.respondWith(fetch(event.request).catch(() => new Response('<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><title>Malten</title><p>Public streams need a connection.</p><a href="/private">For me</a>', {headers:{'Content-Type':'text/html'}})));
+    event.respondWith(fetch(event.request, {cache:'no-store'}).catch(() => new Response('<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><title>Malten</title><p>Public streams need a connection.</p><a href="/private">For me</a>', {headers:{'Content-Type':'text/html'}})));
     return;
   }
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || !SHELL.includes(url.pathname) || url.search) return;

@@ -13,23 +13,22 @@
   <main>
     <header>
       <a class="brand" href="/">malten</a>
-      <details class="menu">
-        <summary aria-label="Open menu">Menu</summary>
-        <div class="menu-panel">
-          <button id="install" type="button" hidden>Install app</button>
-          <a class="menu-link" href="/new">New stream</a>
-          <a class="menu-link" href="/#_" id="share">Share stream link</a>
-        </div>
-      </details>
+      <div class="header-actions">
+        <a href="/new">New</a>
+        <a href="/#_" id="share">Share</a>
+        <a href="#goto" id="goto-toggle" aria-controls="goto" aria-expanded="false">Go to</a>
+        <button id="install" type="button" hidden>Install app</button>
+      </div>
     </header>
+    <form id="goto" hidden onsubmit="return gotoStream(this);"><label class="sr-only" for="gstream">Stream name</label><input id="gstream" name="gstream" type="text" placeholder="Stream name"><button type="submit">Go</button></form>
     <nav aria-label="Spaces"><a href="/private">For me</a><a class="selected" href="/#_" aria-current="page">Public streams</a></nav>
     <section class="capture" aria-label="Write to a stream">
       <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
-        <label class="composer-label" for="prompt">What’s on your mind?</label>
-        <textarea id="prompt" name="prompt" rows="4" placeholder="Speak your mind" maxlength="1024" autocomplete="off"></textarea>
+        <label class="sr-only" for="prompt">What’s on your mind?</label>
+        <textarea id="prompt" name="prompt" rows="2" placeholder="Speak your mind" maxlength="1024" autocomplete="off"></textarea>
         <input id="message" name="message" type="hidden">
         <input id="stream" name="stream" type="hidden">
-        <div class="composer-footer"><span class="hint"><span id="chars">1024</span> characters left</span><div><button id="send" class="primary" type="submit">Send</button></div></div>
+        <div class="composer-footer"><span class="hint sr-only"><span id="chars">1024</span> characters left</span><div><button id="send" class="primary" type="submit">Send</button></div></div>
         <span id="words" role="status" aria-live="polite"></span>
       </form>
     </section>
@@ -38,7 +37,6 @@
     <section class="history" aria-label="Stream messages">
       <div class="history-heading stream-heading">
         <div><h1><a id="current" href="/#_">Public stream</a></h1><span id="present"></span></div>
-        <form id="goto" onsubmit="return gotoStream(this);"><label class="sr-only" for="gstream">Stream name</label><input id="gstream" name="gstream" type="text" placeholder="Stream name"><button type="submit">Go</button></form>
       </div>
       <ul id="messages"></ul>
     </section>

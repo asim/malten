@@ -234,6 +234,8 @@ function gotoStream(t) {
     if (stream.length > 0) {
         document.getElementById('goto').elements['gstream'].value = '';
         window.location = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/#' + encodeURIComponent(stream);
+        document.getElementById('goto').hidden = true;
+        document.getElementById('goto-toggle').setAttribute('aria-expanded', 'false');
         clearMessages();
     };
     return false;
@@ -284,6 +286,12 @@ function loadListeners() {
     }, false);
 
     shareListener();
+    document.getElementById('goto-toggle').onclick = function(event) {
+        event.preventDefault();
+        var form = document.getElementById('goto'); form.hidden = !form.hidden;
+        this.setAttribute('aria-expanded', String(!form.hidden));
+        if(!form.hidden) document.getElementById('gstream').focus();
+    };
 
     window.addEventListener("pagehide", function(e) {
         if (source != undefined) {
@@ -504,7 +512,7 @@ function shareListener() {
                 })
                 .catch(console.error);
         } else {
-            // fallback
+            navigator.clipboard.writeText(window.location.href).then(() => { document.getElementById('words').textContent = 'Link copied.'; }).catch(() => { window.prompt('Copy stream link', window.location.href); });
         }
 
         return false;
