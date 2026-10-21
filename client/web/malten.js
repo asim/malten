@@ -13,7 +13,7 @@ var source;
 var id = ID();
 
 String.prototype.parseURL = function(embed) {
-    return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
+    return this.replace(/https?:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
         if (embed == true) {
             var match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
             if (match && match[2].length == 11) {
@@ -41,7 +41,7 @@ String.prototype.parseHashTag = function() {
     return this.replace(/[#]+[A-Za-z0-9-_]+/g, function(t) {
         //var tag = t.replace("#","%23")
         var url = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
-        return t.link(url + '/' + t);
+        return t.link(url + '/streams.html' + t);
     });
 };
 
@@ -100,12 +100,16 @@ function clipMessages() {
 
 function escapeHTML(str) {
     var div = document.createElement('div');
-    div.style.display = 'none';
-    str = str.replace(/(?:\r\n|\r|\n)/g, '<br>');
-    div.innerHTML = str;
-    //div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
+    div.textContent = str;
+    return div.innerHTML.replace(/(?:\r\n|\r|\n)/g, '<br>');
 };
+
+function safeURL(value) {
+    try {
+        var url = new URL(value);
+        return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : '';
+    } catch (_) { return ''; }
+}
 
 function displayMessages(array, direction) {
     var list = document.getElementById('messages');
@@ -145,17 +149,17 @@ function displayMessages(array, direction) {
             var d5 = document.createElement('div');
             var img = document.createElement('img');
 
-            a1.innerHTML = array[i].Metadata.Site + ": " + array[i].Metadata.Title;
-            a1.href = array[i].Metadata.Url;
-            a2.href = array[i].Metadata.Url;
+            a1.textContent = array[i].Metadata.Site + ": " + array[i].Metadata.Title;
+            a1.href = safeURL(array[i].Metadata.Url);
+            a2.href = safeURL(array[i].Metadata.Url);
             d3.className = 'image';
             d4.className = 'title';
             d5.className = 'desc';
-            img.src = array[i].Metadata.Image;
+            img.src = safeURL(array[i].Metadata.Image);
             a2.appendChild(img);
             d3.appendChild(a2);
             d4.appendChild(a1);
-            d5.innerHTML = array[i].Metadata.Description;
+            d5.textContent = array[i].Metadata.Description;
             item.appendChild(d3);
             item.appendChild(d4);
             item.appendChild(d5);
@@ -181,6 +185,7 @@ function getSpeech() {
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+    if (!SpeechRecognition) { words.innerText = "Dictation is not supported in this browser."; return; }
     let recognition = new SpeechRecognition();
     recognition.onstart = () => {
         console.log("mic on");
@@ -196,15 +201,18 @@ function getSpeech() {
     recognition.onresult = (result) => {
         console.log(result.results[0][0].transcript);
 	text.value = result.results[0][0].transcript;
-	// post it;
-	setTimeout(submitCommand, 500)
+	chars();
+	words.innerText = "Review your words, then press Send."
     }
 
+    recognition.onerror = () => { speak.disabled = false; words.innerText = "Could not hear you. Try again or type."; };
+    recognition.onend = () => { speak.disabled = false; };
     recognition.start();
 }
 
 function getStream() {
     var stream = window.location.hash.replace('#', '');
+    try { stream = decodeURIComponent(stream); } catch (_) {}
 
     if (stream.length == 0) {
         stream = "_";
@@ -252,7 +260,7 @@ function gotoStream(t) {
     var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
     if (stream.length > 0) {
         document.getElementById('goto').elements['gstream'].value = '';
-        window.location = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/#' + stream;
+        window.location = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/streams.html#' + encodeURIComponent(stream);
         clearMessages();
     };
     return false;
@@ -270,7 +278,7 @@ function newStream() {
             ttl: ttl
         })
         .done(function(data) {
-            window.location = location.protocol + '//' + location.host + '/#' + data.stream;
+            window.location = location.protocol + '//' + location.host + '/streams.html#' + encodeURIComponent(data.stream);
             return false;
         })
         .fail(function() {
@@ -327,7 +335,7 @@ function loadMore() {
     var params = "?direction=-1&limit=" + limit + "&last=" + oldest;
 
     if (window.location.hash.length > 0) {
-        params += "&stream=" + getStream();
+        params += "&stream=" + encodeURIComponent(getStream());
     };
 
     $.get(messageUrl + params, function(data) {
@@ -350,7 +358,7 @@ function loadMessages() {
 
     // stream provided?
     if (stream.length > 0) {
-        params += "&stream=" + stream;
+        params += "&stream=" + encodeURIComponent(stream);
         form.elements["stream"].value = stream;
     } else {
         form.elements["stream"].value = '';
@@ -377,9 +385,9 @@ function observeEvents() {
 
     var stream = getStream();
 
-    var url = window.location.origin.replace("http", "ws") + eventUrl + "?stream=" + stream;
+    var url = window.location.origin.replace("http", "ws") + eventUrl + "?stream=" + encodeURIComponent(stream);
     source = new WebSocket(url);
-    //source = new EventSource(eventUrl + "?stream=" + stream);
+    //source = new EventSource(eventUrl + "?stream=" + encodeURIComponent(stream));
 
     source.onopen = (event) => {
 	console.log(event)
@@ -483,7 +491,7 @@ function setCurrent() {
     current.href = window.location.href;
 
     if (window.location.hash.length > 0) {
-        current.text = window.location.hash.replace('#', '');
+        current.text = getStream();
 	document.title = window.location.hash;
     } else {
         current.text = "";
@@ -560,4 +568,15 @@ function shareListener() {
 
         return false;
     });
+}
+
+function restoreStreamDraft() {
+    try {
+        var draft = JSON.parse(sessionStorage.getItem('malten-stream-draft-v1'));
+        if (draft && draft.stream === getStream() && typeof draft.text === 'string') {
+            document.getElementById('prompt').value = draft.text;
+            sessionStorage.removeItem('malten-stream-draft-v1');
+            chars();
+        }
+    } catch (_) {}
 }

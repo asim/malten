@@ -4,7 +4,11 @@ Anonymous ephemeral messaging
 
 ## Overview
 
-Malten is an ephemeral messaging app. It contains solely streams of text and nothing more. 
+Malten is a small place to get thoughts out: keep them on your device, or share in anonymous ephemeral streams.
+
+The home page is a personal text timeline stored in IndexedDB in this browser. It never sends entries to the server or AI automatically. Public streams remain available through the **Public streams** link. Existing `/#stream` links still open the stream view.
+
+The stream backend remains ephemeral.
 Streams have an idle lifetime of 1024 seconds. Each stream supports 1024 messages as a FIFO and 
 1024 characters per message. Streams can be discovered through exploration or via the API.
 
@@ -192,6 +196,35 @@ use the address-bar install icon or the **Install** button when it appears. On
 an iPhone or iPad, use Safari's Share menu and **Add to Home Screen**. The app
 opens in its own window with the Malten icon.
 
-Installation does not add offline storage: messages still live on the server and
-expire according to the stream TTL. A service worker is not required for modern
-browser installation; offline capture is not implemented yet.
+After the first online visit finishes caching the app, the personal timeline can open
+and save text offline. A small service worker caches only the personal app shell;
+it never caches stream API responses. Public streams still require a connection
+and expire according to their TTL.
+
+## Personal timeline
+
+- Save text without a title or character limit imposed by the stream transport.
+- Recover an unfinished draft after closing and reopening the app.
+- Search, edit, and delete thoughts locally.
+- Use Menu → Export thoughts / Import thoughts to back up or move your timeline.
+  Imports add missing IDs and never overwrite existing entries.
+- Share opens a copy in a stream composer; it does not post until you press Send.
+  Stream messages still have a 1,024-byte limit.
+
+Storage belongs to this browser and origin, and is not synced across devices.
+Clearing site data removes it. Export backups before changing devices or domains.
+Browser storage is not an encrypted vault or a separate account on a shared device.
+Photo capture and AI actions on local entries are not implemented in this first step.
+Anonymous public sharing remains a core part of Malten: named/unlisted streams are
+accessible to anyone who knows their link, rather than being access-controlled.
+
+
+### Browser regression checks
+
+The UI uses plain JavaScript with no frontend build step. For browser tests only,
+install Playwright (`npm install --no-save --package-lock=false playwright@1.62.1`),
+then `npx playwright install chromium`. Build with `go build -o malten .` and run
+`node scripts/test-timeline.cjs` with port 9090 free. The script uses isolated browser
+profiles and never enables OpenAI or WhatsApp. `CHROMIUM_PATH` and `MALTEN_BINARY`
+can select existing test binaries. `JQUERY_PATH` can supply the existing public
+stream's jQuery CDN asset when testing without browser internet access.

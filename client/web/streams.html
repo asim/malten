@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="content-language" content="en">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Malten</title>
+    <link rel="stylesheet" type="text/css" href="malten.css?v0.47.0">
+    <link rel="canonical" href="https://malten.com" />
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-title" content="Malten">
+  </head>
+  <body onhashchange="loadStream();">
+    <div id="side">
+    </div>
+    <div id="main">
+      <div id="head">
+        <a href="/"><img src="logo.jpg" style="width:20px;height:20px;vertical-align:middle;"/></a>
+	<a href="/" id="current"></a>
+	<span id="present"></span>
+	<span id="nav">
+          <button id="install" type="button" hidden>Install</button>
+	  <b><a href="/share" id="share">share</a></b> | 
+	  <b><a href="/new" id="new">new</a></b> | 
+	  <b>goto</b><form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
+	</span>
+      </div>
+      <p style="line-height:1.5">An anonymous, shared space. Messages expire on the server. Anyone with the stream link can read and copy them. <a href="/">Back to my thoughts</a></p>
+      <div id="think">
+        <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
+          <input id="prompt" name="prompt" value="" placeholder="Speak your mind" maxlength="1024" autocomplete="off" autofocus>
+	  <input id="message" name="message" type="hidden">
+          <input id="stream" name="stream" type="hidden">
+	  <div id="controls">
+            <button id="send">Send</button>
+            <button id="speak">Talk</button>
+	    <span id="words"></span>
+            <span id="chars">1024</span>
+          </div>
+        </form>
+      </div>
+      <div>
+        <ul id="messages"></ul>
+      </div>
+    </div>
+    <script src="/install.js" defer></script>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+    <script src="malten.js?v=0.59.0"></script>
+    <script type="text/javascript">
+	$(document).ready(function() {
+            restoreStreamDraft();
+            setCurrent();
+	    getStreams();
+	    loadListeners();
+	    loadMessages();
+	    observeEvents();
+	    pollMessages();
+	});
+    </script>
+  </body>
+</html>
