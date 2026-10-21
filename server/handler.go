@@ -31,8 +31,6 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Got command", command)
-
 	// default stream
 	if len(stream) == 0 {
 		stream = defaultStream
@@ -137,17 +135,12 @@ func GetStreamsHandler(w http.ResponseWriter, r *http.Request) {
 
 	streams := make(map[string]*Stream)
 
-	for k, v := range Default.List() {
-		// only return public streams
-		if v.Private {
-			continue
-		}
-		streams[k] = &Stream{
-			Id:        v.Id,
-			Updated:   v.Updated,
-			TTL:       v.TTL,
-			Observers: v.Observers,
-		}
+	name := r.Form.Get("stream")
+	if name == "" {
+		name = defaultStream
+	}
+	if v := Default.List()[name]; v != nil {
+		streams[name] = &Stream{Id: v.Id, Updated: v.Updated, TTL: v.TTL, Observers: v.Observers}
 	}
 
 	b, _ := json.Marshal(streams)
@@ -194,7 +187,7 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	message := r.Form.Get("message")
 	photo := r.Form.Get("image")
-	if err := validatePhoto(photo); err != nil {
+	if err := ValidatePhoto(photo); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}

@@ -21,11 +21,11 @@ func testPhoto(t *testing.T) string {
 }
 
 func TestPhotoValidation(t *testing.T) {
-	if err := validatePhoto(testPhoto(t)); err != nil {
+	if err := ValidatePhoto(testPhoto(t)); err != nil {
 		t.Fatal(err)
 	}
 	for _, value := range []string{"data:image/svg+xml;base64,PHN2Zz4=", "data:image/png;base64,aGVsbG8=", "data:image/jpeg;base64," + strings.Repeat("A", 700000)} {
-		if validatePhoto(value) == nil {
+		if ValidatePhoto(value) == nil {
 			t.Fatal("accepted invalid photo")
 		}
 	}

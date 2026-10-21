@@ -6,11 +6,11 @@ Anonymous ephemeral messaging
 
 Malten is a small place to get thoughts out: keep them on your device, or share in anonymous ephemeral streams.
 
-Public streams open at `/`, with named streams at `/#stream`. **For me** opens `/private`, a personal timeline stored in IndexedDB on this device. Local entries are never sent to the server or AI automatically. Old `/streams.html#stream` links redirect to `/#stream`.
+One stream interface serves both spaces. **Public** opens `/` and `/#stream`: anonymous, ephemeral server streams. **For you** opens `/private` and `/private#stream`: multiple streams held in IndexedDB on this device. New, Share, Go to, the composer and messages use the same page and JavaScript. Old `/streams.html#stream` links redirect to `/#stream`.
 
 The stream backend remains ephemeral.
 Streams have an idle lifetime of 1024 seconds. Each stream supports 1024 messages as a FIFO and 
-1024 UTF-8 bytes per text message. Photo-heavy streams also have an 8 MiB content budget, evicting the oldest posts first. Streams can be discovered through exploration or via the API.
+1024 UTF-8 bytes per text message. Photo-heavy streams also have an 8 MiB content budget, evicting the oldest posts first. There is no stream directory. New public streams have random links; anyone who has the link can read them.
 
 ## Features
 
@@ -85,10 +85,10 @@ stream: string e.g stream=foo
 private: bool e.g private=true
 ```
 
-To retrieve a list of streams
+To retrieve presence for a known stream (no directory or enumeration)
 
 ```
-GET /streams
+GET /streams?stream=foo
 ```
 
 ### Events
@@ -200,29 +200,22 @@ an iPhone or iPad, use Safari's Share menu and **Add to Home Screen**. The app
 opens in its own window with the Malten icon.
 
 After the first online visit finishes caching the app, the personal timeline can open
-and save text and photos offline. Opening the app offline offers a link to **For me**. A small service worker caches only the personal app shell;
+and save text and photos offline. Opening the app offline offers a link to **For you**. A small service worker caches only the personal app shell;
 it never caches stream API responses. Public streams still require a connection
 and expire according to their TTL.
 
-## Personal timeline
+## On-device streams
 
-- Attach one photo, take a photo, or use Talk in either composer. Photos are resized and re-encoded on-device (up to 512 KiB); this removes original metadata. Camera availability depends on the device/browser. Talk uses browser speech recognition, which may send audio to the browser provider; review the transcript before saving or sending.
-- Enter saves or sends; Shift+Enter inserts a new line.
-- Save text without a title or character limit imposed by the stream transport.
-- Recover an unfinished draft after closing and reopening the app.
-- Search, edit, and delete thoughts locally.
-- Use Menu → Export thoughts / Import thoughts to back up or move your timeline.
-  Imports add missing IDs and never overwrite existing entries.
-- Share opens a copy in a stream composer; it does not post until you press Send.
-  Stream messages still have a 1,024-byte limit.
+- Use New to create a separate stream and Go to to return to one. Messages and drafts, including photos, are kept separately for each stream.
+- Enter sends; Shift+Enter inserts a newline. Photo, Camera and Talk work in both spaces.
+- Ordinary local messages make no stream or AI API requests. `/malten` explicitly sends the current stream's recent context to `/ask`, a stateless server relay to OpenAI. No stream ID or account identity is added to the model request. Message content itself can still identify you; this is not an anonymity network or on-device inference.
+- The AI uses up to 40 recent messages, 32,000 text bytes and two photos. The question and answer remain in the local stream. Older entries remain stored locally but fall outside the model context window. An unsuccessful request leaves the question saved; Ask again is available in its message menu.
+- In Public, `/malten` uses the recent, unexpired messages from that stream. The agent no longer keeps a second history that can outlive stream expiry. Ordinary posts never trigger replies.
+- Share on a local stream asks before copying its messages to a new ephemeral public stream. It never publishes automatically when you switch spaces or invoke AI. Share on a public stream shares its existing link. Sharing does not turn copied `/malten` text into new commands.
+- Menu → Export streams / Import streams backs up all local streams. Previous timeline exports remain supported; existing IDs are not overwritten.
+- Existing personal timeline entries and drafts migrate into the initial local stream. No existing local content is deleted or uploaded.
 
-Storage belongs to this browser and origin, and is not synced across devices.
-Clearing site data removes it. Export backups before changing devices or domains.
-Browser storage is not an encrypted vault or a separate account on a shared device.
-Photos and photo drafts stay in IndexedDB with local text, and are included in timeline exports. AI actions on local entries are not implemented. WhatsApp forwarding currently supports text only.
-Anonymous public sharing remains a core part of Malten: named/unlisted streams are
-accessible to anyone who knows their link, rather than being access-controlled.
-
+Browser storage belongs to this device and origin. Clearing it removes your streams; export a backup before changing devices or domains. Local streams persist until deleted and work offline. They are not an encrypted vault. Browser dictation may use the browser provider's speech service. WhatsApp forwarding remains text-only.
 
 ### Browser regression checks
 
@@ -231,5 +224,4 @@ install Playwright (`npm install --no-save --package-lock=false playwright@1.62.
 then `npx playwright install chromium`. Build with `go build -o malten .` and run
 `node scripts/test-timeline.cjs` with port 9090 free. The script uses isolated browser
 profiles and never enables OpenAI or WhatsApp. `CHROMIUM_PATH` and `MALTEN_BINARY`
-can select existing test binaries. `JQUERY_PATH` can supply the existing public
-stream's jQuery CDN asset when testing without browser internet access.
+can select existing test binaries. The UI has no CDN dependency.

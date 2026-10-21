@@ -28,7 +28,7 @@ func main() {
 	// serve the html directory by default
 	http.Handle("/", http.FileServer(http.FS(htmlContent)))
 	http.HandleFunc("/private", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFileFS(w, r, htmlContent, "private.html")
+		http.ServeFileFS(w, r, htmlContent, "index.html")
 	})
 
 	http.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
@@ -37,9 +37,9 @@ func main() {
 
 	http.HandleFunc("/new", func(w http.ResponseWriter, r *http.Request) {
 		// generate a new stream
-		stream := server.Random(8)
+		stream := server.Random(32)
 		private := true
-		ttl := 60
+		ttl := int(server.StreamTTL.Seconds())
 		// secret := TODO
 
 		if err := server.Default.New(stream, "", private, ttl); err != nil {
@@ -65,6 +65,8 @@ func main() {
 			w.Write(b)
 		*/
 	})
+
+	http.HandleFunc("/ask", agent.PrivateHandler)
 
 	http.HandleFunc("/commands", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -104,11 +106,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// run the server
+	// The agent only runs for explicit questions.
+	server.Answer = agent.Reply
 	go server.Run()
-
-	// run the agent
-	go agent.Run()
 
 	// whatsapp client
 	go whatsapp.Run(ctx)

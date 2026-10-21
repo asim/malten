@@ -12,7 +12,7 @@ import (
 
 const MaxPhotoBytes = 512 << 10
 
-func validatePhoto(value string) error {
+func ValidatePhoto(value string) error {
 	if value == "" {
 		return nil
 	}

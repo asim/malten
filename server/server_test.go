@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestStoreKeepsNewestMessages(t *testing.T) {
@@ -61,5 +63,40 @@ func TestBroadcastIsolation(t *testing.T) {
 	case <-b.Events:
 		t.Fatal("message leaked to another stream")
 	default:
+	}
+}
+
+func TestCommandUsesStreamContextAndKeepsPrompt(t *testing.T) {
+	old := Answer
+	defer func() { Answer = old }()
+	calls := make(chan []*Message, 1)
+	Answer = func(_ context.Context, messages []*Message) (string, error) { calls <- messages; return "reply", nil }
+	s := New()
+	s.process(NewMessage("another stream", "other"))
+	s.process(NewMessage("ordinary thought", "local"))
+	select {
+	case <-calls:
+		t.Fatal("ordinary post triggered AI")
+	default:
+	}
+	s.process(NewCommand("question", "local"))
+	select {
+	case history := <-calls:
+		if len(history) != 2 || history[0].Text != "ordinary thought" || history[1].Text != "question" {
+			t.Fatal("incorrect context")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("command did not invoke AI")
+	}
+	select {
+	case reply := <-s.Events:
+		if reply.Role != "assistant" || reply.Stream != "local" {
+			t.Fatal("wrong reply stream")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("missing reply")
+	}
+	if len(s.Retrieve("", "local", 1, 0, 10)) != 2 {
+		t.Fatal("prompt not stored")
 	}
 }

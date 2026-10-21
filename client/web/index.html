@@ -4,57 +4,53 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#faf9f6">
-  <title>Public streams | Malten</title>
+  <title>Malten</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/timeline.css">
+  <script src="/composer.js" defer></script>
+  <script src="/local-store.js" defer></script>
+  <script src="/malten.js" defer></script>
+  <script src="/install.js" defer></script>
 </head>
-<body onhashchange="loadStream();">
+<body>
   <main>
     <header>
       <a class="brand" href="/">malten</a>
       <div class="header-actions">
-        <a href="/new">New</a>
-        <a href="/#_" id="share">Share</a>
-        <a href="#goto" id="goto-toggle" aria-controls="goto" aria-expanded="false">Go to</a>
-        <button id="install" type="button" hidden>Install app</button>
+        <a href="/new" id="new">New</a>
+        <a href="#" id="share">Share</a>
+        <a href="#" id="goto-toggle" aria-controls="goto" aria-expanded="false">Go to</a>
+        <details class="menu"><summary aria-label="Open menu">Menu</summary><div class="menu-panel">
+          <button id="install" type="button" hidden>Install app</button>
+          <button id="export" type="button" hidden>Export streams</button>
+          <button id="import" type="button" hidden>Import streams</button>
+          <p id="storage-info" hidden>Streams stay on this device. Export a backup before clearing browser data.</p>
+        </div></details>
       </div>
     </header>
-    <form id="goto" hidden onsubmit="return gotoStream(this);"><label class="sr-only" for="gstream">Stream name</label><input id="gstream" name="gstream" type="text" placeholder="Stream name"><button type="submit">Go</button></form>
-    <nav aria-label="Spaces"><a href="/private">For me</a><a class="selected" href="/#_" aria-current="page">Public streams</a></nav>
+    <form id="goto" hidden><label class="sr-only" for="gstream">Stream</label><input id="gstream" list="local-streams" autocomplete="off" placeholder="Stream"><datalist id="local-streams"></datalist><button type="submit">Go</button></form>
+    <nav aria-label="Spaces"><a id="public-tab" href="/">Public</a><a id="local-tab" href="/private">For you</a></nav>
     <section class="capture" aria-label="Write to a stream">
-      <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
-        <label class="sr-only" for="prompt">What’s on your mind?</label>
-        <textarea autofocus id="prompt" name="prompt" rows="2" placeholder="Speak your mind" maxlength="1024" autocomplete="off"></textarea>
-        <input id="message" name="message" type="hidden">
-        <input id="stream" name="stream" type="hidden">
-        <div class="composer-footer"><span class="hint sr-only"><span id="chars">1024</span> characters left</span><div><button id="send" class="primary" type="submit">Send</button></div></div>
-        <span id="words" role="status" aria-live="polite"></span>
+      <form id="form">
+        <label class="sr-only" for="prompt">Message</label>
+        <textarea autofocus id="prompt" rows="2" placeholder="Speak your mind" autocomplete="off" disabled></textarea>
+        <div class="composer-footer"><div><button id="cancel-edit" type="button" hidden>Cancel</button><button id="send" class="primary" type="submit" disabled>Send</button></div></div>
       </form>
     </section>
-    <p class="boundary">Anonymous and shared. Messages expire; anyone with the link can read and copy them.</p>
+    <p id="boundary" class="boundary"></p>
+    <p id="words" role="status" aria-live="polite"></p>
     <section class="history" aria-label="Stream messages">
-      <div class="history-heading stream-heading">
-        <div><h1><a id="current" href="/#_">Public stream</a></h1><span id="present"></span></div>
-      </div>
+      <div class="history-heading stream-heading"><h1 id="current">Stream</h1><span id="present"></span></div>
       <ul id="messages"></ul>
     </section>
   </main>
-  <script src="/install.js" defer></script>
-  <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
-  <script src="/composer.js"></script>
-  <script src="/malten.js?v=0.60.0"></script>
-  <script>
-    $(document).ready(function() {
-      initStreamComposer();
-      restoreStreamDraft();
-      setCurrent();
-      getStreams();
-      loadListeners();
-      loadMessages();
-      observeEvents();
-      pollMessages();
-    });
-  </script>
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+  <dialog id="share-dialog"><form method="dialog">
+    <h2>Share stream</h2>
+    <p>This copies the current stream to an anonymous, ephemeral server stream. Anyone with the link can read it. Your local copy stays on this device.</p>
+    <p id="share-error" role="alert"></p>
+    <div class="dialog-actions"><button value="cancel">Cancel</button><button id="share-confirm" type="button" class="primary">Share</button></div>
+  </form></dialog>
 </body>
 </html>

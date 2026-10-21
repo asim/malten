@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"net/url"
@@ -46,6 +47,7 @@ type Stream struct {
 }
 
 type Message struct {
+	Role     string `json:",omitempty"`
 	Id       string
 	Image    string `json:",omitempty"`
 	Text     string
@@ -79,6 +81,9 @@ var (
 )
 
 var Default = New()
+
+// Answer is configured before serving requests. Only commands invoke it.
+var Answer func(context.Context, []*Message) (string, error)
 
 // random generate i length alphanum string
 func Random(i int) string {
@@ -275,7 +280,7 @@ func (s *Server) Observe(o *Observer) {
 
 	st, ok := s.streams[o.Stream]
 	if !ok {
-		st = NewStream(o.Stream, "", false, int(StreamTTL.Seconds()))
+		st = NewStream(o.Stream, "", o.Stream != "_", int(StreamTTL.Seconds()))
 	}
 
 	// update observer count
@@ -423,17 +428,33 @@ func (s *Server) Retrieve(message string, streem string, direction, last, limit 
 	return []*Message{}
 }
 
+func (s *Server) process(message *Message) {
+	if message.Type == "message" || message.Type == "command" {
+		s.Store(message)
+		go s.Metadata(message)
+	}
+	s.Broadcast(message)
+	if message.Type == "command" && Answer != nil {
+		history := s.Retrieve("", message.Stream, 1, 0, 40)
+		go func(stream string, history []*Message) {
+			reply, err := Answer(context.Background(), history)
+			if err != nil {
+				reply = err.Error()
+			}
+			response := NewMessage(reply, stream)
+			response.Role = "assistant"
+			s.Events <- response
+		}(message.Stream, history)
+	}
+}
+
 func (s *Server) Run() {
 	t1 := time.NewTicker(time.Second)
 
 	for {
 		select {
 		case message := <-s.Events:
-			if message.Type == "message" || message.Type == "command" {
-				s.Store(message)
-				go s.Metadata(message)
-			}
-			s.Broadcast(message)
+			s.process(message)
 		case <-t1.C:
 			now := time.Now().UnixNano()
 
