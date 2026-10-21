@@ -136,7 +136,7 @@ function displayMessages(array, direction) {
         d2.className = 'message';
         d1.innerHTML = parseDate(array[i].Created);
         d1.setAttribute('data-time', array[i].Created);
-	d1.style.display = 'none';
+
         d2.innerHTML = html.parseURL(embed).parseHashTag();
         item.appendChild(d1);
         item.appendChild(d2);
@@ -483,7 +483,7 @@ function processEvent(stream, event) {
 
 function setObservers(count) {
     var present = document.getElementById("present");
-    present.innerText = "👤 " + count;
+    present.innerText = count + " here";
 }
 
 function setCurrent() {
@@ -491,11 +491,11 @@ function setCurrent() {
     current.href = window.location.href;
 
     if (window.location.hash.length > 0) {
-        current.text = getStream();
+        current.text = getStream() === "_" ? "Public stream" : "#" + getStream();
 	document.title = window.location.hash;
     } else {
-        current.text = "";
-	document.title = "Home";
+        current.text = "Public stream";
+	document.title = "Public streams | Malten";
     }
 }
 
