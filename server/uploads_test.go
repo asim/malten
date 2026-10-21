@@ -2,13 +2,10 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"image"
 	"image/png"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -21,48 +18,6 @@ func testPhoto(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(b.Bytes())
-}
-
-func TestPublicModerationGate(t *testing.T) {
-	oldDefault, oldModerate := Default, Moderate
-	defer func() { Default = oldDefault; Moderate = oldModerate }()
-	photo := testPhoto(t)
-	for _, tc := range []struct {
-		name string
-		err  error
-		code int
-	}{
-		{"allowed", nil, 200}, {"rejected", ErrModerationRejected, 422}, {"unavailable", ErrModerationUnavailable, 503},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			Default = New()
-			Moderate = func(_ context.Context, m *Message) error {
-				if m.Image != photo || m.Text != "" {
-					t.Fatal("moderator did not receive photo-only post")
-				}
-				return tc.err
-			}
-			req := httptest.NewRequest("POST", "/messages", strings.NewReader(url.Values{"image": {photo}}.Encode()))
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			w := httptest.NewRecorder()
-			PostHandler(w, req)
-			if w.Code != tc.code {
-				t.Fatalf("got %d: %s", w.Code, w.Body.String())
-			}
-			if got := len(Default.Events); (got == 1) != (tc.err == nil) {
-				t.Fatalf("unexpected broadcast queue length %d", got)
-			}
-		})
-	}
-	Default = New()
-	Moderate = func(context.Context, *Message) error { return ErrModerationRejected }
-	req := httptest.NewRequest("POST", "/commands", strings.NewReader("prompt=blocked"))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	PostCommandHandler(w, req)
-	if w.Code != 422 || len(Default.Events) != 0 {
-		t.Fatal("command bypassed moderation")
-	}
 }
 
 func TestPhotoValidation(t *testing.T) {

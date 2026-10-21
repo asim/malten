@@ -429,11 +429,11 @@ func (s *Server) Run() {
 	for {
 		select {
 		case message := <-s.Events:
-			if message.Type == "message" {
+			if message.Type == "message" || message.Type == "command" {
 				s.Store(message)
 				go s.Metadata(message)
 			}
-			go s.Broadcast(message)
+			s.Broadcast(message)
 		case <-t1.C:
 			now := time.Now().UnixNano()
 

@@ -17,3 +17,5 @@ main{padding-top:24px}header{margin-bottom:18px}nav{margin-bottom:16px}nav a{pad
 #draft-status{order:3;flex-basis:100%;max-width:none}#draft-status:empty,#status:empty{display:none}
 .history{margin-top:20px}.history-heading{margin-bottom:8px}.day-heading{margin-top:12px}
 @media(max-width:540px){main{padding-top:20px}header{margin-bottom:16px}.header-actions{gap:12px}.capture{padding:12px}nav{margin-bottom:14px}}
+
+#gstream:focus, #gstream:focus-visible { outline:none; }

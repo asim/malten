@@ -50,9 +50,9 @@ To enable conversations using [ChatGPT](https://openai.com/blog/chatgpt) specify
 OPENAI_API_KEY=xxxx ./malten
 ```
 
-The default model for conversations and moderation is `gpt-6-astra` with `low` reasoning effort.
+The default model for conversations is `gpt-6-astra` with `low` reasoning effort.
 
-To invoke ChatGPT use `/malten` as the prefix to your command. The agent only replies to explicit commands; ordinary stream posts are moderated without an AI reply.
+To invoke ChatGPT use `/malten` as the prefix to your command. The agent only replies to explicit commands; ordinary stream posts do not trigger an AI reply. Prompts appear in the stream immediately, with the AI response arriving separately.
 
 ## WhatsApp
 
@@ -233,15 +233,3 @@ then `npx playwright install chromium`. Build with `go build -o malten .` and ru
 profiles and never enables OpenAI or WhatsApp. `CHROMIUM_PATH` and `MALTEN_BINARY`
 can select existing test binaries. `JQUERY_PATH` can supply the existing public
 stream's jQuery CDN asset when testing without browser internet access.
-
-### Public moderation
-
-When `OPENAI_API_KEY` is set, the agent checks public-stream text, photos, and commands before they enter the event queue. This applies to all server streams, including unlisted streams: unlisted does not mean private. Device-local **For me** entries are excluded. The UI discloses when public content goes to OpenAI.
-
-The policy allows venting, profanity, distress, and requests for support. It blocks targeted abuse, credible threats, harmful instructions, exploitation, explicit imagery, graphic gore, doxxing and spam. AI decisions can be wrong; the checks are not a guarantee of safety. Rejected posts return HTTP 422. Upstream errors, invalid decisions, timeouts, and a full moderation queue return HTTP 503 without publishing. The composer retains text and photos for editing or retrying. No moderation history is stored.
-
-`MODERATION_MODEL` selects a vision-capable chat model (default `gpt-6-astra` with `low` reasoning effort). Requests have a 30-second timeout and at most four run concurrently. `PUBLIC_MODERATION=true` requires an API key at startup; `PUBLIC_MODERATION=false` explicitly disables checks. Without an API key, moderation is off and the UI says so. Public moderation uses paid API calls; the concurrency cap is not a rate limit or spending cap.
-
-Presence counts connected browser/client sessions, excluding the internal AI listener. Two open tabs can still count as two connections.
-
-Moderation failures log the API status, error code and parameter (or timeout/invalid-output category) on the server, without logging the submitted content or raw response. Check these diagnostics when the UI reports moderation unavailable.

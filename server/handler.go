@@ -44,9 +44,6 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := NewCommand(command, stream)
-	if !moderatePost(w, r, msg) {
-		return
-	}
 	select {
 	case Default.Events <- msg:
 	case <-time.After(time.Second):
@@ -220,9 +217,6 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 
 	msg := NewMessage(message, stream)
 	msg.Image = photo
-	if !moderatePost(w, r, msg) {
-		return
-	}
 	select {
 	case Default.Events <- msg:
 	case <-time.After(time.Second):

@@ -133,7 +133,7 @@ function displayMessages(array, direction) {
 
         var item = document.createElement('li');
         item.dataset.id = array[i].Id;
-        var html = escapeHTML(array[i].Text);
+        var html = escapeHTML((array[i].Type === "command" ? "/malten " : "") + array[i].Text);
         var d1 = document.createElement('div');
         var d2 = document.createElement('div');
         d1.className = 'time';
@@ -394,7 +394,6 @@ function pollMessages() {
 var streamComposer, sending = false;
 function initStreamComposer() {
     streamComposer = createComposer(document.getElementById('prompt'), function(message) { document.getElementById('words').textContent = message; });
-    fetch('/config').then(r => r.json()).then(config => { document.getElementById('moderation').textContent = config.moderation ? 'Public posts and photos are sent to OpenAI for moderation before sharing.' : 'AI moderation is off.'; }).catch(() => {});
     window.addEventListener('pageshow', event => { if(event.persisted) observeEvents(); });
 }
 function postMessage(command) {
@@ -427,7 +426,7 @@ function processEvent(stream, event) {
         return
     }
 
-    if (ev.Type == "message") {
+    if (ev.Type == "message" || ev.Type == "command") {
         var events = [];
         events.push(ev);
         displayMessages(events, 1);
