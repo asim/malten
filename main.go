@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	//"io/ioutil"
 	"log"
+	"mime"
 	"net/http"
 
 	"github.com/asim/malten/agent"
@@ -17,6 +18,8 @@ import (
 var html embed.FS
 
 func main() {
+	// Do not rely on the host OS having the webmanifest MIME type registered.
+	mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	htmlContent, err := fs.Sub(html, "client/web")
 	if err != nil {
 		log.Fatal(err)

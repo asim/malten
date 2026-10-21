@@ -184,3 +184,14 @@ The release workflow reruns tests and publishes archives and SHA-256 checksums.
 Archives target Linux (386, amd64, armv7, arm64), macOS (amd64, arm64), and
 Windows (386, amd64, arm64). To validate packaging without publishing, run
 `goreleaser release --snapshot --clean` with GoReleaser v2.
+
+## Install as an app
+
+Serve Malten over HTTPS (localhost also works for development). In Chrome or Edge,
+use the address-bar install icon or the **Install** button when it appears. On
+an iPhone or iPad, use Safari's Share menu and **Add to Home Screen**. The app
+opens in its own window with the Malten icon.
+
+Installation does not add offline storage: messages still live on the server and
+expire according to the stream TTL. A service worker is not required for modern
+browser installation; offline capture is not implemented yet.
