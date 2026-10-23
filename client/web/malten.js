@@ -6,7 +6,7 @@
   const name=()=>{try{return decodeURIComponent(location.hash.slice(1))||'_';}catch(_){return '_';}};
   const route=id=>(local?'/private':'/')+(id==='_'?'':'#'+encodeURIComponent(id));
   const safeURL=value=>{try{const url=new URL(value);return /^https?:$/.test(url.protocol)?url.href:'';}catch(_){return '';}};
-  const normal=m=>({id:m.Id,text:(m.Type==='command'?'/malten ':'')+m.Text,image:m.Image||'',role:m.Role||'user',metadata:m.Metadata,created:Number(BigInt(m.Created)/1000000n),updated:Number(BigInt(m.Created)/1000000n)});
+  const normal=m=>({id:m.Id,text:(m.Type==='command'?'/malten'+(m.Text?' ':''):'')+m.Text,image:m.Image||'',role:m.Role||'user',metadata:m.Metadata,created:Number(BigInt(m.Created)/1000000n),updated:Number(BigInt(m.Created)/1000000n)});
   async function request(url, options) {
     const response=await fetch(url,options);
     if(!response.ok) throw Error((await response.text()).trim()||'Could not complete the request.');
@@ -47,7 +47,7 @@
         for(const [label,action] of [
           ['Edit',()=>{if(sending)return;if(($('prompt').value||composer.image)&&!confirm('Replace the current draft?'))return;editing=entry.id;$('prompt').value=entry.text;composer.setImage(entry.image);$('cancel-edit').hidden=false;$('send').textContent='Save';$('prompt').dispatchEvent(new Event('input'));$('prompt').focus();}],
           ['Delete',async()=>{if(!confirm('Delete this message from this device?'))return;await db.remove(entry.id);if(editing===entry.id)clearComposer();await refresh();}],
-          ...(/^\/malten\s/.test(entry.text)?[['Ask again',()=>ask(entry,active)]]:[])
+          ...(/^\/malten(?:\s|$)/.test(entry.text)?[['Ask again',()=>ask(entry,active)]]:[])
         ]) {const button=document.createElement('button');button.type='button';button.textContent=label;button.onclick=()=>Promise.resolve(action()).catch(e=>report(e.message));actions.append(button);}
         item.append(actions);
       }
@@ -72,10 +72,11 @@
     persistDraft();active=name();const stamp=++version;restoring=true;editing=null;entries=[];render();report('');
     if(source){source.close();source=null;}clearInterval(poll);
     $('goto').hidden=true;$('goto-toggle').setAttribute('aria-expanded','false');
-    $('current').textContent=active==='_'?'Stream':(/^[a-f0-9-]{32,36}$/i.test(active)||/^[A-Za-z0-9]{32}$/.test(active)?'Stream '+active.slice(0,8):active);
-    $('current').title=active;
+    $('current').textContent=active==='_'?'':'#'+active;
+    $('current').href=route(active);
+    $('current').title=active==='_'?'':'#'+active;
+    document.title=active==='_'?'~ malten':'#'+active+' ~ malten';
     try { sessionStorage.setItem(local?'malten-local-route':'malten-public-route',route(active)); } catch(_) {}
-    document.title=active==='_'?'Malten':active+' | Malten';
     try {
       if(local) await db.ensure(active);
       let draft;
@@ -100,7 +101,7 @@
       if(bytes+new TextEncoder().encode(e.text).length>32000)break;
       bytes+=new TextEncoder().encode(e.text).length;
       const image=validPhoto(e.image)&&photos++<2?e.image:'';
-      selected.unshift({Text:e.text.replace(/^\/malten\s+/,''),Image:image,Role:e.role==='assistant'?'assistant':'user'});
+      selected.unshift({Text:e.text,Image:image,Role:e.role==='assistant'?'assistant':'user'});
     }
     return selected;
   }
@@ -118,7 +119,7 @@
   }
   $('form').onsubmit=async event=>{
     event.preventDefault();if(sending||composer.loading||(!$('prompt').value.trim()&&!composer.image))return;
-    const target=active,text=$('prompt').value,image=composer.image,id=editing,command=/^\/malten\s+\S/.test(text);
+    const target=active,text=$('prompt').value,image=composer.image,id=editing,command=/^\/malten(?:\s|$)/.test(text);
     if(!local && new TextEncoder().encode(text).length>1024){report('Message is too long (1,024 bytes maximum).');return;}
     if(!local && command && image){report('Send the photo first, then ask Malten about it.');return;}
     setBusy(true);
@@ -128,7 +129,7 @@
         const previous=id?(await db.entries(target)).find(e=>e.id===id):null,now=Date.now();
         entry={id:previous?.id||crypto.randomUUID(),stream:target,text,image,role:previous?.role||'user',created:previous?.created||now,updated:now};
         await db.put(entry);
-      }else await post(command?'/commands':'/messages',command?{stream:target,prompt:text.replace(/^\/malten\s+/,'')}:{stream:target,message:text,image});
+      }else await post(command?'/commands':'/messages',command?{stream:target,prompt:text.replace(/^\/malten(?:\s+|$)/,'')}:{stream:target,message:text,image});
       if(target===active){clearComposer();report('');await refresh();}
       if(local && command && !id)ask(entry,target);
     }catch(e){report(e.message);}
@@ -139,6 +140,7 @@
     if(!local)return;event.preventDefault();const id=crypto.randomUUID();await db.ensure(id);location.hash=id;
   };
   $('goto-toggle').onclick=event=>{event.preventDefault();$('goto').hidden=!$('goto').hidden;$('goto-toggle').setAttribute('aria-expanded',String(!$('goto').hidden));if(!$('goto').hidden)$('gstream').focus();};
+  $('gstream').onkeydown=event=>{if(event.key==='Escape'){$('goto').hidden=true;$('goto-toggle').setAttribute('aria-expanded','false');$('goto-toggle').focus();}};
   $('goto').onsubmit=event=>{event.preventDefault();const id=$('gstream').value.trim().replace(/^#/,'')||'_';if(id.length>100){report('Stream names can be up to 100 characters.');return;}location.href=route(id);$('gstream').value='';};
   $('share').onclick=async event=>{
     event.preventDefault();

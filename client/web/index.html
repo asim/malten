@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#faf9f6">
-  <title>Malten</title>
+  <title>~ malten</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/timeline.css">
@@ -16,7 +16,7 @@
 <body>
   <main>
     <header>
-      <a class="brand" href="/">malten</a>
+      <div class="stream-title"><a class="brand" href="/">~ malten</a><a id="current" href="#"></a><span id="present"></span></div>
       <div class="header-actions">
         <a href="/new" id="new">New</a>
         <a href="#" id="share">Share</a>
@@ -28,8 +28,8 @@
           <p id="storage-info" hidden>Streams stay on this device. Export a backup before clearing browser data.</p>
         </div></details>
       </div>
-    </header>
     <form id="goto" hidden><label class="sr-only" for="gstream">Stream</label><input id="gstream" list="local-streams" autocomplete="off" placeholder="Stream"><datalist id="local-streams"></datalist><button type="submit">Go</button></form>
+    </header>
     <nav aria-label="Spaces"><a id="public-tab" href="/">Public</a><a id="local-tab" href="/private">For you</a></nav>
     <section class="capture" aria-label="Write to a stream">
       <form id="form">
@@ -41,7 +41,6 @@
     <p id="boundary" class="boundary"></p>
     <p id="words" role="status" aria-live="polite"></p>
     <section class="history" aria-label="Stream messages">
-      <div class="history-heading stream-heading"><h1 id="current">Stream</h1><span id="present"></span></div>
       <ul id="messages"></ul>
     </section>
   </main>

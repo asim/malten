@@ -37,7 +37,16 @@ func requestFor(messages []*server.Message) openai.ChatCompletionRequest {
 		if m.Role == "assistant" {
 			role = openai.ChatMessageRoleAssistant
 		}
-		text := strings.TrimPrefix(m.Text, "/malten ")
+		text := m.Text
+		if role == openai.ChatMessageRoleUser {
+			fields := strings.Fields(text)
+			if len(fields) > 0 && fields[0] == "/malten" {
+				text = strings.TrimSpace(strings.TrimPrefix(text, "/malten"))
+			}
+			if strings.TrimSpace(text) == "" && (m.Type == "command" || strings.TrimSpace(m.Text) == "/malten") {
+				text = "Respond to the conversation so far."
+			}
+		}
 		part := openai.ChatCompletionMessage{Role: role, Content: text}
 		if m.Image != "" && photos < 2 && role == openai.ChatMessageRoleUser {
 			photos++
