@@ -59,3 +59,18 @@ func TestPrivateRelayRejectsSystemRoles(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 }
+
+func TestMaltenInvocationUsesConversation(t *testing.T) {
+	for _, invocation := range []*server.Message{
+		{Text: "/malten"}, {Text: "/malten\n"}, {Text: "", Type: "command"},
+	} {
+		req := requestFor([]*server.Message{{Text: "Something on my mind"}, invocation})
+		if req.Messages[1].Content != "Something on my mind" || req.Messages[2].Content != "Respond to the conversation so far." {
+			t.Fatalf("wrong invocation context: %#v", req.Messages)
+		}
+	}
+	req := requestFor([]*server.Message{{Text: "/malten\nwhat next?"}, {Text: "/malten", Role: "assistant"}})
+	if req.Messages[1].Content != "what next?" || req.Messages[2].Content != "/malten" {
+		t.Fatal("command parsing changed a question or assistant reply")
+	}
+}

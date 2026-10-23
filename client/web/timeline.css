@@ -22,3 +22,6 @@ main{padding-top:24px}header{margin-bottom:18px}nav{margin-bottom:16px}nav a{pad
 
 .message{white-space:pre-wrap}.message-actions{position:absolute;right:0;top:12px;font-size:12px}.message-actions summary{cursor:pointer;list-style:none;padding:0 8px}.message-actions[open]{background:var(--paper);border:1px solid var(--line);border-radius:6px;z-index:1}.message-actions button{display:block;border:0;padding:5px 10px}#messages li{position:relative}#messages .time{padding-right:30px}.header-actions{gap:12px}.header-actions .menu summary{padding:0;font-size:13px}.stream-heading{margin-bottom:0}.history{margin-top:14px}#gstream:focus,#gstream:focus-visible{outline:none}
 @media(max-width:380px){.header-actions{gap:8px}.brand{font-size:26px}}
+
+/* Keep stream identity in the header and navigation out of the document flow. */
+header{position:relative;flex-wrap:wrap;gap:10px}.stream-title{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1}.brand{font-size:26px;white-space:nowrap;flex-shrink:0}#current{font-size:16px;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#current:empty{display:none}@media(max-width:540px){.stream-title{flex-basis:100%}}#goto{position:absolute;right:0;top:100%;z-index:3;margin:4px 0 0;padding:8px 12px;background:var(--paper);border:1px solid var(--line);border-radius:6px}

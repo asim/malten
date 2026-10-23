@@ -27,7 +27,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 	stream := r.Form.Get("stream")
 	command := r.Form.Get("prompt")
-	if len(command) == 0 {
+	if !r.Form.Has("prompt") {
 		return
 	}
 
