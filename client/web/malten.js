@@ -59,7 +59,7 @@
     const target=active, stamp=version;
     const data=local ? await db.entries(target) : await (await request('/messages?stream='+encodeURIComponent(target)+'&limit=1024')).json();
     if(stamp!==version)return;
-    entries=local?data:data.map(normal);render();
+    entries=local?data:(data ?? []).map(normal);render();
     if(local) {
       const streams=await db.streams();$('local-streams').replaceChildren(...streams.map(s=>{const o=document.createElement('option');o.value=s.id;return o;}));
     } else {

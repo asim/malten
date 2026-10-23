@@ -75,6 +75,9 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	messages := Default.Retrieve(message, stream, direction, last, limit)
+	if messages == nil {
+		messages = []*Message{}
+	}
 	b, _ := json.Marshal(messages)
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(b))
