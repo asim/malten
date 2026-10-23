@@ -1,5 +1,5 @@
 // Only cache the personal app shell. Never cache stream messages, commands or events.
-const CACHE = 'malten-personal-shell-v10';
+const CACHE = 'malten-personal-shell-v11';
 const SHELL = ['/private', '/composer.js', '/timeline.css', '/local-store.js', '/malten.js', '/install.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL))); });
 self.addEventListener('activate', event => {

@@ -10,6 +10,13 @@ const fs=require('node:fs/promises');
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||undefined,args:['--no-sandbox']});
   const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
+  // Older servers can return null for an existing stream with no messages.
+  await page.route('**/messages?*',route=>route.fulfill({json:null}));
+  await page.goto('http://localhost:9090/#empty');
+  await page.waitForFunction(()=>!document.getElementById('prompt').disabled&&document.activeElement.id==='prompt');
+  assert.equal(await page.locator('#words').textContent(),'');
+  assert.equal(await page.locator('#messages li').count(),0);
+  await page.unroute('**/messages?*');
   await page.goto('http://localhost:9090/manifest.webmanifest');
   // Seed the previous personal timeline schema, including its unfinished photo draft.
   await page.evaluate(async()=>{
