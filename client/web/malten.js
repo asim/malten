@@ -125,7 +125,7 @@ function displayMessages(array, direction) {
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
             var source = document.createElement('a');
             source.href = array[i].ReminderURL;
-            source.textContent = 'Daily reminder · Reminder.dev';
+            source.textContent = 'Daily Reminder';
             var passage = array[i].Text.split(/\r?\n\s*\n/);
             d2.appendChild(source);
             if (passage.length > 1) {
