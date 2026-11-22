@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 )
 
 // DefaultStream is the public home stream.
@@ -26,8 +25,6 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Got command", command)
-
 	// default stream
 	if len(stream) == 0 {
 		stream = DefaultStream
@@ -35,13 +32,17 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 	// default length
 	if len(command) > MaxMessageSize {
-		command = command[:MaxMessageSize]
+		http.Error(w, "Text exceeds 4096 bytes", http.StatusRequestEntityTooLarge)
+		return
 	}
 
-	select {
-	case Default.Events <- NewCommand(command, stream):
-	case <-time.After(time.Second):
-		http.Error(w, "Timed out creating message", 504)
+	if Default.Commands == nil {
+		http.Error(w, "Mu agent is disabled", http.StatusServiceUnavailable)
+		return
+	}
+	message := NewCommand(command, stream)
+	if !Default.SubmitCommand(message) {
+		http.Error(w, "Agent busy", http.StatusServiceUnavailable)
 	}
 }
 
@@ -197,7 +198,8 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 
 	// default length
 	if len(message) > MaxMessageSize {
-		message = message[:MaxMessageSize]
+		http.Error(w, "Text exceeds 4096 bytes", http.StatusRequestEntityTooLarge)
+		return
 	}
 
 	Default.Publish(NewMessage(message, stream))

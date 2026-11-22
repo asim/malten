@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestRestartAndExpiry(t *testing.T) {
@@ -52,5 +53,70 @@ func TestRestartAndExpiry(t *testing.T) {
 	data, err = os.ReadFile(path)
 	if err != nil || len(final.List()) != 0 || strings.TrimSpace(string(data)) != "{}" {
 		t.Fatalf("retained expired stream: %s, %v", data, err)
+	}
+}
+
+func TestSharedCommandAndReplySurviveRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "streams.json")
+	s := New()
+	if err := s.Restore(path); err != nil {
+		t.Fatal(err)
+	}
+	s.Commands = make(chan *Message, 1)
+	// Two connected clients receive the same events as the persisted history.
+	clients := []*Observer{NewObserver("quiet"), NewObserver("quiet")}
+	for _, client := range clients {
+		s.Observe(client)
+		defer close(client.Kill)
+	}
+	q := NewCommand("What needs my attention?", "quiet")
+	if !s.SubmitCommand(q) {
+		t.Fatal("command refused")
+	}
+	for _, client := range clients {
+		if m := <-client.Events; m.Id != q.Id || m.Type != "command" {
+			t.Fatal(m)
+		}
+	}
+	const source = "https://micro.mu/agent/malten"
+	s.Reply(<-s.Commands, "A reply.", source, "owned-thread")
+	for _, client := range clients {
+		if m := <-client.Events; m.Source != source || m.Text != "A reply." {
+			t.Fatal(m)
+		}
+	}
+	if err := s.Checkpoint(); err != nil {
+		t.Fatal(err)
+	}
+	restored := New()
+	if err := restored.Restore(path); err != nil {
+		t.Fatal(err)
+	}
+	history := restored.Retrieve("", "quiet", 1, 0, 25)
+	if len(history) != 2 || history[0].Id != q.Id || history[1].Source != source || restored.Thread("quiet") != "owned-thread" || restored.Thread("other") != "" {
+		t.Fatalf("incorrect restored conversation: %+v", history)
+	}
+	if restored.List()["quiet"].Thread != "" {
+		t.Fatal("private thread exposed in stream listing")
+	}
+	restored.streams["quiet"].ThreadExpires = 1
+	if err := restored.Checkpoint(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(data), "owned-thread") {
+		t.Fatal("expired continuation retained", err)
+	}
+}
+
+func TestMessageTextLimit(t *testing.T) {
+	for _, text := range []string{strings.Repeat("界", 2000), strings.Repeat("<", 6000), strings.Repeat("a", MaxMessageSize)} {
+		reply := NewMessage(text, DefaultStream).Text
+		if len(reply) > MaxMessageSize || !utf8.ValidString(reply) {
+			t.Fatal("invalid reply boundary")
+		}
+		if len(text) <= MaxMessageSize && text != reply {
+			t.Fatal("short reply changed")
+		}
 	}
 }

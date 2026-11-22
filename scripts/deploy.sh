@@ -49,7 +49,7 @@ build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT
 
 # Build as the invoking user before touching the running service.
-CGO_ENABLED=1 go build -o "$build_dir/malten" .
+CGO_ENABLED=0 go build -o "$build_dir/malten" .
 admin=()
 if (( EUID != 0 )); then
     admin=(sudo)
@@ -70,7 +70,7 @@ if ! systemctl cat malten.service >/dev/null 2>&1; then
 fi
 if id malten >/dev/null 2>&1; then
     dropins=/etc/systemd/system/malten.service.d
-    printf '[Service]\nUser=malten\nGroup=%s\nDynamicUser=no\n' "$(id -gn malten)" > "$build_dir/account.conf"
+    printf '[Service]\nUser=malten\nGroup=%s\nDynamicUser=no\nEnvironmentFile=-/home/malten/.env\n' "$(id -gn malten)" > "$build_dir/account.conf"
     "${admin[@]}" install -d "$dropins"
     "${admin[@]}" install -m 0644 "$build_dir/account.conf" "$dropins/90-malten-account.conf"
 fi

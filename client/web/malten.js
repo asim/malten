@@ -5,7 +5,8 @@ var eventUrl = "/events";
 var limit = 25;
 var last = timeAgo();
 var typing = false;
-var maxChars = 1024;
+var maxMessageBytes = 4096;
+var utf8 = new TextEncoder();
 var maxMessages = 1000;
 var seen = {};
 var streams = {};
@@ -70,7 +71,11 @@ function updateComposer() {
     var prompt = document.getElementById('prompt');
     prompt.style.height = 'auto';
     prompt.style.height = prompt.scrollHeight + 'px';
-    document.getElementById('chars').textContent = prompt.maxLength - prompt.value.length;
+    var text = prompt.value.replace(/^\/malten\s+/, '');
+    var excess = utf8.encode(text).length - maxMessageBytes;
+    var warning = excess > 0 ? excess + ' bytes over the limit' : '';
+    prompt.setCustomValidity(warning);
+    document.getElementById('chars').textContent = warning;
 }
 
 function clearMessages() {
@@ -120,7 +125,16 @@ function displayMessages(array, direction) {
         timestamp.textContent = relativeTime(array[i].Created, Date.now());
         var d2 = document.createElement('div');
         d2.className = 'message';
-        if (array[i].Source && array[i].Id.startsWith('reminder-')) {
+        if (array[i].Type === 'command' || array[i].Source === 'https://micro.mu/agent/malten') {
+            if (array[i].Source) {
+                var author = document.createElement('a');
+                author.href = array[i].Source;
+                author.textContent = 'Malten';
+                item.appendChild(author);
+            }
+            d2.style.whiteSpace = 'pre-wrap';
+            d2.textContent = (array[i].Type === 'command' ? '/malten ' : '') + array[i].Text;
+        } else if (array[i].Source && array[i].Id.startsWith('reminder-')) {
             item.className = 'daily-reminder';
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
             var source = document.createElement('a');
@@ -213,8 +227,7 @@ function getSpeech() {
         var end = text.selectionEnd;
         var prefix = start && !/\s/.test(text.value[start - 1]) ? ' ' : '';
         var suffix = end < text.value.length && !/\s/.test(text.value[end]) ? ' ' : '';
-        var available = text.maxLength - text.value.length + end - start;
-        var insertion = (prefix + transcript + suffix).slice(0, available);
+        var insertion = prefix + transcript + suffix;
         if (insertion.trim()) text.setRangeText(insertion, start, end, 'end');
         updateComposer();
         text.focus();
@@ -431,40 +444,39 @@ function pollMessages() {
     }, 5000);
 }
 
-function postCommand() {
-    var form = document.getElementById('form');
-    if (form.elements["prompt"].value == '') {
-        return false
-    }
-    $.post(commandUrl, $("#form").serialize());
-    form.elements["prompt"].value = '';
-    updateComposer();
+function postCommand(draft) {
+    var prompt = document.getElementById('prompt');
+    var status = document.getElementById('words');
+    status.textContent = '';
+    $.post(commandUrl, {prompt: draft.replace(/^\/malten\s+/, ''), stream: getStream()})
+        .done(function() {
+            if (prompt.value === draft) prompt.value = '';
+            updateComposer();
+        })
+        .fail(function() {
+            status.textContent = 'Malten is unavailable. Please try again.';
+        });
     return false;
 }
 
 function postMessage() {
-    var form = document.getElementById('form');
-    var el = form.elements;
-    if (el["prompt"].value == '') {
-        return false
-    }
-
-    // set message field
-    el["message"].value = el["prompt"].value;
-    // clear prompt
-    el["prompt"].value = '';
-    updateComposer();
-
-    var stream = form.elements["stream"];
-    $.post(messageUrl, $("#form").serialize());
-
-    // clear message
-    form.elements["message"].value = '';
-
-    // reload messages
-    loadMessages();
+    var prompt = document.getElementById('prompt');
+    var status = document.getElementById('words');
+    var draft = prompt.value;
+    if (!draft) return false;
+    var send = document.getElementById('send');
+    send.disabled = true;
+    status.textContent = '';
+    $.post(messageUrl, {message: draft, stream: getStream()})
+        .done(function() {
+            if (prompt.value === draft) prompt.value = '';
+            updateComposer();
+            loadMessages();
+        })
+        .fail(function() { status.textContent = 'Could not send. Please try again.'; })
+        .always(function() { send.disabled = false; });
     return false;
-};
+}
 
 function processEvent(stream, event) {
     console.log(event);
@@ -479,7 +491,7 @@ function processEvent(stream, event) {
         return
     }
 
-    if (ev.Type == "message") {
+    if (ev.Type == "message" || ev.Type == "command") {
         var events = [];
         events.push(ev);
         displayMessages(events, 1);
@@ -545,11 +557,7 @@ function submitCommand() {
     }
 
     if (el["prompt"].value.match(/^\/malten\s/)) {
-	// strip /malten
-	el["prompt"].value = el["prompt"].value.replace(/^\/malten\s/, "");	
-
-        postCommand();
-        return false;
+        return postCommand(el["prompt"].value);
     }
 
     return postMessage();

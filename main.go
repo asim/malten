@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/asim/malten/agent"
-	"github.com/asim/malten/client/whatsapp"
 	"github.com/asim/malten/server"
 )
 
@@ -110,10 +109,7 @@ func main() {
 	go server.Run()
 
 	// run the agent
-	go agent.Run(ctx)
-
-	// whatsapp client
-	go whatsapp.Run(ctx)
+	agent.Run(ctx)
 
 	log.Print("Listening on :9090")
 
