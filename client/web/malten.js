@@ -56,21 +56,15 @@ function timeAgo() {
     return (ts - 86400) * 1e9;
 };
 
-function parseDate(tdate) {
-    var system_date = new Date(tdate / 1e6);
-    if (K.ie) {
-        system_date = Date.parse(tdate.replace(/( \+)/, ' UTC$1'))
-    }
-    return system_date.toLocaleTimeString();;
-};
-
-// from http://widgets.twimg.com/j/1/widget.js
-var K = function() {
-    var a = navigator.userAgent;
-    return {
-        ie: a.match(/MSIE\s([^;]*)/)
-    }
-}();
+function relativeTime(created, now) {
+    var minutes = Math.floor((now - Number(created) / 1e6) / 60000);
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return minutes + ' min ago';
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+    var days = Math.floor(hours / 24);
+    return days + (days === 1 ? ' day ago' : ' days ago');
+}
 
 function chars() {
     var i = document.getElementById('prompt').value.length;
@@ -123,13 +117,15 @@ function displayMessages(array, direction) {
 
         var item = document.createElement('li');
 
-        var d1 = document.createElement('div');
+        var timestamp = document.createElement('time');
+        var posted = new Date(Number(array[i].Created) / 1e6);
+        timestamp.className = 'time';
+        timestamp.dataset.time = array[i].Created;
+        timestamp.dateTime = posted.toISOString();
+        timestamp.title = posted.toLocaleString();
+        timestamp.textContent = relativeTime(array[i].Created, Date.now());
         var d2 = document.createElement('div');
-        d1.className = 'time';
         d2.className = 'message';
-        d1.innerHTML = parseDate(array[i].Created);
-        d1.setAttribute('data-time', array[i].Created);
-	d1.style.display = 'none';
         if (array[i].ReminderURL) {
             item.className = 'daily-reminder';
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
@@ -150,7 +146,6 @@ function displayMessages(array, direction) {
         } else {
             d2.innerHTML = escapeHTML(tagText(array[i].Text)).parseURL(embed).parseHashTag();
         }
-        item.appendChild(d1);
         item.appendChild(d2);
 
         if (array[i].Metadata != null && array[i].Metadata.Type != "player") {
@@ -176,6 +171,8 @@ function displayMessages(array, direction) {
             item.appendChild(d4);
             item.appendChild(d5);
         };
+
+        item.appendChild(timestamp);
 
         if (direction >= 0) {
             list.insertBefore(item, list.firstChild);
@@ -412,6 +409,11 @@ function observeEvents() {
 }
 
 function pollMessages() {
+    var now = Date.now();
+    document.querySelectorAll('#messages time').forEach(function(timestamp) {
+        var label = relativeTime(timestamp.dataset.time, now);
+        if (timestamp.textContent !== label) timestamp.textContent = label;
+    });
     document.querySelectorAll('.daily-reminder[data-expires]').forEach(function(item) {
         if (Number(item.dataset.expires) <= Date.now()) item.remove();
     });
