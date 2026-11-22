@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,11 @@ func TestMuCommandThreads(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			t.Error(err)
 		}
+		context, question, ok := strings.Cut(in.Prompt, "\n\nVisitor’s question:\n")
+		if !ok || !strings.Contains(context, "malten.me") {
+			t.Error("missing app context")
+		}
+		in.Prompt = question
 		calls <- in
 		if in.Prompt == "first" {
 			select {
@@ -78,4 +84,19 @@ func TestMuCommandThreads(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestStreamPromptUsesOnlyHomeReminder(t *testing.T) {
+	s := server.New()
+	passage := server.NewMessage("Reference\n\nVerse text", server.DefaultStream)
+	passage.Id = "reminder-test"
+	passage.Source = "https://reminder.dev/quran/1#1"
+	s.Publish(passage)
+	s.Publish(server.NewMessage("another visitor’s post", server.DefaultStream))
+	for _, stream := range []string{server.DefaultStream, "quiet"} {
+		prompt := streamPrompt(s, server.NewCommand("what is this?", stream))
+		if strings.Contains(prompt, "Verse text") != (stream == server.DefaultStream) || strings.Contains(prompt, "another visitor’s post") || !strings.HasSuffix(prompt, "what is this?") {
+			t.Fatal(prompt)
+		}
+	}
 }
