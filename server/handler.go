@@ -8,9 +8,8 @@ import (
 	"time"
 )
 
-var (
-	defaultStream = "_"
-)
+// DefaultStream is the public home stream.
+const DefaultStream = "_"
 
 func GetCommandsHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
@@ -31,7 +30,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 	// default stream
 	if len(stream) == 0 {
-		stream = defaultStream
+		stream = DefaultStream
 	}
 
 	// default length
@@ -68,7 +67,7 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	// default stream
 	if len(stream) == 0 {
-		stream = defaultStream
+		stream = DefaultStream
 	}
 
 	messages := Default.Retrieve(message, stream, direction, last, limit)
@@ -83,7 +82,7 @@ func GetEvents(w http.ResponseWriter, r *http.Request) {
 	stream := r.Form.Get("stream")
 	// default stream
 	if len(stream) == 0 {
-		stream = defaultStream
+		stream = DefaultStream
 	}
 
 	o := NewObserver(stream)
@@ -193,7 +192,7 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 
 	// default stream
 	if len(stream) == 0 {
-		stream = defaultStream
+		stream = DefaultStream
 	}
 
 	// default length

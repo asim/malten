@@ -100,7 +100,7 @@ func main() {
 
 	// run the server
 	go server.Run()
-	go server.Default.RunReminders(ctx)
+	go agent.RunReminders(ctx, server.Default.Events)
 
 	// run the agent
 	go agent.Run()
