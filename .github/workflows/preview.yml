@@ -1,0 +1,36 @@
+name: Capture Malten preview
+on: [push]
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: |
+          go build -o /tmp/malten .
+          /tmp/malten > /tmp/malten.log 2>&1 &
+          for i in {1..40}; do
+            if curl -fsS http://localhost:9090/messages | grep -q ReminderURL; then break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:9090/messages | grep -q ReminderURL
+          python -m pip install selenium --quiet
+          python - <<'PY'
+          from selenium import webdriver
+          from selenium.webdriver.support.ui import WebDriverWait
+          opts = webdriver.ChromeOptions()
+          opts.add_argument('--headless=new')
+          opts.add_argument('--no-sandbox')
+          with webdriver.Chrome(options=opts) as browser:
+              browser.execute_cdp_cmd('Emulation.setDeviceMetricsOverride', dict(width=390,height=844,deviceScaleFactor=1,mobile=True))
+              browser.get('http://localhost:9090')
+              WebDriverWait(browser,20).until(lambda b: b.find_elements('css selector','.daily-reminder blockquote'))
+              browser.save_screenshot('/tmp/malten-mobile.png')
+          PY
+          echo BEGIN_IMAGE
+          base64 -w 2000 /tmp/malten-mobile.png
+          echo END_IMAGE
