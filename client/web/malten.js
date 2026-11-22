@@ -1,3 +1,5 @@
+var agentMarkdown = window.markdownit && window.markdownit({ html: false }).disable('image');
+
 var commandUrl = "/commands";
 var messageUrl = "/messages";
 var streamUrl = "/streams";
@@ -133,8 +135,13 @@ function displayMessages(array, direction) {
                 author.textContent = 'Malten';
                 item.appendChild(author);
             }
-            d2.style.whiteSpace = 'pre-wrap';
-            d2.textContent = (array[i].Type === 'command' ? '@malten ' : '') + array[i].Text;
+            if (array[i].Type !== 'command' && agentMarkdown) {
+                d2.classList.add('agent-reply');
+                d2.innerHTML = agentMarkdown.render(array[i].Text);
+            } else {
+                d2.style.whiteSpace = 'pre-wrap';
+                d2.textContent = (array[i].Type === 'command' ? '@malten ' : '') + array[i].Text;
+            }
         } else if (array[i].Source && array[i].Id.startsWith('reminder-')) {
             item.className = 'daily-reminder';
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
