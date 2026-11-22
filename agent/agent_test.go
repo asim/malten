@@ -33,9 +33,9 @@ func TestMuCommandThreads(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); runMu(ctx, s, mu.Client(), mu.URL+"/agent/malten", "test-token") }()
 	s.Publish(server.NewMessage("ordinary reflection", "a"))
-	s.Commands <- server.NewCommand("first", "a")
-	s.Commands <- server.NewCommand("separate", "b")
-	s.Commands <- server.NewCommand("again", "a")
+	s.SubmitCommand(server.NewCommand("first", "a"))
+	s.SubmitCommand(server.NewCommand("separate", "b"))
+	s.SubmitCommand(server.NewCommand("again", "a"))
 	for _, want := range []call{{"first", ""}, {"separate", ""}, {"again", "thread-first"}} {
 		select {
 		case got := <-calls:
@@ -48,7 +48,7 @@ func TestMuCommandThreads(t *testing.T) {
 	}
 	for {
 		msg := s.Retrieve("", "a", 1, 0, 10)
-		if len(msg) == 3 && msg[2].Text == "Reply to again" {
+		if len(msg) == 5 && msg[4].Text == "Reply to again" {
 			break
 		}
 		select {

@@ -29,8 +29,10 @@ Streams can be discovered through exploration or via the API.
 Set `MU_TOKEN` to enable the Mu agent. For a deployment running as the
 `malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
-Send `/malten What needs my attention?` in a stream to ask Mu. Follow-up
-commands in the same stream use its Mu thread while the agent is running.
+Send `/malten What needs my attention?` in a stream to ask Mu. Everyone in the stream sees the question and the reply from Malten. Both appear
+in stream history on refresh. The stream saves its Mu thread with the existing
+recovery snapshot, so follow-ups can continue after a restart. The local link
+expires after the stream TTL or 24 hours of agent inactivity, whichever is shorter.
 
 ## WhatsApp
 

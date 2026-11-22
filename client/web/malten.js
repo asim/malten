@@ -120,7 +120,16 @@ function displayMessages(array, direction) {
         timestamp.textContent = relativeTime(array[i].Created, Date.now());
         var d2 = document.createElement('div');
         d2.className = 'message';
-        if (array[i].Source && array[i].Id.startsWith('reminder-')) {
+        if (array[i].Type === 'command' || array[i].Source === 'https://micro.mu/agent/malten') {
+            if (array[i].Source) {
+                var author = document.createElement('a');
+                author.href = array[i].Source;
+                author.textContent = 'Malten';
+                item.appendChild(author);
+            }
+            d2.style.whiteSpace = 'pre-wrap';
+            d2.textContent = (array[i].Type === 'command' ? '/malten ' : '') + array[i].Text;
+        } else if (array[i].Source && array[i].Id.startsWith('reminder-')) {
             item.className = 'daily-reminder';
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
             var source = document.createElement('a');
@@ -483,7 +492,7 @@ function processEvent(stream, event) {
         return
     }
 
-    if (ev.Type == "message") {
+    if (ev.Type == "message" || ev.Type == "command") {
         var events = [];
         events.push(ev);
         displayMessages(events, 1);

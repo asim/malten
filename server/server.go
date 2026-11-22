@@ -42,6 +42,9 @@ type Stream struct {
 	Updated int64
 	// In seconds
 	TTL int64
+	// Private continuation state, included only in the recovery snapshot.
+	Thread        string `json:",omitempty"`
+	ThreadExpires int64  `json:",omitempty"`
 	// stream observers
 	Observers int64
 }
@@ -69,6 +72,7 @@ type Server struct {
 	Events   chan *Message
 	Commands chan *Message
 
+	commandMu      sync.Mutex
 	statePath      string
 	nextDiskExpiry int64
 	dirty          bool
@@ -317,7 +321,10 @@ func (s *Server) store(message *Message) bool {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	// check the listing thing
+	return s.storeLocked(message)
+}
+
+func (s *Server) storeLocked(message *Message) bool {
 	stream, ok := s.streams[message.Stream]
 	if !ok {
 		// default to a private stream
@@ -455,3 +462,51 @@ func (s *Server) Run() {
 }
 
 func Run() { Default.Run() }
+
+// SubmitCommand stores the question before the worker can publish its reply.
+func (s *Server) SubmitCommand(command *Message) bool {
+	s.commandMu.Lock()
+	defer s.commandMu.Unlock()
+	if len(s.Commands) >= cap(s.Commands) {
+		return false
+	}
+	s.store(command)
+	s.Broadcast(command)
+	s.Commands <- command
+	return true
+}
+
+func (s *Server) Thread(stream string) string {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	if st := s.streams[stream]; st != nil && st.ThreadExpires > time.Now().UnixNano() {
+		return st.Thread
+	}
+	return ""
+}
+
+// Reply keeps the answer and its continuation in the same checkpoint.
+func (s *Server) Reply(command *Message, text, source, thread string) {
+	reply := NewMessage(text, command.Stream)
+	reply.Source = source
+	s.mtx.Lock()
+	st := s.streams[command.Stream]
+	if st == nil || reply.Created-command.Created >= st.TTL {
+		s.mtx.Unlock()
+		return
+	}
+	for _, question := range st.Messages {
+		if question.Id != command.Id {
+			continue
+		}
+		s.storeLocked(reply)
+		if thread != "" {
+			st.Thread = thread
+			st.ThreadExpires = reply.Created + min(st.TTL, int64(StreamTTL))
+		}
+		s.mtx.Unlock()
+		s.Broadcast(reply)
+		return
+	}
+	s.mtx.Unlock()
+}

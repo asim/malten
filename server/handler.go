@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 )
 
 // DefaultStream is the public home stream.
@@ -41,13 +40,8 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	message := NewCommand(command, stream)
-	select {
-	case Default.Commands <- message:
-		Default.Broadcast(message)
-	case <-r.Context().Done():
-		return
-	case <-time.After(time.Second):
-		http.Error(w, "Agent unavailable", http.StatusServiceUnavailable)
+	if !Default.SubmitCommand(message) {
+		http.Error(w, "Agent busy", http.StatusServiceUnavailable)
 	}
 }
 

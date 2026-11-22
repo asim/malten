@@ -24,46 +24,23 @@ func Run(ctx context.Context) {
 	go runReminders(ctx, server.Default.Events)
 }
 
-type conversation struct {
-	thread string
-	until  time.Time
-}
-
 func runMu(ctx context.Context, s *server.Server, client *http.Client, endpoint, token string) {
-	threads := make(map[string]conversation)
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-ticker.C:
-			for stream, conversation := range threads {
-				if !now.Before(conversation.until) {
-					delete(threads, stream)
-				}
-			}
 		case command := <-s.Commands:
-			previous := threads[command.Stream]
-			thread := ""
-			if time.Now().Before(previous.until) {
-				thread = previous.thread
-			}
+			thread := s.Thread(command.Stream)
 			reply, err := promptMu(ctx, client, endpoint, token, command.Text, thread)
 			if ctx.Err() != nil {
 				return
 			}
 			if err != nil {
 				log.Printf("Mu agent: %v", err)
-				s.Publish(server.NewMessage("Malten couldn’t get a reply from Mu. Please try again.", command.Stream))
+				s.Reply(command, "Malten couldn’t get a reply from Mu. Please try again.", endpoint, "")
 				continue
 			}
-			s.Publish(server.NewMessage(reply.Text, command.Stream))
-			ttl := server.StreamTTL
-			if stream := s.List()[command.Stream]; stream != nil {
-				ttl = time.Duration(stream.TTL)
-			}
-			threads[command.Stream] = conversation{thread: reply.Thread, until: time.Now().Add(ttl)}
+			s.Reply(command, reply.Text, endpoint, reply.Thread)
 		}
 	}
 }

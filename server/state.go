@@ -66,6 +66,11 @@ func (s *Server) expire(now int64) {
 		}
 	}
 	for name, st := range s.streams {
+		if st.Thread != "" && now >= st.ThreadExpires {
+			st.Thread = ""
+			st.ThreadExpires = 0
+			s.dirty = true
+		}
 		if now-st.Updated >= st.TTL {
 			delete(s.streams, name)
 			s.dirty = true
