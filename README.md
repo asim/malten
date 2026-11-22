@@ -55,6 +55,20 @@ If you already manage a `malten.service`, its executable must point to
 `/usr/local/bin/malten`. For an existing WhatsApp deployment, retain the working
 directory containing your paired `malten.db` or migrate it before switching units.
 
+To check the current branch’s upstream every five minutes, add this to the
+checkout owner's crontab, adjusting the checkout path and Go binary path:
+
+```cron
+PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+*/5 * * * * /opt/malten/scripts/deploy.sh --update
+```
+
+Use a clean tracking branch with noninteractive Git access and deployment
+privileges (root or passwordless sudo for the deployment commands).
+The first check deploys if this checkout has no successful deployment recorded.
+Later checks fast-forward and restart only when the revision differs from the
+last healthy deployment. Overlapping cron runs skip the busy checkout.
+
 ### OpenAI
 
 To enable conversations using [ChatGPT](https://openai.com/blog/chatgpt) specify the `OPENAI_API_KEY` environment variable

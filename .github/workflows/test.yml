@@ -23,3 +23,20 @@ jobs:
           ./scripts/deploy.sh
           ./scripts/deploy.sh
           systemctl is-enabled malten.service
+
+      - name: Verify automatic updates
+        run: |
+          git init --bare "$RUNNER_TEMP/upstream"
+          git remote add fixture "$RUNNER_TEMP/upstream"
+          git switch -c deploy-test
+          git push -u fixture deploy-test
+          invocation() { systemctl show -p InvocationID --value malten.service; }
+          before=$(invocation)
+          ./scripts/deploy.sh --update
+          test "$before" = "$(invocation)"
+          git clone -b deploy-test "$RUNNER_TEMP/upstream" "$RUNNER_TEMP/publisher"
+          git -C "$RUNNER_TEMP/publisher" -c user.name=CI -c user.email=ci@example.org commit --allow-empty -m update
+          git -C "$RUNNER_TEMP/publisher" push
+          ./scripts/deploy.sh --update
+          test "$(git rev-parse HEAD)" = "$(git -C "$RUNNER_TEMP/publisher" rev-parse HEAD)"
+          test "$before" != "$(invocation)"
