@@ -47,7 +47,7 @@ type Stream struct {
 
 type Message struct {
 	Observers   int    `json:",omitempty"`
-	SourceURL   string `json:"ReminderURL,omitempty"`
+	SourceURL   string `json:",omitempty"`
 	Id          string
 	Text        string
 	Type        string
