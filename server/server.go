@@ -46,6 +46,7 @@ type Stream struct {
 }
 
 type Message struct {
+	Observers   int    `json:",omitempty"`
 	ReminderURL string `json:",omitempty"`
 	Id          string
 	Text        string
@@ -211,15 +212,17 @@ func (s *Server) Broadcast(message *Message) {
 
 	s.mtx.RLock()
 	for _, o := range s.observers {
-		observers = append(observers, o)
+		if o.Stream == message.Stream {
+			observers = append(observers, o)
+		}
 	}
 	s.mtx.RUnlock()
 
+	if message.Type == "event" {
+		message.Observers = len(observers)
+	}
+
 	for _, o := range observers {
-		// only broadcast what they care about
-		if message.Stream != o.Stream {
-			continue
-		}
 		// send message
 		select {
 		case o.Events <- message:

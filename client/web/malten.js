@@ -229,11 +229,6 @@ function getStream() {
 function getStreams(fn) {
     $.get(streamUrl, function(data) {
             streams = data;
-            var s = streams[getStream()];
-            if (s != undefined) {
-                setObservers(s.Observers);
-		//setStreamsList();
-            }
         })
         .fail(function(err) {
             console.log(err);
@@ -265,6 +260,7 @@ function gotoStream(t) {
     var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
     if (stream.length > 0) {
         document.getElementById('goto').elements['gstream'].value = '';
+        document.getElementById("join").open = false;
         window.location = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/#' + stream;
         clearMessages();
     };
@@ -488,19 +484,15 @@ function processEvent(stream, event) {
         return
     }
 
-    if (ev.Text == "connect") {
-        // user joined event 
-    } else if (ev.Text == "close") {
-        // user left event
+    if (stream === getStream() && typeof ev.Observers === 'number') {
+        setObservers(ev.Observers);
     }
-
-    // no stream data, try refresh
     getStreams();
 }
 
 function setObservers(count) {
     var present = document.getElementById("present");
-    present.innerText = "👤 " + count;
+    present.textContent = count + " here";
 }
 
 function setCurrent() {
@@ -517,6 +509,7 @@ function setCurrent() {
 }
 
 function loadStream() {
+    document.getElementById("present").textContent = "";
     getStreams()
     setCurrent();
     clearMessages();
@@ -580,7 +573,14 @@ function shareListener() {
                 })
                 .catch(console.error);
         } else {
-            // fallback
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(window.location.href).then(function() {
+                    shareButton.textContent = "Copied";
+                    setTimeout(function() { shareButton.textContent = "Share"; }, 1800);
+                }).catch(function() { window.prompt("Copy stream link", window.location.href); });
+            } else {
+                window.prompt("Copy stream link", window.location.href);
+            }
         }
 
         return false;
