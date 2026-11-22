@@ -137,10 +137,10 @@ ul li {
   right: 0;
 }
 .time {
-  margin: 2px 0 0 5px;
-  float: right;
-  font-size: 0.8em;
-  color: #ccc;
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.85em;
+  color: #526159;
 }
 .title, .desc {
   font-size: 0.9em;
