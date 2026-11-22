@@ -65,6 +65,12 @@ rm -f "$marker"
 if ! systemctl cat malten.service >/dev/null 2>&1; then
     "${admin[@]}" install -m 0644 config/malten.service "$unit"
 fi
+if id malten >/dev/null 2>&1; then
+    dropins=/etc/systemd/system/malten.service.d
+    printf '[Service]\nUser=malten\nGroup=%s\nDynamicUser=no\n' "$(id -gn malten)" > "$build_dir/account.conf"
+    "${admin[@]}" install -d "$dropins"
+    "${admin[@]}" install -m 0644 "$build_dir/account.conf" "$dropins/90-malten-account.conf"
+fi
 "${admin[@]}" systemctl daemon-reload
 "${admin[@]}" systemctl enable malten.service
 "${admin[@]}" systemctl restart malten.service
