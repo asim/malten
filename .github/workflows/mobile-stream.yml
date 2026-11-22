@@ -1,0 +1,45 @@
+name: Mobile stream check
+on: [push]
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: |
+          go build -o /tmp/malten .
+          /tmp/malten >/tmp/malten.log 2>&1 &
+          python -m pip install selenium --quiet
+          python - <<'PY'
+          from selenium import webdriver
+          from selenium.webdriver.support.ui import WebDriverWait
+          opts=webdriver.ChromeOptions()
+          opts.add_argument('--headless=new')
+          opts.add_argument('--no-sandbox')
+          with webdriver.Chrome(options=opts) as b:
+              b.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',dict(width=320,height=700,deviceScaleFactor=1,mobile=True))
+              b.get('http://localhost:9090')
+              wait=WebDriverWait(b,20)
+              def el(id): return b.find_element('id',id)
+              wait.until(lambda _: el('present').text=='1 here')
+              for line in ['A quiet moment before the day starts.', 'I made time to call a friend today.']:
+                  el('prompt').send_keys(line)
+                  el('send').click()
+              wait.until(lambda _: len(b.find_elements('css selector','#messages li:not(.daily-reminder)'))==2)
+              assert b.execute_script("return parseFloat(getComputedStyle(document.querySelector('#messages li:not(.daily-reminder)')).paddingTop)")>=18
+              main=b.current_window_handle
+              b.switch_to.new_window('tab')
+              b.get('http://localhost:9090')
+              wait.until(lambda _: el('present').text=='2 here')
+              b.close()
+              b.switch_to.window(main)
+              wait.until(lambda _: el('present').text=='1 here')
+              b.find_element('tag name','summary').click()
+              assert b.execute_script('return document.documentElement.scrollWidth<=innerWidth')
+              el('gstream').send_keys('quiet')
+              b.find_element('css selector','#goto button').click()
+              wait.until(lambda _: b.current_url.endswith('#quiet') and el('present').text=='1 here')
+              assert not el('join').get_property('open')
+          PY
