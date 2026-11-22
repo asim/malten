@@ -26,8 +26,6 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Got command", command)
-
 	// default stream
 	if len(stream) == 0 {
 		stream = DefaultStream
@@ -38,10 +36,18 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		command = command[:MaxMessageSize]
 	}
 
+	if Default.Commands == nil {
+		http.Error(w, "Mu agent is disabled", http.StatusServiceUnavailable)
+		return
+	}
+	message := NewCommand(command, stream)
 	select {
-	case Default.Events <- NewCommand(command, stream):
+	case Default.Commands <- message:
+		Default.Broadcast(message)
+	case <-r.Context().Done():
+		return
 	case <-time.After(time.Second):
-		http.Error(w, "Timed out creating message", 504)
+		http.Error(w, "Agent unavailable", http.StatusServiceUnavailable)
 	}
 }
 

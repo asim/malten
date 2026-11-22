@@ -191,12 +191,16 @@ func eventHandler(evt interface{}) {
 		}
 
 		// send the command
-		if strings.Contains(strings.ToLower(message), "malten") {
+		command := strings.Fields(message)
+		if len(command) > 1 && (strings.EqualFold(command[0], "@malten") || strings.EqualFold(command[0], "/malten")) {
 			// send to the server
-			http.PostForm("http://127.0.0.1:9090/commands", url.Values{
-				"prompt": []string{message},
+			response, err := http.PostForm("http://127.0.0.1:9090/commands", url.Values{
+				"prompt": []string{strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(message), command[0]))},
 				"stream": []string{stream},
 			})
+			if err == nil {
+				response.Body.Close()
+			}
 			return
 		}
 

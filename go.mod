@@ -9,7 +9,6 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/mdp/qrterminal/v3 v3.0.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/sashabaranov/go-openai v1.8.0
 	go.mau.fi/whatsmeow v0.0.0-20230516145702-d5485ef06d61
 	google.golang.org/protobuf v1.30.0
 )

@@ -65,8 +65,9 @@ type Observer struct {
 }
 
 type Server struct {
-	Created int64
-	Events  chan *Message
+	Created  int64
+	Events   chan *Message
+	Commands chan *Message
 
 	statePath      string
 	nextDiskExpiry int64

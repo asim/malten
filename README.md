@@ -24,15 +24,13 @@ Streams can be discovered through exploration or via the API.
 
 [Install and deploy Malten](INSTALL.md).
 
-### OpenAI
+### Mu
 
-To enable conversations using [ChatGPT](https://openai.com/blog/chatgpt) specify the `OPENAI_API_KEY` environment variable
+Set `MU_TOKEN` to enable the Mu agent. For a deployment running as the
+`malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
-```
-OPENAI_API_KEY=xxxx ./malten
-```
-
-To invoke ChatGPT use `/malten` as the prefix to your command
+Send `/malten What needs my attention?` in a stream to ask Mu. Follow-up
+commands in the same stream use its Mu thread while the agent is running.
 
 ## WhatsApp
 
@@ -44,7 +42,7 @@ WHATSAPP_CLIENT=true
 
 Malten has access to all your chats/groups. The next message sent in a chat/group will create a new stream 
 observer. When you then prompt with `@malten`, it will send as a command to the server and it will be answered 
-by the OpenAI agent if enabled.
+by the Mu agent if enabled.
 
 ## MCP
 

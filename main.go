@@ -110,7 +110,7 @@ func main() {
 	go server.Run()
 
 	// run the agent
-	go agent.Run(ctx)
+	agent.Run(ctx)
 
 	// whatsapp client
 	go whatsapp.Run(ctx)

@@ -431,14 +431,18 @@ function pollMessages() {
     }, 5000);
 }
 
-function postCommand() {
-    var form = document.getElementById('form');
-    if (form.elements["prompt"].value == '') {
-        return false
-    }
-    $.post(commandUrl, $("#form").serialize());
-    form.elements["prompt"].value = '';
-    updateComposer();
+function postCommand(draft) {
+    var prompt = document.getElementById('prompt');
+    var status = document.getElementById('words');
+    status.textContent = '';
+    $.post(commandUrl, {prompt: draft.replace(/^\/malten\s+/, ''), stream: getStream()})
+        .done(function() {
+            if (prompt.value === draft) prompt.value = '';
+            updateComposer();
+        })
+        .fail(function() {
+            status.textContent = 'Malten is unavailable. Please try again.';
+        });
     return false;
 }
 
@@ -545,11 +549,7 @@ function submitCommand() {
     }
 
     if (el["prompt"].value.match(/^\/malten\s/)) {
-	// strip /malten
-	el["prompt"].value = el["prompt"].value.replace(/^\/malten\s/, "");	
-
-        postCommand();
-        return false;
+        return postCommand(el["prompt"].value);
     }
 
     return postMessage();
