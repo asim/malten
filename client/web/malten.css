@@ -89,7 +89,6 @@ ul li {
   box-sizing: border-box;
   padding: 5px;
   border: none;
-  border-bottom: 2px solid #EEEFF0;
 }
 #messages {
   height: calc(100vh - 200px);
@@ -156,9 +155,8 @@ ul li {
   padding: 10px;
   margin: 1.5rem 0;
 }
-#prompt:focus-visible {
-  outline: 2px solid #33614e;
-  outline-offset: 2px;
+#think:focus-within {
+  border-color: #64846c;
 }
 #think button {
   border: 1px solid #c2d1c8;
