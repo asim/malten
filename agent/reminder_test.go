@@ -1,4 +1,4 @@
-package server
+package agent
 
 import (
 	"context"
@@ -21,7 +21,7 @@ func TestDailyReminder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Stream != "_" || m.Type != "message" || m.Id != "reminder-"+date || m.Text != "Reference\n\nPassage" || m.ReminderURL != "https://reminder.dev/quran/1#1" {
+	if m.Stream != "_" || m.Type != "message" || m.Id != "reminder-"+date || m.Text != "Reference\n\nPassage" || m.Source != "https://reminder.dev/quran/1#1" {
 		t.Fatalf("unexpected reminder: %+v", m)
 	}
 	if _, err := fetchReminder(context.Background(), api.Client(), api.URL, "missing"); err == nil {

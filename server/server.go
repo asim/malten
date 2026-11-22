@@ -47,7 +47,7 @@ type Stream struct {
 
 type Message struct {
 	Observers   int    `json:",omitempty"`
-	ReminderURL string `json:",omitempty"`
+	Source      string
 	Id          string
 	Text        string
 	Type        string
@@ -311,7 +311,7 @@ func (s *Server) Store(message *Message) {
 	stream, ok := s.streams[message.Stream]
 	if !ok {
 		// default to a private stream
-		stream = NewStream(message.Stream, "", message.Stream != defaultStream, int(StreamTTL.Seconds()))
+		stream = NewStream(message.Stream, "", message.Stream != DefaultStream, int(StreamTTL.Seconds()))
 		s.streams[stream.Id] = stream
 	}
 
@@ -416,7 +416,7 @@ func (s *Server) Run() {
 		case message := <-s.Events:
 			if message.Type == "message" {
 				s.Store(message)
-				if message.ReminderURL == "" {
+				if message.Source == "" {
 					go s.Metadata(message)
 				}
 			}

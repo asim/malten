@@ -1,4 +1,4 @@
-package server
+package agent
 
 import (
 	"context"
@@ -10,11 +10,13 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/asim/malten/server"
 )
 
-// RunReminders publishes the dated Qur'an passage into the home stream.
+// runReminders publishes the dated Qur'an passage into the home stream.
 // Retry a missing daily entry until Reminder has archived it.
-func (s *Server) RunReminders(ctx context.Context) {
+func runReminders(ctx context.Context, events chan<- *server.Message) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -27,7 +29,7 @@ func (s *Server) RunReminders(ctx context.Context) {
 				log.Printf("Daily reminder %s: %v", date, err)
 			} else {
 				select {
-				case s.Events <- message:
+				case events <- message:
 					published = date
 				case <-ctx.Done():
 					return
@@ -42,7 +44,7 @@ func (s *Server) RunReminders(ctx context.Context) {
 	}
 }
 
-func fetchReminder(ctx context.Context, client *http.Client, base, date string) (*Message, error) {
+func fetchReminder(ctx context.Context, client *http.Client, base, date string) (*server.Message, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/daily/"+date, nil)
 	if err != nil {
 		return nil, err
@@ -65,11 +67,11 @@ func fetchReminder(ctx context.Context, client *http.Client, base, date string) 
 	if strings.TrimSpace(daily.Verse) == "" {
 		return nil, fmt.Errorf("empty verse")
 	}
-	message := NewMessage(daily.Verse, defaultStream)
+	message := server.NewMessage(daily.Verse, server.DefaultStream)
 	message.Id = "reminder-" + date
-	message.ReminderURL = "https://reminder.dev"
+	message.Source = "https://reminder.dev"
 	if link, err := url.Parse(daily.Links.Verse); err == nil && !link.IsAbs() && link.Host == "" && strings.HasPrefix(link.Path, "/quran/") {
-		message.ReminderURL += link.String()
+		message.Source += link.String()
 	}
 	return message, nil
 }

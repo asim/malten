@@ -207,7 +207,7 @@ func (ai *AI) listen(stream string) error {
 			return err
 		}
 
-		if msg.ReminderURL != "" {
+		if msg.Source != "" {
 			continue
 		}
 
@@ -305,7 +305,12 @@ func New(persona string) (*AI, error) {
 	return ai, nil
 }
 
-func Run() {
+func Run(ctx context.Context) {
+	go runAI()
+	runReminders(ctx, server.Default.Events)
+}
+
+func runAI() {
 	ai, err := New(DefaultPersona)
 	if err != nil {
 		fmt.Println("AI not running:", err)
