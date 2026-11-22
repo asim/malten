@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,6 +27,10 @@ func main() {
 	http.Handle("/mcp", server.MCPHandler(server.Default))
 	htmlContent, err := fs.Sub(html, "client/web")
 	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
 		log.Fatal(err)
 	}
 
