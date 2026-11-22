@@ -66,18 +66,12 @@ function relativeTime(created, now) {
     return days + (days === 1 ? ' day ago' : ' days ago');
 }
 
-function chars() {
-    var i = document.getElementById('prompt').value.length;
-    var c = maxChars;
-
-    if (i > maxChars) {
-        c = i - maxChars;
-    } else {
-        c = maxChars - i;
-    }
-
-    document.getElementById('chars').innerHTML = c;
-};
+function updateComposer() {
+    var prompt = document.getElementById('prompt');
+    prompt.style.height = 'auto';
+    prompt.style.height = prompt.scrollHeight + 'px';
+    document.getElementById('chars').textContent = prompt.maxLength - prompt.value.length;
+}
 
 function clearMessages() {
     document.getElementById('messages').innerHTML = "";
@@ -131,7 +125,7 @@ function displayMessages(array, direction) {
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
             var source = document.createElement('a');
             source.href = array[i].ReminderURL;
-            source.textContent = 'Daily reminder · Reminder.dev';
+            source.textContent = 'Daily Reminder';
             var passage = array[i].Text.split(/\r?\n\s*\n/);
             d2.appendChild(source);
             if (passage.length > 1) {
@@ -200,18 +194,24 @@ function getSpeech() {
 	words.innerText = "Start speaking";
 	speak.disabled = true;
     }
-    recognition.onspeechend = () => {
-        console.log("mic off");
-        recognition.stop();
-	words.innerText = "";
-	speak.disabled = false;
-    }
+    recognition.onspeechend = () => recognition.stop();
+    recognition.onend = () => {
+        words.innerText = "";
+        speak.disabled = false;
+    };
     recognition.onresult = (result) => {
-        console.log(result.results[0][0].transcript);
-	text.value = result.results[0][0].transcript;
-	// post it;
-	setTimeout(submitCommand, 500)
-    }
+        var transcript = result.results[0][0].transcript.trim();
+        if (!transcript) return;
+        var start = text.selectionStart;
+        var end = text.selectionEnd;
+        var prefix = start && !/\s/.test(text.value[start - 1]) ? ' ' : '';
+        var suffix = end < text.value.length && !/\s/.test(text.value[end]) ? ' ' : '';
+        var available = text.maxLength - text.value.length + end - start;
+        var insertion = (prefix + transcript + suffix).slice(0, available);
+        if (insertion.trim()) text.setRangeText(insertion, start, end, 'end');
+        updateComposer();
+        text.focus();
+    };
 
     recognition.start();
 }
@@ -229,11 +229,6 @@ function getStream() {
 function getStreams(fn) {
     $.get(streamUrl, function(data) {
             streams = data;
-            var s = streams[getStream()];
-            if (s != undefined) {
-                setObservers(s.Observers);
-		//setStreamsList();
-            }
         })
         .fail(function(err) {
             console.log(err);
@@ -265,6 +260,7 @@ function gotoStream(t) {
     var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
     if (stream.length > 0) {
         document.getElementById('goto').elements['gstream'].value = '';
+        document.getElementById("join").open = false;
         window.location = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/#' + stream;
         clearMessages();
     };
@@ -308,13 +304,15 @@ function loadListeners() {
 
     document.getElementById("prompt").addEventListener("keyup", function() {
         start();
-        chars();
+
     }, false);
 
     document.getElementById("prompt").addEventListener("keydown", function() {
         stop();
     }, false);
 
+    document.getElementById("prompt").addEventListener("input", updateComposer);
+    updateComposer();
     shareListener();
 
     window.addEventListener("beforeunload", function(e) {
@@ -433,6 +431,7 @@ function postCommand() {
     }
     $.post(commandUrl, $("#form").serialize());
     form.elements["prompt"].value = '';
+    updateComposer();
     return false;
 }
 
@@ -447,6 +446,7 @@ function postMessage() {
     el["message"].value = el["prompt"].value;
     // clear prompt
     el["prompt"].value = '';
+    updateComposer();
 
     var stream = form.elements["stream"];
     $.post(messageUrl, $("#form").serialize());
@@ -484,19 +484,15 @@ function processEvent(stream, event) {
         return
     }
 
-    if (ev.Text == "connect") {
-        // user joined event 
-    } else if (ev.Text == "close") {
-        // user left event
+    if (stream === getStream() && typeof ev.Observers === 'number') {
+        setObservers(ev.Observers);
     }
-
-    // no stream data, try refresh
     getStreams();
 }
 
 function setObservers(count) {
     var present = document.getElementById("present");
-    present.innerText = "👤 " + count;
+    present.textContent = count + " here";
 }
 
 function setCurrent() {
@@ -513,6 +509,7 @@ function setCurrent() {
 }
 
 function loadStream() {
+    document.getElementById("present").textContent = "";
     getStreams()
     setCurrent();
     clearMessages();
@@ -576,7 +573,14 @@ function shareListener() {
                 })
                 .catch(console.error);
         } else {
-            // fallback
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(window.location.href).then(function() {
+                    shareButton.textContent = "Copied";
+                    setTimeout(function() { shareButton.textContent = "Share"; }, 1800);
+                }).catch(function() { window.prompt("Copy stream link", window.location.href); });
+            } else {
+                window.prompt("Copy stream link", window.location.href);
+            }
         }
 
         return false;

@@ -4,7 +4,7 @@
     <meta http-equiv="content-language" content="en">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home</title>
-    <link rel="stylesheet" type="text/css" href="malten.css?v=timestamps1">
+    <link rel="stylesheet" type="text/css" href="malten.css?v=streamheader1">
     <link rel="canonical" href="https://malten.me" />
     <link rel="manifest" href="/manifest.webmanifest">
   </head>
@@ -12,24 +12,32 @@
     <div id="side">
     </div>
     <div id="main">
-      <div id="head">
-        <a href="/"><img src="logo.jpg" style="width:20px;height:20px;vertical-align:middle;"/></a>
-	<a href="/" id="current"></a>
-	<span id="present"></span>
-	<span id="nav">
-	  <b><a href="/share" id="share">share</a></b> | 
-	  <b><a href="/new" id="new">new</a></b> | 
-	  <b>goto</b><form id="goto" onsubmit="return gotoStream(this);"><input id="gstream" name="gstream" type="text" placeholder="stream"></form>
-	</span>
-      </div>
+      <header id="head">
+        <div class="stream-info">
+          <a href="/" aria-label="Malten home"><img src="logo.jpg" alt="" width="20" height="20"></a>
+          <a href="/" id="current"></a>
+          <span id="present" role="status"></span>
+        </div>
+        <nav id="nav" aria-label="Stream actions">
+          <button id="share" type="button">Share</button>
+          <a href="/new">New</a>
+          <details id="join">
+            <summary>Join</summary>
+            <form id="goto" onsubmit="return gotoStream(this);">
+              <input id="gstream" name="gstream" aria-label="Stream name" placeholder="Stream name" required>
+              <button type="submit">Join</button>
+            </form>
+          </details>
+        </nav>
+      </header>
       <div id="think">
         <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
-          <input id="prompt" name="prompt" value="" placeholder="What’s on your mind?" maxlength="1024" aria-label="What’s on your mind?" autocomplete="off">
+          <textarea id="prompt" name="prompt" rows="1" placeholder="What’s on your mind?" maxlength="1024" aria-label="What’s on your mind?" autocomplete="off"></textarea>
 	  <input id="message" name="message" type="hidden">
           <input id="stream" name="stream" type="hidden">
 	  <div id="controls">
-            <button id="send">Send</button>
-            <button id="speak">Talk</button>
+            <button id="send" type="submit">Send</button>
+            <button id="speak" type="button">Talk</button>
 	    <span id="words"></span>
             <span id="chars">1024</span>
           </div>
@@ -40,7 +48,7 @@
       </div>
     </div>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
-    <script src="malten.js?v=timestamps1"></script>
+    <script src="malten.js?v=streamheader1"></script>
     <script type="text/javascript">
 	$(document).ready(function() {
             setCurrent();
