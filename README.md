@@ -24,9 +24,9 @@ Streams can be discovered through exploration or via the API.
 
 [Install and deploy Malten](INSTALL.md).
 
-### Mu
+### Agent
 
-Set `MU_TOKEN` to enable the Mu agent. For a deployment running as the
+Set `MU_TOKEN` to enable the [Mu](https://micro.mu) agent. For a deployment running as the
 `malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
 Send `/malten What needs my attention?` in a stream to ask Mu. Everyone in the stream sees the question and the reply from Malten. Both appear
