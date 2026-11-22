@@ -31,7 +31,8 @@ Set `MU_TOKEN` to enable a [Mu](https://micro.mu) agent. For a deployment runnin
 
 Mention `@malten` at the start of a message, for example `@malten what is this?`
 or `@malten what does today’s passage mean?`. The original `/malten` shortcut also works. Mentioning Malten sends Mu a bounded excerpt of up to six preceding reflections
-from that stream, alongside the question. Everyone in the stream sees the question and the reply from Malten. Both appear
+from that stream in Mu’s per-request `context.messages`. The visitor’s question
+is sent as `prompt`. Mu saves the question and answer in the thread; an answer may quote an excerpt. Everyone in the stream sees the question and the reply from Malten. Both appear
 in stream history on refresh. The stream saves its Mu thread with the existing
 recovery snapshot, so follow-ups can continue after a restart. The local link
 expires after the stream TTL or 24 hours of agent inactivity, whichever is shorter.
