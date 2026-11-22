@@ -121,11 +121,8 @@ function displayMessages(array, direction) {
             embed = false;
         }
 
-        // tagging
-        array[i].Text = tagText(array[i].Text);
-
         var item = document.createElement('li');
-        var html = escapeHTML(array[i].Text);
+
         var d1 = document.createElement('div');
         var d2 = document.createElement('div');
         d1.className = 'time';
@@ -133,7 +130,26 @@ function displayMessages(array, direction) {
         d1.innerHTML = parseDate(array[i].Created);
         d1.setAttribute('data-time', array[i].Created);
 	d1.style.display = 'none';
-        d2.innerHTML = html.parseURL(embed).parseHashTag();
+        if (array[i].ReminderURL) {
+            item.className = 'daily-reminder';
+            item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
+            var source = document.createElement('a');
+            source.href = array[i].ReminderURL;
+            source.textContent = 'Daily reminder · Reminder.dev';
+            var passage = array[i].Text.split(/\r?\n\s*\n/);
+            d2.appendChild(source);
+            if (passage.length > 1) {
+                var reference = document.createElement('p');
+                reference.className = 'reference';
+                reference.textContent = passage.shift();
+                d2.appendChild(reference);
+            }
+            var verse = document.createElement('blockquote');
+            verse.textContent = passage.join('\n\n');
+            d2.appendChild(verse);
+        } else {
+            d2.innerHTML = escapeHTML(tagText(array[i].Text)).parseURL(embed).parseHashTag();
+        }
         item.appendChild(d1);
         item.appendChild(d2);
 
@@ -396,6 +412,9 @@ function observeEvents() {
 }
 
 function pollMessages() {
+    document.querySelectorAll('.daily-reminder[data-expires]').forEach(function(item) {
+        if (Number(item.dataset.expires) <= Date.now()) item.remove();
+    });
     if (typing == false) {
         loadMessages();
     };
