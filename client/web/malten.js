@@ -66,18 +66,12 @@ function relativeTime(created, now) {
     return days + (days === 1 ? ' day ago' : ' days ago');
 }
 
-function chars() {
-    var i = document.getElementById('prompt').value.length;
-    var c = maxChars;
-
-    if (i > maxChars) {
-        c = i - maxChars;
-    } else {
-        c = maxChars - i;
-    }
-
-    document.getElementById('chars').innerHTML = c;
-};
+function updateComposer() {
+    var prompt = document.getElementById('prompt');
+    prompt.style.height = 'auto';
+    prompt.style.height = prompt.scrollHeight + 'px';
+    document.getElementById('chars').textContent = prompt.maxLength - prompt.value.length;
+}
 
 function clearMessages() {
     document.getElementById('messages').innerHTML = "";
@@ -200,18 +194,24 @@ function getSpeech() {
 	words.innerText = "Start speaking";
 	speak.disabled = true;
     }
-    recognition.onspeechend = () => {
-        console.log("mic off");
-        recognition.stop();
-	words.innerText = "";
-	speak.disabled = false;
-    }
+    recognition.onspeechend = () => recognition.stop();
+    recognition.onend = () => {
+        words.innerText = "";
+        speak.disabled = false;
+    };
     recognition.onresult = (result) => {
-        console.log(result.results[0][0].transcript);
-	text.value = result.results[0][0].transcript;
-	// post it;
-	setTimeout(submitCommand, 500)
-    }
+        var transcript = result.results[0][0].transcript.trim();
+        if (!transcript) return;
+        var start = text.selectionStart;
+        var end = text.selectionEnd;
+        var prefix = start && !/\s/.test(text.value[start - 1]) ? ' ' : '';
+        var suffix = end < text.value.length && !/\s/.test(text.value[end]) ? ' ' : '';
+        var available = text.maxLength - text.value.length + end - start;
+        var insertion = (prefix + transcript + suffix).slice(0, available);
+        if (insertion.trim()) text.setRangeText(insertion, start, end, 'end');
+        updateComposer();
+        text.focus();
+    };
 
     recognition.start();
 }
@@ -308,13 +308,15 @@ function loadListeners() {
 
     document.getElementById("prompt").addEventListener("keyup", function() {
         start();
-        chars();
+
     }, false);
 
     document.getElementById("prompt").addEventListener("keydown", function() {
         stop();
     }, false);
 
+    document.getElementById("prompt").addEventListener("input", updateComposer);
+    updateComposer();
     shareListener();
 
     window.addEventListener("beforeunload", function(e) {
@@ -433,6 +435,7 @@ function postCommand() {
     }
     $.post(commandUrl, $("#form").serialize());
     form.elements["prompt"].value = '';
+    updateComposer();
     return false;
 }
 
@@ -447,6 +450,7 @@ function postMessage() {
     el["message"].value = el["prompt"].value;
     // clear prompt
     el["prompt"].value = '';
+    updateComposer();
 
     var stream = form.elements["stream"];
     $.post(messageUrl, $("#form").serialize());
