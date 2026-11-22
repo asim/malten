@@ -69,9 +69,9 @@ func fetchReminder(ctx context.Context, client *http.Client, base, date string) 
 	}
 	message := server.NewMessage(daily.Verse, server.DefaultStream)
 	message.Id = "reminder-" + date
-	message.SourceURL = "https://reminder.dev"
+	message.Source = "https://reminder.dev"
 	if link, err := url.Parse(daily.Links.Verse); err == nil && !link.IsAbs() && link.Host == "" && strings.HasPrefix(link.Path, "/quran/") {
-		message.SourceURL += link.String()
+		message.Source += link.String()
 	}
 	return message, nil
 }

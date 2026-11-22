@@ -120,11 +120,11 @@ function displayMessages(array, direction) {
         timestamp.textContent = relativeTime(array[i].Created, Date.now());
         var d2 = document.createElement('div');
         d2.className = 'message';
-        if (array[i].SourceURL && array[i].Id.startsWith('reminder-')) {
+        if (array[i].Source && array[i].Id.startsWith('reminder-')) {
             item.className = 'daily-reminder';
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
             var source = document.createElement('a');
-            source.href = array[i].SourceURL;
+            source.href = array[i].Source;
             source.textContent = 'Daily Reminder';
             var passage = array[i].Text.split(/\r?\n\s*\n/);
             d2.appendChild(source);
@@ -139,9 +139,9 @@ function displayMessages(array, direction) {
             d2.appendChild(verse);
         } else {
             d2.innerHTML = escapeHTML(tagText(array[i].Text)).parseURL(embed).parseHashTag();
-            if (array[i].SourceURL) {
+            if (array[i].Source) {
                 var link = document.createElement('a');
-                link.href = array[i].SourceURL;
+                link.href = array[i].Source;
                 link.textContent = 'Source';
                 d2.appendChild(document.createElement('br'));
                 d2.appendChild(link);

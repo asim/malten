@@ -207,7 +207,7 @@ func (ai *AI) listen(stream string) error {
 			return err
 		}
 
-		if msg.SourceURL != "" {
+		if msg.Source != "" {
 			continue
 		}
 

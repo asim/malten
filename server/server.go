@@ -47,7 +47,7 @@ type Stream struct {
 
 type Message struct {
 	Observers   int    `json:",omitempty"`
-	SourceURL   string `json:",omitempty"`
+	Source      string
 	Id          string
 	Text        string
 	Type        string
@@ -416,7 +416,7 @@ func (s *Server) Run() {
 		case message := <-s.Events:
 			if message.Type == "message" {
 				s.Store(message)
-				if message.SourceURL == "" {
+				if message.Source == "" {
 					go s.Metadata(message)
 				}
 			}
