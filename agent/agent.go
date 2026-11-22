@@ -207,6 +207,10 @@ func (ai *AI) listen(stream string) error {
 			return err
 		}
 
+		if msg.ReminderURL != "" {
+			continue
+		}
+
 		// think and respond
 		//if msg.Type == "command" {
 		ai.execute(msg.Stream, msg.Text)
