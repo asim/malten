@@ -5,7 +5,7 @@ Anonymous ephemeral messaging
 ## Overview
 
 Malten is an ephemeral messaging app. It contains solely streams of text and nothing more. 
-Streams have an idle lifetime of 1024 seconds. Each stream supports 1024 messages as a FIFO and 
+By default, messages expire 24 hours after posting and idle streams expire after 24 hours. Each stream supports 1024 messages as a FIFO and
 1024 characters per message. Streams can be discovered through exploration or via the API.
 
 ## Features
