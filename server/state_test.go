@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestRestartAndExpiry(t *testing.T) {
@@ -105,5 +106,17 @@ func TestSharedCommandAndReplySurviveRestart(t *testing.T) {
 	data, err := os.ReadFile(path)
 	if err != nil || strings.Contains(string(data), "owned-thread") {
 		t.Fatal("expired continuation retained", err)
+	}
+}
+
+func TestMessageTextLimit(t *testing.T) {
+	for _, text := range []string{strings.Repeat("界", 2000), strings.Repeat("<", 6000), strings.Repeat("a", MaxMessageSize)} {
+		reply := NewMessage(text, DefaultStream).Text
+		if len(reply) > MaxMessageSize || !utf8.ValidString(reply) {
+			t.Fatal("invalid reply boundary")
+		}
+		if len(text) <= MaxMessageSize && text != reply {
+			t.Fatal("short reply changed")
+		}
 	}
 }

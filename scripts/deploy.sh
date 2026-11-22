@@ -49,7 +49,7 @@ build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT
 
 # Build as the invoking user before touching the running service.
-CGO_ENABLED=1 go build -o "$build_dir/malten" .
+CGO_ENABLED=0 go build -o "$build_dir/malten" .
 admin=()
 if (( EUID != 0 )); then
     admin=(sudo)

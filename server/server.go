@@ -8,13 +8,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
 )
 
 const (
-	MaxMessageSize = 1024
+	MaxMessageSize = 4 * 1024
 	MaxMessages    = 1024
 	StreamTTL      = 24 * time.Hour
 )
@@ -132,6 +133,14 @@ func NewStream(id, secret string, private bool, ttl int) *Stream {
 }
 
 func NewMessage(text, stream string) *Message {
+	if len(text) > MaxMessageSize {
+		const suffix = "…"
+		end := MaxMessageSize - len(suffix)
+		for !utf8.RuneStart(text[end]) {
+			end--
+		}
+		text = text[:end] + suffix
+	}
 	return &Message{
 		Id:      uuid.New().String(),
 		Text:    text,

@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/asim/malten/server"
 )
@@ -80,16 +78,4 @@ func TestMuCommandThreads(t *testing.T) {
 	}
 	cancel()
 	<-done
-}
-
-func TestBoundedReply(t *testing.T) {
-	for _, text := range []string{strings.Repeat("界", 1000), strings.Repeat("<", 3000), strings.Repeat("a", 1024)} {
-		reply := boundedReply(text)
-		if len(reply) > server.MaxMessageSize || !utf8.ValidString(reply) {
-			t.Fatal("invalid reply boundary")
-		}
-		if len(text) <= server.MaxMessageSize && text != reply {
-			t.Fatal("short reply changed")
-		}
-	}
 }

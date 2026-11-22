@@ -17,7 +17,7 @@ type readStreamArgs struct {
 }
 type postMessageArgs struct {
 	Stream string `json:"stream,omitempty" jsonschema:"Stream name (defaults to the home stream)"`
-	Text   string `json:"text" jsonschema:"Reflection to publish, up to 1024 bytes"`
+	Text   string `json:"text" jsonschema:"Reflection to publish, up to 4096 bytes"`
 }
 type createStreamArgs struct {
 	Name    string `json:"name,omitempty" jsonschema:"Optional stream name; generated if omitted"`
@@ -54,7 +54,7 @@ func MCPHandler(s *Server) http.Handler {
 	})
 	mcp.AddTool(api, &mcp.Tool{Name: "post_message", Description: "Publish a reflection to a stream."}, func(ctx context.Context, req *mcp.CallToolRequest, args postMessageArgs) (*mcp.CallToolResult, map[string]string, error) {
 		if strings.TrimSpace(args.Text) == "" || len(args.Text) > MaxMessageSize {
-			return nil, nil, errors.New("text must be nonblank and at most 1024 bytes")
+			return nil, nil, errors.New("text must be nonblank and at most 4096 bytes")
 		}
 		if args.Stream == "" {
 			args.Stream = DefaultStream

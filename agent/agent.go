@@ -11,7 +11,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/asim/malten/server"
 )
@@ -40,7 +39,7 @@ func runMu(ctx context.Context, s *server.Server, client *http.Client, endpoint,
 				log.Printf("Mu agent: %v", err)
 				reply = muReply{Text: "Malten couldn’t get a reply from Mu. Please try again."}
 			}
-			s.Reply(command, boundedReply(reply.Text), endpoint, reply.Thread)
+			s.Reply(command, reply.Text, endpoint, reply.Thread)
 			select {
 			case completed <- command.Stream:
 			case <-ctx.Done():
@@ -75,18 +74,6 @@ func runMu(ctx context.Context, s *server.Server, client *http.Client, endpoint,
 			start(waiting[0])
 		}
 	}
-}
-
-func boundedReply(text string) string {
-	if len(text) <= server.MaxMessageSize {
-		return text
-	}
-	const suffix = "…"
-	end := server.MaxMessageSize - len(suffix)
-	for !utf8.RuneStart(text[end]) {
-		end--
-	}
-	return text[:end] + suffix
 }
 
 type muReply struct {

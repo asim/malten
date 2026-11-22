@@ -5,7 +5,8 @@ var eventUrl = "/events";
 var limit = 25;
 var last = timeAgo();
 var typing = false;
-var maxChars = 1024;
+var maxMessageBytes = 4096;
+var utf8 = new TextEncoder();
 var maxMessages = 1000;
 var seen = {};
 var streams = {};
@@ -70,7 +71,11 @@ function updateComposer() {
     var prompt = document.getElementById('prompt');
     prompt.style.height = 'auto';
     prompt.style.height = prompt.scrollHeight + 'px';
-    document.getElementById('chars').textContent = prompt.maxLength - prompt.value.length;
+    var text = prompt.value.replace(/^\/malten\s+/, '');
+    var excess = utf8.encode(text).length - maxMessageBytes;
+    var warning = excess > 0 ? excess + ' bytes over the limit' : '';
+    prompt.setCustomValidity(warning);
+    document.getElementById('chars').textContent = warning;
 }
 
 function clearMessages() {
@@ -222,8 +227,7 @@ function getSpeech() {
         var end = text.selectionEnd;
         var prefix = start && !/\s/.test(text.value[start - 1]) ? ' ' : '';
         var suffix = end < text.value.length && !/\s/.test(text.value[end]) ? ' ' : '';
-        var available = text.maxLength - text.value.length + end - start;
-        var insertion = (prefix + transcript + suffix).slice(0, available);
+        var insertion = prefix + transcript + suffix;
         if (insertion.trim()) text.setRangeText(insertion, start, end, 'end');
         updateComposer();
         text.focus();
@@ -456,28 +460,23 @@ function postCommand(draft) {
 }
 
 function postMessage() {
-    var form = document.getElementById('form');
-    var el = form.elements;
-    if (el["prompt"].value == '') {
-        return false
-    }
-
-    // set message field
-    el["message"].value = el["prompt"].value;
-    // clear prompt
-    el["prompt"].value = '';
-    updateComposer();
-
-    var stream = form.elements["stream"];
-    $.post(messageUrl, $("#form").serialize());
-
-    // clear message
-    form.elements["message"].value = '';
-
-    // reload messages
-    loadMessages();
+    var prompt = document.getElementById('prompt');
+    var status = document.getElementById('words');
+    var draft = prompt.value;
+    if (!draft) return false;
+    var send = document.getElementById('send');
+    send.disabled = true;
+    status.textContent = '';
+    $.post(messageUrl, {message: draft, stream: getStream()})
+        .done(function() {
+            if (prompt.value === draft) prompt.value = '';
+            updateComposer();
+            loadMessages();
+        })
+        .fail(function() { status.textContent = 'Could not send. Please try again.'; })
+        .always(function() { send.disabled = false; });
     return false;
-};
+}
 
 function processEvent(stream, event) {
     console.log(event);

@@ -32,7 +32,8 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 	// default length
 	if len(command) > MaxMessageSize {
-		command = command[:MaxMessageSize]
+		http.Error(w, "Text exceeds 4096 bytes", http.StatusRequestEntityTooLarge)
+		return
 	}
 
 	if Default.Commands == nil {
@@ -197,7 +198,8 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 
 	// default length
 	if len(message) > MaxMessageSize {
-		message = message[:MaxMessageSize]
+		http.Error(w, "Text exceeds 4096 bytes", http.StatusRequestEntityTooLarge)
+		return
 	}
 
 	Default.Publish(NewMessage(message, stream))
