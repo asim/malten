@@ -29,10 +29,20 @@ Streams can be discovered through exploration or via the API.
 Set `MU_TOKEN` to enable a [Mu](https://micro.mu) agent. For a deployment running as the
 `malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
-Send `/malten What needs my attention?` in a stream to ask Mu. Everyone in the stream sees the question and the reply from Malten. Both appear
+Mention `@malten` at the start of a message, for example `@malten what is this?`
+or `@malten what does today’s passage mean?`. The original `/malten` shortcut also works. Everyone in the stream sees the question and the reply from Malten. Both appear
 in stream history on refresh. The stream saves its Mu thread with the existing
 recovery snapshot, so follow-ups can continue after a restart. The local link
 expires after the stream TTL or 24 hours of agent inactivity, whichever is shorter.
+
+To configure the hosted agent, open **Agents → Malten → Edit** in Mu. Give it
+instructions for a shared reflection stream and select only the services suitable
+for public replies. A starting instruction:
+
+> You are Malten, the guide to a network for reflection. Welcome newcomers,
+> help people reflect on the daily Qur’an passage when asked, and keep your
+> replies brief and grounded in the source. Everyone in the stream can read
+> what you say.
 
 ## MCP
 

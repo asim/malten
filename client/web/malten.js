@@ -5,6 +5,7 @@ var eventUrl = "/events";
 var limit = 25;
 var last = timeAgo();
 var typing = false;
+var maltenMention = /^[@\/]malten(?:[:,])?\s+/i;
 var maxMessageBytes = 4096;
 var utf8 = new TextEncoder();
 var maxMessages = 1000;
@@ -71,7 +72,7 @@ function updateComposer() {
     var prompt = document.getElementById('prompt');
     prompt.style.height = 'auto';
     prompt.style.height = prompt.scrollHeight + 'px';
-    var text = prompt.value.replace(/^\/malten\s+/, '');
+    var text = prompt.value.replace(maltenMention, '');
     var excess = utf8.encode(text).length - maxMessageBytes;
     var warning = excess > 0 ? excess + ' bytes over the limit' : '';
     prompt.setCustomValidity(warning);
@@ -133,7 +134,7 @@ function displayMessages(array, direction) {
                 item.appendChild(author);
             }
             d2.style.whiteSpace = 'pre-wrap';
-            d2.textContent = (array[i].Type === 'command' ? '/malten ' : '') + array[i].Text;
+            d2.textContent = (array[i].Type === 'command' ? '@malten ' : '') + array[i].Text;
         } else if (array[i].Source && array[i].Id.startsWith('reminder-')) {
             item.className = 'daily-reminder';
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
@@ -448,7 +449,7 @@ function postCommand(draft) {
     var prompt = document.getElementById('prompt');
     var status = document.getElementById('words');
     status.textContent = '';
-    $.post(commandUrl, {prompt: draft.replace(/^\/malten\s+/, ''), stream: getStream()})
+    $.post(commandUrl, {prompt: draft.replace(maltenMention, ''), stream: getStream()})
         .done(function() {
             if (prompt.value === draft) prompt.value = '';
             updateComposer();
@@ -556,7 +557,7 @@ function submitCommand() {
         return false;
     }
 
-    if (el["prompt"].value.match(/^\/malten\s/)) {
+    if (el["prompt"].value.match(maltenMention)) {
         return postCommand(el["prompt"].value);
     }
 
