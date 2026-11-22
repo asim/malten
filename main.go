@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"io/fs"
-	//"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/asim/malten/agent"
 	"github.com/asim/malten/client/whatsapp"
@@ -17,6 +21,10 @@ import (
 var html embed.FS
 
 func main() {
+	if err := server.Default.Restore("streams.json"); err != nil {
+		log.Fatal(err)
+	}
+	http.Handle("/mcp", server.MCPHandler(server.Default))
 	htmlContent, err := fs.Sub(html, "client/web")
 	if err != nil {
 		log.Fatal(err)
@@ -95,7 +103,7 @@ func main() {
 
 	h := server.WithCors(http.DefaultServeMux)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	// run the server
@@ -109,7 +117,22 @@ func main() {
 
 	log.Print("Listening on :9090")
 
-	if err := http.ListenAndServe(":9090", h); err != nil {
+	httpServer := &http.Server{Addr: ":9090", Handler: h}
+	done := make(chan struct{})
+	go func() {
+		<-ctx.Done()
+		timeout, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		if err := httpServer.Shutdown(timeout); err != nil {
+			log.Print(err)
+		}
+		close(done)
+	}()
+	if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+	<-done
+	if err := server.Default.Checkpoint(); err != nil {
 		log.Fatal(err)
 	}
 }

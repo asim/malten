@@ -200,11 +200,7 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 		message = message[:MaxMessageSize]
 	}
 
-	select {
-	case Default.Events <- NewMessage(message, stream):
-	case <-time.After(time.Second):
-		http.Error(w, "Timed out creating message", 504)
-	}
+	Default.Publish(NewMessage(message, stream))
 }
 
 func WithCors(h http.Handler) http.Handler {
