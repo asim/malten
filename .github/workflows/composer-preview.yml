@@ -1,0 +1,42 @@
+name: Check composer in Chrome
+on: [push]
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: |
+          go build -o /tmp/malten .
+          /tmp/malten >/tmp/malten.log 2>&1 &
+          python -m pip install selenium --quiet
+          python - <<'PY'
+          from selenium import webdriver
+          from selenium.webdriver.common.keys import Keys
+          from selenium.webdriver.support.ui import WebDriverWait
+          import json, urllib.request
+          opts = webdriver.ChromeOptions()
+          opts.add_argument('--headless=new')
+          opts.add_argument('--no-sandbox')
+          with webdriver.Chrome(options=opts) as b:
+              b.get('http://localhost:9090')
+              wait = WebDriverWait(b, 30)
+              wait.until(lambda b: b.find_element('css selector','.daily-reminder a').text == 'Daily Reminder')
+              p = b.find_element('id','prompt')
+              height = p.size['height']
+              p.send_keys('First line',Keys.ENTER,'Second line')
+              assert p.get_attribute('value') == 'First line\nSecond line' and p.size['height'] > height
+              b.execute_script("window.SpeechRecognition = class {start(){this.onstart();this.onresult({results:[[{transcript:'spoken words'}]]});this.onspeechend()} stop(){this.onend()}}")
+              b.find_element('id','speak').click()
+              draft = 'First line\nSecond line spoken words'
+              assert p.get_attribute('value') == draft
+              def reflections():
+                  return [m['Text'].replace('\r\n','\n') for m in json.load(urllib.request.urlopen('http://localhost:9090/messages')) if not m.get('ReminderURL')]
+              assert reflections() == []
+              b.find_element('id','send').click()
+              wait.until(lambda b: reflections() == [draft])
+              wait.until(lambda b: b.find_element('css selector','#messages li:not(.daily-reminder) .message').text == draft)
+              assert p.get_attribute('value') == '' and p.size['height'] == height
+          PY
