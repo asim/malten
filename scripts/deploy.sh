@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Cron supplies a minimal PATH. Keep explicitly configured tools first.
+export PATH="${PATH:+$PATH:}/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
 cd "$(dirname "$0")/.."
 case "$#:${1:-}" in
     0:|1:--update) ;;

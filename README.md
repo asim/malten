@@ -56,10 +56,9 @@ If you already manage a `malten.service`, its executable must point to
 directory containing your paired `malten.db` or migrate it before switching units.
 
 To check the current branch’s upstream every five minutes, add this to the
-root user's crontab, adjusting the checkout path and Go binary path:
+root user's crontab, adjusting the checkout path:
 
 ```cron
-PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
 */5 * * * * /opt/malten/scripts/deploy.sh --update
 ```
 
