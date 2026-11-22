@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"errors"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -46,14 +47,14 @@ type Stream struct {
 }
 
 type Message struct {
-	Observers   int    `json:",omitempty"`
-	Source      string
-	Id          string
-	Text        string
-	Type        string
-	Created     int64 `json:",string"`
-	Stream      string
-	Metadata    *Metadata
+	Observers int `json:",omitempty"`
+	Source    string
+	Id        string
+	Text      string
+	Type      string
+	Created   int64 `json:",string"`
+	Stream    string
+	Metadata  *Metadata
 }
 
 type Observer struct {
@@ -67,10 +68,13 @@ type Server struct {
 	Created int64
 	Events  chan *Message
 
-	mtx       sync.RWMutex
-	streams   map[string]*Stream
-	metadata  map[string]*Metadata
-	observers map[string]*Observer
+	statePath      string
+	nextDiskExpiry int64
+	dirty          bool
+	mtx            sync.RWMutex
+	streams        map[string]*Stream
+	metadata       map[string]*Metadata
+	observers      map[string]*Observer
 }
 
 var (
@@ -241,6 +245,7 @@ func (s *Server) New(stream, secret string, private bool, ttl int) error {
 
 	str := NewStream(stream, secret, private, ttl)
 	s.streams[str.Id] = str
+	s.dirty = true
 
 	return nil
 }
@@ -261,9 +266,12 @@ func (s *Server) Metadata(t *Message) {
 
 func (s *Server) List() map[string]*Stream {
 	s.mtx.RLock()
-	streams := s.streams
-	s.mtx.RUnlock()
-	return streams
+	defer s.mtx.RUnlock()
+	result := make(map[string]*Stream, len(s.streams))
+	for name, stream := range s.streams {
+		result[name] = &Stream{Id: stream.Id, Private: stream.Private, Updated: stream.Updated, TTL: stream.TTL, Observers: stream.Observers}
+	}
+	return result
 }
 
 func (s *Server) Observe(o *Observer) {
@@ -272,6 +280,7 @@ func (s *Server) Observe(o *Observer) {
 
 	st, ok := s.streams[o.Stream]
 	if !ok {
+		s.dirty = true
 		st = NewStream(o.Stream, "", false, int(StreamTTL.Seconds()))
 	}
 
@@ -303,7 +312,7 @@ func (s *Server) Observe(o *Observer) {
 	}()
 }
 
-func (s *Server) Store(message *Message) {
+func (s *Server) store(message *Message) bool {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -315,12 +324,19 @@ func (s *Server) Store(message *Message) {
 		s.streams[stream.Id] = stream
 	}
 
+	for _, previous := range stream.Messages {
+		if previous.Id == message.Id {
+			return false
+		}
+	}
+	s.dirty = true
 	stream.Messages = append(stream.Messages, message)
 	if len(stream.Messages) > MaxMessages {
 		stream.Messages = stream.Messages[1:]
 	}
 
 	stream.Updated = time.Now().UnixNano()
+	return true
 }
 
 func (s *Server) Retrieve(message string, streem string, direction, last, limit int64) []*Message {
@@ -408,60 +424,33 @@ func (s *Server) Retrieve(message string, streem string, direction, last, limit 
 	return []*Message{}
 }
 
-func (s *Server) Run() {
-	t1 := time.NewTicker(time.Second)
+func (s *Server) Publish(message *Message) {
+	if !s.store(message) {
+		return
+	}
+	if message.Source == "" {
+		go s.Metadata(message)
+	}
+	s.Broadcast(message)
+}
 
+func (s *Server) Run() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case message := <-s.Events:
 			if message.Type == "message" {
-				s.Store(message)
-				if message.Source == "" {
-					go s.Metadata(message)
-				}
+				s.Publish(message)
+			} else {
+				s.Broadcast(message)
 			}
-			go s.Broadcast(message)
-		case <-t1.C:
-			now := time.Now().UnixNano()
-
-			s.mtx.Lock()
-
-			// delete the metadata
-			for metadata, g := range s.metadata {
-				if d := now - g.Created; d > StreamTTL.Nanoseconds() {
-					delete(s.metadata, metadata)
-				}
+		case <-ticker.C:
+			if err := s.Checkpoint(); err != nil {
+				log.Printf("Saving streams: %v", err)
 			}
-
-			// TODO: make a copy and replace the map as its not GC'ed
-			for name, stream := range s.streams {
-				// time since last update in nano seconds
-				d := now - stream.Updated
-				// delete older than the TTL
-				if d > stream.TTL {
-					delete(s.streams, name)
-					stream.Messages = nil
-					continue
-				}
-
-				// expire old messages
-				var messages []*Message
-				for _, message := range stream.Messages {
-					d := now - message.Created
-					if d > stream.TTL {
-						continue
-					}
-					messages = append(messages, message)
-				}
-				// update stream messages
-				stream.Messages = messages
-			}
-
-			s.mtx.Unlock()
 		}
 	}
 }
 
-func Run() {
-	Default.Run()
-}
+func Run() { Default.Run() }

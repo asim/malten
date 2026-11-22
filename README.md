@@ -45,3 +45,7 @@ WHATSAPP_CLIENT=true
 Malten has access to all your chats/groups. The next message sent in a chat/group will create a new stream 
 observer. When you then prompt with `@malten`, it will send as a command to the server and it will be answered 
 by the OpenAI agent if enabled.
+
+## MCP
+
+Connect an agent to `https://malten.me/mcp` using Streamable HTTP to list public streams, read or post reflections, and create streams.
