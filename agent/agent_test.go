@@ -86,7 +86,7 @@ func TestMuCommandThreads(t *testing.T) {
 	<-done
 }
 
-func TestStreamPromptUsesOnlyHomeReminder(t *testing.T) {
+func TestStreamPromptUsesOnlySameStream(t *testing.T) {
 	s := server.New()
 	passage := server.NewMessage("Reference\n\nVerse text", server.DefaultStream)
 	passage.Id = "reminder-test"
@@ -95,8 +95,22 @@ func TestStreamPromptUsesOnlyHomeReminder(t *testing.T) {
 	s.Publish(server.NewMessage("another visitor’s post", server.DefaultStream))
 	for _, stream := range []string{server.DefaultStream, "quiet"} {
 		prompt := streamPrompt(s, server.NewCommand("what is this?", stream))
-		if strings.Contains(prompt, "Verse text") != (stream == server.DefaultStream) || strings.Contains(prompt, "another visitor’s post") || !strings.HasSuffix(prompt, "what is this?") {
+		if strings.Contains(prompt, "Verse text") != (stream == server.DefaultStream) || strings.Contains(prompt, "another visitor’s post") != (stream == server.DefaultStream) || !strings.HasSuffix(prompt, "what is this?") {
 			t.Fatal(prompt)
 		}
+	}
+}
+
+func TestStreamContextBudgetAndCutoff(t *testing.T) {
+	s := server.New()
+	for i := 0; i < 8; i++ {
+		s.Publish(server.NewMessage(strings.Repeat("界", 1300), "quiet"))
+	}
+	s.Publish(server.NewMessage("closest reflection", "quiet"))
+	q := server.NewCommand(strings.Repeat("a", server.MaxMessageSize), "quiet")
+	s.Publish(server.NewMessage("later post", "quiet"))
+	prompt := streamPrompt(s, q)
+	if len(prompt) > 8000 || !strings.Contains(prompt, "closest reflection") || strings.Contains(prompt, "later post") || !strings.HasSuffix(prompt, q.Text) {
+		t.Fatal("incorrect context selection or budget")
 	}
 }
