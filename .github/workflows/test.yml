@@ -17,3 +17,9 @@ jobs:
 
       - name: Run tests.sh
         run: bash ./tests.sh
+
+      - name: Verify deployment and redeployment
+        run: |
+          ./scripts/deploy.sh
+          ./scripts/deploy.sh
+          systemctl is-enabled malten.service
