@@ -93,7 +93,7 @@ type muRequest struct {
 
 func streamRequest(s *server.Server, command *server.Message) muRequest {
 	req := muRequest{Prompt: command.Text, Thread: s.Thread(command.Stream)}
-	info := contextMessage{Author: "Malten", Text: "malten.me is a shared network for reflection. Posts expire after 24 hours by default. The home stream includes a daily Qur’an passage. Everyone in this stream can read the answer to an @malten mention."}
+	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection. Posts expire after 24 hours by default. The home stream includes a daily Qur’an passage. Everyone in this stream can read the answer to an @malten mention."}
 	req.Context.Messages = []contextMessage{info}
 	// Account for JSON escaping in Mu's 32 KB HTTP body limit.
 	base, _ := json.Marshal(req)

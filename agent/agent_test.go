@@ -24,7 +24,7 @@ func TestMuCommandThreads(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		if len(request.Context.Messages) == 0 || !strings.Contains(request.Context.Messages[0].Text, "malten.me") {
+		if len(request.Context.Messages) == 0 || !strings.HasPrefix(request.Context.Messages[0].Text, "Malten is a shared network") {
 			t.Error("missing app context")
 		}
 		in := call{request.Prompt, request.Thread}
