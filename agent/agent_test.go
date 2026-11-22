@@ -20,15 +20,14 @@ func TestMuCommandThreads(t *testing.T) {
 		if r.Method != "POST" || r.URL.Path != "/agent/malten" || r.Header.Get("Authorization") != "Bearer test-token" || r.Header.Get("Content-Type") != "application/json" {
 			t.Error("unexpected Mu request")
 		}
-		var in call
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		var request muRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		context, question, ok := strings.Cut(in.Prompt, "\n\nVisitor’s question:\n")
-		if !ok || !strings.Contains(context, "malten.me") {
+		if len(request.Context.Messages) == 0 || !strings.HasPrefix(request.Context.Messages[0].Text, "Malten is a shared network") {
 			t.Error("missing app context")
 		}
-		in.Prompt = question
+		in := call{request.Prompt, request.Thread}
 		calls <- in
 		if in.Prompt == "first" {
 			select {
@@ -86,7 +85,7 @@ func TestMuCommandThreads(t *testing.T) {
 	<-done
 }
 
-func TestStreamPromptUsesOnlyHomeReminder(t *testing.T) {
+func TestStreamPromptUsesOnlySameStream(t *testing.T) {
 	s := server.New()
 	passage := server.NewMessage("Reference\n\nVerse text", server.DefaultStream)
 	passage.Id = "reminder-test"
@@ -94,9 +93,27 @@ func TestStreamPromptUsesOnlyHomeReminder(t *testing.T) {
 	s.Publish(passage)
 	s.Publish(server.NewMessage("another visitor’s post", server.DefaultStream))
 	for _, stream := range []string{server.DefaultStream, "quiet"} {
-		prompt := streamPrompt(s, server.NewCommand("what is this?", stream))
-		if strings.Contains(prompt, "Verse text") != (stream == server.DefaultStream) || strings.Contains(prompt, "another visitor’s post") || !strings.HasSuffix(prompt, "what is this?") {
+		req := streamRequest(s, server.NewCommand("what is this?", stream))
+		data, _ := json.Marshal(req.Context)
+		prompt := string(data)
+		if strings.Contains(prompt, "Verse text") != (stream == server.DefaultStream) || strings.Contains(prompt, "another visitor’s post") != (stream == server.DefaultStream) || req.Prompt != "what is this?" {
 			t.Fatal(prompt)
 		}
+	}
+}
+
+func TestStreamContextBudgetAndCutoff(t *testing.T) {
+	s := server.New()
+	for i := 0; i < 8; i++ {
+		s.Publish(server.NewMessage(strings.Repeat("界", 1300), "quiet"))
+	}
+	s.Publish(server.NewMessage("closest reflection", "quiet"))
+	q := server.NewCommand(strings.Repeat("a", server.MaxMessageSize), "quiet")
+	s.Publish(server.NewMessage("later post", "quiet"))
+	req := streamRequest(s, q)
+	data, _ := json.Marshal(req.Context)
+	prompt := string(data)
+	if len(req.Context.Messages) != 7 || !strings.Contains(prompt, "closest reflection") || strings.Contains(prompt, "later post") || req.Prompt != q.Text {
+		t.Fatal("incorrect context selection or budget")
 	}
 }
