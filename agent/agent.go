@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/asim/malten/server"
 )
@@ -25,24 +26,67 @@ func Run(ctx context.Context) {
 }
 
 func runMu(ctx context.Context, s *server.Server, client *http.Client, endpoint, token string) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case command := <-s.Commands:
-			thread := s.Thread(command.Stream)
-			reply, err := promptMu(ctx, client, endpoint, token, command.Text, thread)
+	// Each stream has one active request. Waiting commands keep arrival order.
+	pending := make(map[string][]*server.Message)
+	completed := make(chan string)
+	outstanding := 0
+	start := func(command *server.Message) {
+		go func() {
+			reply, err := promptMu(ctx, client, endpoint, token, command.Text, s.Thread(command.Stream))
 			if ctx.Err() != nil {
 				return
 			}
 			if err != nil {
 				log.Printf("Mu agent: %v", err)
-				s.Reply(command, "Malten couldn’t get a reply from Mu. Please try again.", endpoint, "")
+				reply = muReply{Text: "Malten couldn’t get a reply from Mu. Please try again."}
+			}
+			s.Reply(command, boundedReply(reply.Text), endpoint, reply.Thread)
+			select {
+			case completed <- command.Stream:
+			case <-ctx.Done():
+			}
+		}()
+	}
+	for {
+		input := s.Commands
+		if outstanding >= max(1, cap(s.Commands)) {
+			input = nil
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case command := <-input:
+			outstanding++
+			waiting, active := pending[command.Stream]
+			if active {
+				pending[command.Stream] = append(waiting, command)
+			} else {
+				pending[command.Stream] = nil
+				start(command)
+			}
+		case stream := <-completed:
+			outstanding--
+			waiting := pending[stream]
+			if len(waiting) == 0 {
+				delete(pending, stream)
 				continue
 			}
-			s.Reply(command, reply.Text, endpoint, reply.Thread)
+			pending[stream] = waiting[1:]
+			start(waiting[0])
 		}
 	}
+}
+
+func boundedReply(text string) string {
+	if len(text) <= server.MaxMessageSize {
+		return text
+	}
+	const suffix = "…"
+	end := server.MaxMessageSize - len(suffix)
+	for !utf8.RuneStart(text[end]) {
+		end--
+	}
+	return text[:end] + suffix
 }
 
 type muReply struct {

@@ -43,7 +43,7 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 4096
+	maxMessageSize = 8 * 1024 // Includes JSON escaping and the message envelope.
 )
 
 func Key(id string) string {
@@ -71,6 +71,11 @@ func observe(jid types.JID) {
 	}
 	streams[stream] = true
 	mtx.Unlock()
+	defer func() {
+		mtx.Lock()
+		delete(streams, stream)
+		mtx.Unlock()
+	}()
 
 	fmt.Println("Observing stream", stream)
 

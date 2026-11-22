@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/asim/malten/server"
 )
@@ -14,6 +16,7 @@ import (
 func TestMuCommandThreads(t *testing.T) {
 	type call struct{ Prompt, Thread string }
 	calls := make(chan call, 3)
+	release := make(chan struct{})
 	mu := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" || r.URL.Path != "/agent/malten" || r.Header.Get("Authorization") != "Bearer test-token" || r.Header.Get("Content-Type") != "application/json" {
 			t.Error("unexpected Mu request")
@@ -23,6 +26,13 @@ func TestMuCommandThreads(t *testing.T) {
 			t.Error(err)
 		}
 		calls <- in
+		if in.Prompt == "first" {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		json.NewEncoder(w).Encode(muReply{Text: "Reply to " + in.Prompt, Thread: "thread-" + in.Prompt})
 	}))
 	defer mu.Close()
@@ -36,15 +46,26 @@ func TestMuCommandThreads(t *testing.T) {
 	s.SubmitCommand(server.NewCommand("first", "a"))
 	s.SubmitCommand(server.NewCommand("separate", "b"))
 	s.SubmitCommand(server.NewCommand("again", "a"))
-	for _, want := range []call{{"first", ""}, {"separate", ""}, {"again", "thread-first"}} {
+	got := map[call]bool{}
+	for len(got) < 2 {
 		select {
-		case got := <-calls:
-			if got != want {
-				t.Fatalf("got %+v, want %+v", got, want)
-			}
+		case in := <-calls:
+			got[in] = true
 		case <-ctx.Done():
-			t.Fatal(ctx.Err())
+			t.Fatal("another stream was blocked")
 		}
+	}
+	if !got[call{"first", ""}] || !got[call{"separate", ""}] {
+		t.Fatalf("unexpected initial calls: %v", got)
+	}
+	close(release)
+	select {
+	case in := <-calls:
+		if in != (call{"again", "thread-first"}) {
+			t.Fatal(in)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
 	}
 	for {
 		msg := s.Retrieve("", "a", 1, 0, 10)
@@ -59,4 +80,16 @@ func TestMuCommandThreads(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestBoundedReply(t *testing.T) {
+	for _, text := range []string{strings.Repeat("界", 1000), strings.Repeat("<", 3000), strings.Repeat("a", 1024)} {
+		reply := boundedReply(text)
+		if len(reply) > server.MaxMessageSize || !utf8.ValidString(reply) {
+			t.Fatal("invalid reply boundary")
+		}
+		if len(text) <= server.MaxMessageSize && text != reply {
+			t.Fatal("short reply changed")
+		}
+	}
 }
