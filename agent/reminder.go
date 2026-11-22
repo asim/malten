@@ -14,9 +14,9 @@ import (
 	"github.com/asim/malten/server"
 )
 
-// RunReminders publishes the dated Qur'an passage into the home stream.
+// runReminders publishes the dated Qur'an passage into the home stream.
 // Retry a missing daily entry until Reminder has archived it.
-func RunReminders(ctx context.Context, events chan<- *server.Message) {
+func runReminders(ctx context.Context, events chan<- *server.Message) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()

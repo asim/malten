@@ -100,10 +100,9 @@ func main() {
 
 	// run the server
 	go server.Run()
-	go agent.RunReminders(ctx, server.Default.Events)
 
 	// run the agent
-	go agent.Run()
+	go agent.Run(ctx)
 
 	// whatsapp client
 	go whatsapp.Run(ctx)
