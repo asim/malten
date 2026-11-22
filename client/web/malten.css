@@ -230,3 +230,10 @@ ul li {
   color: #24372b;
   white-space: pre-line;
 }
+
+.agent-reply ul { list-style: disc; }
+.agent-reply ul, .agent-reply ol { padding-inline-start: 1.6em; }
+#messages .agent-reply li { padding: 0; }
+.agent-reply pre { overflow-x: auto; }
+.agent-reply > :first-child { margin-top: .35rem; }
+.agent-reply > :last-child { margin-bottom: 0; }
