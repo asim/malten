@@ -1,6 +1,6 @@
 # Malten
 
-Anonymous ephemeral messaging
+A network for reflection
 
 ## Overview
 
