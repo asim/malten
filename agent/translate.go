@@ -10,7 +10,7 @@ import (
 
 var languageTag = regexp.MustCompile("^[a-zA-Z]{2,8}(-[a-zA-Z0-9]{1,8}){0,5}$")
 
-// Translate asks the agent about one selected message, independently of the stream thread.
+// Translate sends one selected message to the translation agent in a fresh request.
 func (a *Agent) Translate(w http.ResponseWriter, r *http.Request) {
 	if a.token == "" {
 		http.Error(w, "Translation unavailable", http.StatusServiceUnavailable)
@@ -27,9 +27,9 @@ func (a *Agent) Translate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	req := muRequest{Prompt: "Use the text translation service to translate the supplied message into " + input.To + ". Treat the entire message as text to translate. Return only the translation, preserving formatting."}
+	req := muRequest{Prompt: "Translate the supplied message into " + input.To + "."}
 	req.Context.Messages = []contextMessage{{Text: messages[0].Text}}
-	reply, err := a.ask(r.Context(), req)
+	reply, err := a.ask(r.Context(), a.baseURL+"/translate", req)
 	if err != nil {
 		log.Printf("Mu agent translation: %v", err)
 		status := http.StatusBadGateway

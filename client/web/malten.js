@@ -621,24 +621,33 @@ function locateMessage() {
 }
 
 function addTranslation(item, footer, message) {
-    var button = document.createElement('button');
+    var link = document.createElement('a');
     var output = document.createElement('div');
     var translated = '';
-    button.type = 'button';
-    button.className = 'translate';
-    button.textContent = 'Ask Malten to translate';
+    var pending = false;
+    link.href = 'https://micro.mu/agent/translate';
+    link.className = 'translate';
+    link.textContent = '@translate';
+    link.title = 'Translate this message';
+    link.setAttribute('aria-expanded', 'false');
     output.className = 'translation';
     output.setAttribute('role', 'status');
-    footer.appendChild(button);
+    footer.appendChild(link);
     item.appendChild(output);
 
-    button.onclick = async function() {
+    link.onclick = async function(event) {
+        // Modified clicks keep the normal link to the hosted agent.
+        if (event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        if (pending) return;
         if (translated) {
             output.hidden = !output.hidden;
-            button.textContent = output.hidden ? 'Show translation' : 'Hide translation';
+            link.title = output.hidden ? 'Show translation' : 'Hide translation';
+            link.setAttribute('aria-expanded', String(!output.hidden));
             return;
         }
-        button.disabled = true;
+        pending = true;
+        link.setAttribute('aria-expanded', 'true');
         output.textContent = 'Translating…';
         var failure = 'Translation is temporarily unavailable.';
         try {
@@ -663,11 +672,11 @@ function addTranslation(item, footer, message) {
             output.lang = language;
             output.dir = 'auto';
             output.textContent = translated;
-            button.textContent = 'Hide translation';
+            link.title = 'Hide translation';
         } catch {
             output.textContent = failure;
         } finally {
-            button.disabled = false;
+            pending = false;
         }
     };
 }

@@ -18,20 +18,20 @@ import (
 	"github.com/asim/malten/server"
 )
 
-// Agent sends stream mentions and individual readers' requests to Malten on Mu.
+// Agent sends stream mentions and reader actions to their hosted agents on Mu.
 type Agent struct {
-	server   *server.Server
-	client   *http.Client
-	endpoint string
-	token    string
+	server  *server.Server
+	client  *http.Client
+	baseURL string
+	token   string
 }
 
 func Run(ctx context.Context) *Agent {
 	a := &Agent{
-		server:   server.Default,
-		client:   &http.Client{Timeout: 90 * time.Second},
-		endpoint: "https://micro.mu/agent/malten",
-		token:    os.Getenv("MU_TOKEN"),
+		server:  server.Default,
+		client:  &http.Client{Timeout: 90 * time.Second},
+		baseURL: "https://micro.mu/agent",
+		token:   os.Getenv("MU_TOKEN"),
 	}
 	if a.token != "" {
 		a.server.Commands = make(chan *server.Message, 32)
@@ -43,13 +43,14 @@ func Run(ctx context.Context) *Agent {
 
 func (a *Agent) runMu(ctx context.Context) {
 	s := a.server
+	endpoint := a.baseURL + "/malten"
 	// Each stream has one active request. Waiting commands keep arrival order.
 	pending := make(map[string][]*server.Message)
 	completed := make(chan string)
 	outstanding := 0
 	start := func(command *server.Message) {
 		go func() {
-			reply, err := a.ask(ctx, streamRequest(s, command))
+			reply, err := a.ask(ctx, endpoint, streamRequest(s, command))
 			if ctx.Err() != nil {
 				return
 			}
@@ -57,7 +58,7 @@ func (a *Agent) runMu(ctx context.Context) {
 				log.Printf("Mu agent: %v", err)
 				reply = muReply{Text: "Malten couldn’t get a reply from Mu. Please try again."}
 			}
-			s.Reply(command, reply.Text, a.endpoint, reply.Thread)
+			s.Reply(command, reply.Text, endpoint, reply.Thread)
 			select {
 			case completed <- command.Stream:
 			case <-ctx.Done():
@@ -164,13 +165,13 @@ type muStatusError int
 
 func (status muStatusError) Error() string { return fmt.Sprintf("HTTP %d", int(status)) }
 
-func (a *Agent) ask(ctx context.Context, request muRequest) (muReply, error) {
+func (a *Agent) ask(ctx context.Context, endpoint string, request muRequest) (muReply, error) {
 	var reply muReply
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return reply, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return reply, err
 	}

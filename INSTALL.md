@@ -55,6 +55,8 @@ The first check deploys if this checkout has no successful deployment recorded.
 Later checks fast-forward and restart only when the revision differs from the
 last healthy deployment. Overlapping cron runs skip the busy checkout.
 
-Translation uses the same agent-scoped `MU_TOKEN` as mentions. Enable the text
-service on the Malten agent in Mu. If translation fails, check the Malten
-service journal for the HTTP status returned by Mu.
+For translation, create a hosted agent named `translate` in the same Mu account
+as `malten`. Give it the **Text** service and instructions to translate the supplied
+message into the requested language and return just the translation. Enable the
+public profile to make the `@translate` link viewable by signed-out readers.
+Malten uses its existing `MU_TOKEN` to call `/agent/translate`.
