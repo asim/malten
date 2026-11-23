@@ -59,7 +59,7 @@ ul li {
 #current:empty, #present:empty { display: none; }
 #present { color: #526159; white-space: nowrap; }
 #nav { margin-left: auto; }
-#nav button, #nav a, #nav summary {
+#nav button, #nav a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -73,28 +73,27 @@ ul li {
   font: inherit;
   cursor: pointer;
 }
-#nav summary { list-style: none; }
-#nav summary::-webkit-details-marker { display: none; }
-#join { position: relative; }
-#goto {
-  position: absolute;
-  right: 0;
-  top: calc(100% + .4rem);
-  z-index: 1;
-  display: flex;
-  gap: .4rem;
-  padding: .6rem;
-  background: white;
+#join {
+  box-sizing: border-box;
+  width: min(32rem, 92vw);
+  margin: auto;
+  padding: 2rem;
+  color: inherit;
   border: 1px solid #ced9d2;
-  border-radius: 8px;
+  border-radius: 12px;
 }
-#gstream {
-  width: 9rem;
-  padding: .4rem;
-  font: inherit;
-  border: 1px solid #ced9d2;
-  border-radius: 5px;
+#join::backdrop { background: rgba(23, 38, 29, .45); }
+#join header { display: flex; align-items: center; justify-content: space-between; }
+#join h2 { margin: 0; }
+#join button, #gstream { font: inherit; padding: .65rem; border: 1px solid #ced9d2; border-radius: 6px; }
+#join button { background: white; cursor: pointer; }
+#join #close-join { font-size: 1.5rem; min-width: 44px; }
+#goto { display: grid; gap: .65rem; margin-top: 2rem; }
+#goto button { justify-self: start; padding-inline: 1.4rem; }
+@media (max-width: 600px) {
+  #join { width: 100%; height: 100%; max-width: none; max-height: none; border: 0; border-radius: 0; }
 }
+.linked-message { outline: 2px solid #64846c; outline-offset: -2px; }
 #gstream:focus-visible { outline: 2px solid #64846c; }
 #main { margin: 0 auto; }
 #think {
