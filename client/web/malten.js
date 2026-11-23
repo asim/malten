@@ -195,7 +195,13 @@ function displayMessages(array, direction) {
             item.appendChild(d5);
         };
 
-        item.appendChild(timestamp);
+        item.id = 'message-' + array[i].Id;
+        var permalink = document.createElement('a');
+        var url = new URL(window.location.href);
+        url.searchParams.set('message', array[i].Id);
+        permalink.href = url.href;
+        permalink.appendChild(timestamp);
+        item.appendChild(permalink);
 
         if (direction >= 0) {
             list.insertBefore(item, list.firstChild);
@@ -288,9 +294,8 @@ function gotoStream(t) {
     var stream = document.getElementById('goto').elements['gstream'].value.replace(/^#+/, '');
     if (stream.length > 0) {
         document.getElementById('goto').elements['gstream'].value = '';
-        document.getElementById("join").open = false;
+        document.getElementById("join").close();
         window.location = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '') + '/#' + stream;
-        clearMessages();
     };
     return false;
 };
@@ -341,7 +346,9 @@ function loadListeners() {
 
     document.getElementById("prompt").addEventListener("input", updateComposer);
     updateComposer();
-    shareListener();
+    var dialog = document.getElementById('join');
+    document.getElementById('open-join').onclick = function() { dialog.showModal(); };
+    document.getElementById('close-join').onclick = function() { dialog.close(); };
 
     window.addEventListener("beforeunload", function(e) {
         if (source != undefined) {
@@ -382,7 +389,7 @@ function loadMore() {
     return false;
 };
 
-function loadMessages() {
+function loadMessages(initial) {
     var params = "?direction=1&limit=" + limit + "&last=" + last;
     var form = document.getElementById('form');
     var stream = getStream();
@@ -396,10 +403,12 @@ function loadMessages() {
     };
 
     $.get(messageUrl + params, function(data) {
+            if (stream !== getStream()) return;
             if (data != undefined && data.length > 0) {
                 displayMessages(data, 1);
                 clipMessages();
             }
+            if (initial === true) locateMessage();
         })
         .fail(function(err) {
             console.log(err);
@@ -537,6 +546,7 @@ function setCurrent() {
 
 function loadStream() {
     document.getElementById("present").textContent = "";
+    document.getElementById("link-status").textContent = "";
     getStreams()
     setCurrent();
     clearMessages();
@@ -581,31 +591,35 @@ function tagText(text) {
     return parts.join(" ");
 };
 
-function shareListener() {
-    var shareButton = document.getElementById("share");
-
-    shareButton.addEventListener('click', event => {
-        event.preventDefault();
-
-        if (navigator.share) {
-            navigator.share({
-                    title: 'Malten',
-                    url: window.location.href,
-                }).then(() => {
-                    console.log('Thanks for sharing!');
-                })
-                .catch(console.error);
-        } else {
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(window.location.href).then(function() {
-                    shareButton.textContent = "Copied";
-                    setTimeout(function() { shareButton.textContent = "Share"; }, 1800);
-                }).catch(function() { window.prompt("Copy stream link", window.location.href); });
-            } else {
-                window.prompt("Copy stream link", window.location.href);
-            }
+function locateMessage() {
+    var id = new URLSearchParams(location.search).get('message');
+    if (!id) return;
+    var stream = getStream();
+    var status = document.getElementById('link-status');
+    function locate() {
+        if (stream !== getStream()) return;
+        var item = document.getElementById('message-' + id);
+        if (item) {
+            item.classList.add('linked-message');
+            item.scrollIntoView({block: 'center'});
+            return;
         }
-
-        return false;
-    });
+        var oldest = document.querySelector('#messages > li:last-child time');
+        if (!oldest) {
+            status.textContent = 'This message is no longer in the stream.';
+            return;
+        }
+        $.get(messageUrl, {stream: stream, direction: -1, last: oldest.dataset.time, limit: limit})
+            .done(function(page) {
+                if (stream !== getStream()) return;
+                if (!page || !page.some(function(message) { return !(message.Id in seen); })) {
+                    status.textContent = 'This message is no longer in the stream.';
+                    return;
+                }
+                displayMessages(page, -1);
+                locate();
+            })
+            .fail(function() { status.textContent = 'Could not load the linked message.'; });
+    }
+    locate();
 }
