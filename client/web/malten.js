@@ -643,8 +643,8 @@ function addTranslation(item, message) {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({id: message.Id, stream: message.Stream, to: language})
-            });
-            if (response.ok) {
+            }).catch(() => null);
+            if (response && response.ok) {
                 translated = (await response.json()).text;
             } else {
                 translated = await translateInBrowser(message.Text, language);
