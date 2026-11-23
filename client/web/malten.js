@@ -627,7 +627,7 @@ function addTranslation(item, footer, message) {
     var pending = false;
     link.href = 'https://micro.mu/agent/malten';
     link.className = 'translate';
-    link.textContent = '@translate';
+    link.textContent = 'Translate';
     link.title = 'Translate this message';
     link.setAttribute('aria-expanded', 'false');
     output.className = 'translation';
