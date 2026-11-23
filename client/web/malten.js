@@ -626,7 +626,7 @@ function addTranslation(item, footer, message) {
     var translated = '';
     button.type = 'button';
     button.className = 'translate';
-    button.textContent = 'Translate';
+    button.textContent = 'Ask Malten to translate';
     output.className = 'translation';
     output.setAttribute('role', 'status');
     footer.appendChild(button);
@@ -635,7 +635,7 @@ function addTranslation(item, footer, message) {
     button.onclick = async function() {
         if (translated) {
             output.hidden = !output.hidden;
-            button.textContent = output.hidden ? 'Translate' : 'Hide translation';
+            button.textContent = output.hidden ? 'Show translation' : 'Hide translation';
             return;
         }
         button.disabled = true;
@@ -643,7 +643,7 @@ function addTranslation(item, footer, message) {
         var failure = 'Translation is temporarily unavailable.';
         try {
             var language = navigator.language || 'en';
-            var response = await fetch('/translate', {
+            var response = await fetch('/agent/translate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({id: message.Id, stream: message.Stream, to: language})

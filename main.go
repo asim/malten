@@ -25,7 +25,6 @@ func main() {
 		log.Fatal(err)
 	}
 	http.Handle("/mcp", server.MCPHandler(server.Default))
-	http.HandleFunc("POST /translate", server.Translate(os.Getenv("MU_TOKEN")))
 	htmlContent, err := fs.Sub(html, "client/web")
 	if err != nil {
 		log.Fatal(err)
@@ -115,7 +114,10 @@ func main() {
 	go server.Run()
 
 	// run the agent
-	agent.Run(ctx)
+	malten := agent.Run(ctx)
+	http.HandleFunc("POST /agent/translate", malten.Translate)
+	// Already-open stream pages use the original route.
+	http.HandleFunc("POST /translate", malten.Translate)
 
 	log.Print("Listening on :9090")
 

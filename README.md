@@ -44,11 +44,13 @@ for public replies. A starting instruction:
 > You are Malten, the guide to a network for reflection. Welcome newcomers,
 > help people reflect on the daily Qur’an passage when asked, and keep your
 > replies brief and grounded in the source. Everyone in the stream can read
-> what you say.
+> your replies to `@malten` mentions.
 
-Select **Translate** under a message to read it in your browser’s preferred
-language. Malten asks its Mu agent to translate the selected text in a separate request.
-The translation appears only for the reader who requested it.
+Select **Ask Malten to translate** beside a message’s timestamp to read it in
+your browser’s preferred language. Message actions use the same Mu agent as
+`@malten`. For translation, Malten sends the selected message as context for a
+fresh request. The agent has access to the text service through its configuration
+in Mu. The translation appears only for the reader who asked.
 
 ## MCP
 
