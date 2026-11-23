@@ -25,6 +25,7 @@ func main() {
 		log.Fatal(err)
 	}
 	http.Handle("/mcp", server.MCPHandler(server.Default))
+	http.HandleFunc("POST /translate", server.Translate(os.Getenv("MU_TOKEN")))
 	htmlContent, err := fs.Sub(html, "client/web")
 	if err != nil {
 		log.Fatal(err)

@@ -202,6 +202,7 @@ function displayMessages(array, direction) {
         permalink.href = url.href;
         permalink.appendChild(timestamp);
         item.appendChild(permalink);
+        addTranslation(item, array[i]);
 
         if (direction >= 0) {
             list.insertBefore(item, list.firstChild);
@@ -614,4 +615,68 @@ function locateMessage() {
             .fail(function() { status.textContent = 'Could not load the linked message.'; });
     }
     locate();
+}
+
+function addTranslation(item, message) {
+    var button = document.createElement('button');
+    var output = document.createElement('div');
+    var translated = '';
+    button.type = 'button';
+    button.className = 'translate';
+    button.textContent = 'Translate';
+    output.className = 'translation';
+    output.setAttribute('role', 'status');
+    item.appendChild(button);
+    item.appendChild(output);
+
+    button.onclick = async function() {
+        if (translated) {
+            output.hidden = !output.hidden;
+            button.textContent = output.hidden ? 'Translate' : 'Hide translation';
+            return;
+        }
+        button.disabled = true;
+        output.textContent = 'Translating…';
+        try {
+            var language = navigator.language || 'en';
+            var response = await fetch('/translate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: message.Id, stream: message.Stream, to: language})
+            }).catch(() => null);
+            if (response && response.ok) {
+                translated = (await response.json()).text;
+            } else {
+                translated = await translateInBrowser(message.Text, language);
+            }
+            output.lang = language;
+            output.dir = 'auto';
+            output.textContent = translated;
+            button.textContent = 'Hide translation';
+        } catch {
+            output.textContent = 'Translation unavailable. Try Translate in your browser menu if available.';
+        } finally {
+            button.disabled = false;
+        }
+    };
+}
+
+async function translateInBrowser(text, language) {
+    if (!window.LanguageDetector || !window.Translator ||
+        await LanguageDetector.availability() !== 'available') throw new Error();
+    var detector = await LanguageDetector.create();
+    try {
+        var matches = await detector.detect(text);
+        var options = {sourceLanguage: matches[0].detectedLanguage, targetLanguage: language.split('-')[0]};
+        if (options.sourceLanguage === options.targetLanguage) return text;
+        if (await Translator.availability(options) !== 'available') throw new Error();
+        var translator = await Translator.create(options);
+        try {
+            return await translator.translate(text);
+        } finally {
+            translator.destroy();
+        }
+    } finally {
+        detector.destroy();
+    }
 }
