@@ -44,11 +44,11 @@ for public replies. A starting instruction:
 > You are Malten, the guide to a network for reflection. Welcome newcomers,
 > help people reflect on the daily Qur’an passage when asked, and keep your
 > replies brief and grounded in the source. Everyone in the stream can read
-> what you say.
+> your replies to `@malten` mentions.
 
-Select **Translate** under a message to read it in your browser’s preferred
-language. Malten asks its Mu agent to translate the selected text in a separate request.
-The translation appears only for the reader who requested it.
+Tap **@translate** beside a timestamp to read the message in your browser’s
+preferred language. Malten sends the selected text to the same Mu agent that
+answers `@malten` mentions. The translation appears inline for you.
 
 ## MCP
 

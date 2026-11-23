@@ -44,7 +44,8 @@ func TestMuCommandThreads(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan struct{})
-	go func() { defer close(done); runMu(ctx, s, mu.Client(), mu.URL+"/agent/malten", "test-token") }()
+	a := &Agent{server: s, client: mu.Client(), endpoint: mu.URL + "/agent/malten", token: "test-token"}
+	go func() { defer close(done); a.runMu(ctx) }()
 	s.Publish(server.NewMessage("ordinary reflection", "a"))
 	s.SubmitCommand(server.NewCommand("first", "a"))
 	s.SubmitCommand(server.NewCommand("separate", "b"))
@@ -115,5 +116,42 @@ func TestStreamContextBudgetAndCutoff(t *testing.T) {
 	prompt := string(data)
 	if len(req.Context.Messages) != 7 || !strings.Contains(prompt, "closest reflection") || strings.Contains(prompt, "later post") || req.Prompt != q.Text {
 		t.Fatal("incorrect context selection or budget")
+	}
+}
+
+func TestTranslationUsesOnlySelectedMessage(t *testing.T) {
+	s := server.New()
+	const stream = "reflections"
+	post := server.NewMessage("Բարև", stream)
+	s.Publish(post)
+	mention := server.NewCommand("a question for the stream", stream)
+	s.Publish(mention)
+	s.Reply(mention, "an earlier answer", "Malten", "stream-thread")
+
+	mu := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/agent/malten" || r.Header.Get("Authorization") != "Bearer agent-token" {
+			t.Error("translation did not use the configured agent")
+		}
+		var req muRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+			return
+		}
+		if req.Thread != "" || !strings.Contains(req.Prompt, "en-GB") || len(req.Context.Messages) != 1 || req.Context.Messages[0].Text != post.Text {
+			t.Errorf("unexpected translation request: %+v", req)
+		}
+		json.NewEncoder(w).Encode(muReply{Text: "Hello", Thread: "reader-thread"})
+	}))
+	defer mu.Close()
+	a := &Agent{server: s, endpoint: mu.URL + "/agent/malten", client: mu.Client(), token: "agent-token"}
+
+	input := strings.NewReader(`{"stream":"reflections","id":"` + post.Id + `","to":"en-GB"}`)
+	w := httptest.NewRecorder()
+	a.Translate(w, httptest.NewRequest(http.MethodPost, "/translate", input))
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"text":"Hello"}` {
+		t.Fatalf("reader response: %d %s", w.Code, w.Body.String())
+	}
+	if s.Thread(stream) != "stream-thread" || len(s.Retrieve("", stream, 1, 0, 10)) != 3 {
+		t.Fatal("a reader action changed the shared conversation")
 	}
 }

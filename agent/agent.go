@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,23 +18,38 @@ import (
 	"github.com/asim/malten/server"
 )
 
-func Run(ctx context.Context) {
-	if token := os.Getenv("MU_TOKEN"); token != "" {
-		server.Default.Commands = make(chan *server.Message, 32)
-		client := &http.Client{Timeout: 90 * time.Second}
-		go runMu(ctx, server.Default, client, "https://micro.mu/agent/malten", token)
-	}
-	go runReminders(ctx, server.Default.Events)
+// Agent sends stream mentions and individual readers' requests to Malten on Mu.
+type Agent struct {
+	server   *server.Server
+	client   *http.Client
+	endpoint string
+	token    string
 }
 
-func runMu(ctx context.Context, s *server.Server, client *http.Client, endpoint, token string) {
+func Run(ctx context.Context) *Agent {
+	a := &Agent{
+		server:   server.Default,
+		client:   &http.Client{Timeout: 90 * time.Second},
+		endpoint: "https://micro.mu/agent/malten",
+		token:    os.Getenv("MU_TOKEN"),
+	}
+	if a.token != "" {
+		a.server.Commands = make(chan *server.Message, 32)
+		go a.runMu(ctx)
+	}
+	go runReminders(ctx, a.server.Events)
+	return a
+}
+
+func (a *Agent) runMu(ctx context.Context) {
+	s := a.server
 	// Each stream has one active request. Waiting commands keep arrival order.
 	pending := make(map[string][]*server.Message)
 	completed := make(chan string)
 	outstanding := 0
 	start := func(command *server.Message) {
 		go func() {
-			reply, err := promptMu(ctx, client, endpoint, token, streamRequest(s, command))
+			reply, err := a.ask(ctx, streamRequest(s, command))
 			if ctx.Err() != nil {
 				return
 			}
@@ -41,7 +57,7 @@ func runMu(ctx context.Context, s *server.Server, client *http.Client, endpoint,
 				log.Printf("Mu agent: %v", err)
 				reply = muReply{Text: "Malten couldn’t get a reply from Mu. Please try again."}
 			}
-			s.Reply(command, reply.Text, endpoint, reply.Thread)
+			s.Reply(command, reply.Text, a.endpoint, reply.Thread)
 			select {
 			case completed <- command.Stream:
 			case <-ctx.Done():
@@ -144,27 +160,31 @@ type muReply struct {
 	Thread string `json:"thread"`
 }
 
-func promptMu(ctx context.Context, client *http.Client, endpoint, token string, request muRequest) (muReply, error) {
+type muStatusError int
+
+func (status muStatusError) Error() string { return fmt.Sprintf("HTTP %d", int(status)) }
+
+func (a *Agent) ask(ctx context.Context, request muRequest) (muReply, error) {
 	var reply muReply
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return reply, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return reply, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := client.Do(req)
+	req.Header.Set("Authorization", "Bearer "+a.token)
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return reply, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return reply, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return reply, muStatusError(resp.StatusCode)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 512<<10)).Decode(&reply); err != nil {
 		return reply, err
 	}
 	if strings.TrimSpace(reply.Text) == "" {
