@@ -241,3 +241,6 @@ ul li {
 .translation { white-space: pre-wrap; }
 #public-streams li { padding: 0; }
 #public-streams a { display: block; padding: .6rem 0; color: #315d46; text-decoration: underline; }
+
+.message-footer { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-top: .65rem; }
+.message-footer .time { margin-top: 0; }
