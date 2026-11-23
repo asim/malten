@@ -260,34 +260,29 @@ function getStream() {
     return stream
 }
 
-function getStreams(fn) {
-    $.get(streamUrl, function(data) {
-            streams = data;
-        })
-        .fail(function(err) {
-            console.log(err);
-        })
-        .done();
+function getStreams() {
+    return $.get(streamUrl).done(function(data) { streams = data; });
 }
 
-function setStreamsList() {
-    var side = document.getElementById('side');
-    side.innerText = '';
-
-    for (const key in streams) {
-	    var name = key;
-	    var href = '/#' + name;
-
-	    if (name == "_") {
-		    href = "/";
-            }	
-	    var span = document.createElement('span');
-	    var a = document.createElement('a');
-	    a.innerText = name;
-	    a.href = href
-	    span.appendChild(a);
-	    side.appendChild(span);
-    }	
+function showPublicStreams() {
+    var list = document.getElementById('public-streams');
+    var status = document.getElementById('streams-status');
+    list.textContent = '';
+    status.textContent = 'Loading streams…';
+    getStreams().done(function(data) {
+        list.textContent = '';
+        Object.keys(data).sort().forEach(function(name) {
+            if (data[name].Private) return;
+            var link = document.createElement('a');
+            link.textContent = name === '_' ? 'Home' : name;
+            link.href = name === '_' ? '/' : '/#' + name;
+            link.onclick = function() { document.getElementById('join').close(); };
+            var row = document.createElement('li');
+            row.appendChild(link);
+            list.appendChild(row);
+        });
+        status.textContent = list.children.length ? '' : 'No public streams.';
+    }).fail(function() { status.textContent = 'Could not load public streams.'; });
 }
 
 function gotoStream(t) {
@@ -347,7 +342,7 @@ function loadListeners() {
     document.getElementById("prompt").addEventListener("input", updateComposer);
     updateComposer();
     var dialog = document.getElementById('join');
-    document.getElementById('open-join').onclick = function() { dialog.showModal(); };
+    document.getElementById('open-join').onclick = function() { dialog.showModal(); showPublicStreams(); };
     document.getElementById('close-join').onclick = function() { dialog.close(); };
 
     window.addEventListener("beforeunload", function(e) {
