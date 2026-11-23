@@ -46,7 +46,7 @@ for public replies. A starting instruction:
 > replies brief and grounded in the source. Everyone in the stream can read
 > your replies to `@malten` mentions.
 
-Tap **@translate** beside a timestamp to read the message in your browser’s
+Tap **Translate** beside a timestamp to read the message in your browser’s
 preferred language. Malten sends the selected text to the same Mu agent that
 answers `@malten` mentions. The translation appears inline for you.
 
