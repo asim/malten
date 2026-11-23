@@ -625,7 +625,7 @@ function addTranslation(item, footer, message) {
     var output = document.createElement('div');
     var translated = '';
     var pending = false;
-    link.href = 'https://micro.mu/agent/translate';
+    link.href = 'https://micro.mu/agent/malten';
     link.className = 'translate';
     link.textContent = '@translate';
     link.title = 'Translate this message';
@@ -652,7 +652,7 @@ function addTranslation(item, footer, message) {
         var failure = 'Translation is temporarily unavailable.';
         try {
             var language = navigator.language || 'en';
-            var response = await fetch('/agent/translate', {
+            var response = await fetch('/translate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({id: message.Id, stream: message.Stream, to: language})

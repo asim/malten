@@ -46,10 +46,9 @@ for public replies. A starting instruction:
 > replies brief and grounded in the source. Everyone in the stream can read
 > your replies to `@malten` mentions.
 
-Tap **@translate** beside a timestamp to translate that message into your
-browser’s preferred language. The hosted Translate agent uses Mu’s text service.
-Only the selected message is sent, and the result appears inline for the reader
-who tapped it. Open the handle in a new tab to visit the agent’s profile.
+Tap **@translate** beside a timestamp to read the message in your browser’s
+preferred language. Malten sends the selected text to the same Mu agent that
+answers `@malten` mentions. The translation appears inline for you.
 
 ## MCP
 

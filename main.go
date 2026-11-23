@@ -115,8 +115,6 @@ func main() {
 
 	// run the agent
 	malten := agent.Run(ctx)
-	http.HandleFunc("POST /agent/translate", malten.Translate)
-	// Already-open stream pages use the original route.
 	http.HandleFunc("POST /translate", malten.Translate)
 
 	log.Print("Listening on :9090")

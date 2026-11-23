@@ -44,7 +44,7 @@ func TestMuCommandThreads(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan struct{})
-	a := &Agent{server: s, client: mu.Client(), baseURL: mu.URL + "/agent", token: "test-token"}
+	a := &Agent{server: s, client: mu.Client(), endpoint: mu.URL + "/agent/malten", token: "test-token"}
 	go func() { defer close(done); a.runMu(ctx) }()
 	s.Publish(server.NewMessage("ordinary reflection", "a"))
 	s.SubmitCommand(server.NewCommand("first", "a"))
@@ -129,8 +129,8 @@ func TestTranslationUsesOnlySelectedMessage(t *testing.T) {
 	s.Reply(mention, "an earlier answer", "Malten", "stream-thread")
 
 	mu := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/agent/translate" || r.Header.Get("Authorization") != "Bearer agent-token" {
-			t.Error("translation did not use the hosted Translate agent")
+		if r.Method != http.MethodPost || r.URL.Path != "/agent/malten" || r.Header.Get("Authorization") != "Bearer agent-token" {
+			t.Error("translation did not use the configured agent")
 		}
 		var req muRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -143,11 +143,11 @@ func TestTranslationUsesOnlySelectedMessage(t *testing.T) {
 		json.NewEncoder(w).Encode(muReply{Text: "Hello", Thread: "reader-thread"})
 	}))
 	defer mu.Close()
-	a := &Agent{server: s, baseURL: mu.URL + "/agent", client: mu.Client(), token: "agent-token"}
+	a := &Agent{server: s, endpoint: mu.URL + "/agent/malten", client: mu.Client(), token: "agent-token"}
 
 	input := strings.NewReader(`{"stream":"reflections","id":"` + post.Id + `","to":"en-GB"}`)
 	w := httptest.NewRecorder()
-	a.Translate(w, httptest.NewRequest(http.MethodPost, "/agent/translate", input))
+	a.Translate(w, httptest.NewRequest(http.MethodPost, "/translate", input))
 	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"text":"Hello"}` {
 		t.Fatalf("reader response: %d %s", w.Code, w.Body.String())
 	}
