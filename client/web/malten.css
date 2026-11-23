@@ -236,3 +236,6 @@ ul li {
 .agent-reply pre { overflow-x: auto; }
 .agent-reply > :first-child { margin-top: .35rem; }
 .agent-reply > :last-child { margin-bottom: 0; }
+
+.translate { background: transparent; border: 0; padding: .35rem 0; color: #315d46; font: inherit; font-size: .85em; text-decoration: underline; cursor: pointer; }
+.translation { white-space: pre-wrap; }
