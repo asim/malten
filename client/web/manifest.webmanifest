@@ -1,17 +1,22 @@
 {
   "name": "Malten",
   "short_name": "Malten",
-  "description": "Reflect with AI",
+  "description": "A network for reflection",
   "scope": "/",
   "start_url": "/",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
-  "display": "standalone", 
+  "display": "standalone",
   "icons": [
-      {
-        "src": "/logo.jpg",
-        "type": "image/jpeg",
-        "sizes": "300x300"
-      }
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
   ]
 }
