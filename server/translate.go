@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"time"
@@ -45,7 +46,20 @@ func Translate(token string) http.HandlerFunc {
 		}
 		defer resp.Body.Close()
 		var result struct{ Result string }
-		if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 512<<10)).Decode(&result) != nil || result.Result == "" {
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Mu text/translate returned HTTP %d", resp.StatusCode)
+			status := http.StatusBadGateway
+			switch resp.StatusCode {
+			case http.StatusUnauthorized, http.StatusForbidden, http.StatusPaymentRequired:
+				status = http.StatusServiceUnavailable
+			case http.StatusTooManyRequests:
+				status = http.StatusTooManyRequests
+			}
+			http.Error(w, "Mu translation unavailable", status)
+			return
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 512<<10)).Decode(&result) != nil || result.Result == "" {
+			log.Print("Mu text/translate returned an unreadable or empty translation")
 			http.Error(w, "Translation unavailable", http.StatusBadGateway)
 			return
 		}

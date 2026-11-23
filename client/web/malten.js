@@ -201,8 +201,11 @@ function displayMessages(array, direction) {
         url.searchParams.set('message', array[i].Id);
         permalink.href = url.href;
         permalink.appendChild(timestamp);
-        item.appendChild(permalink);
-        addTranslation(item, array[i]);
+        var footer = document.createElement('div');
+        footer.className = 'message-footer';
+        footer.appendChild(permalink);
+        item.appendChild(footer);
+        addTranslation(item, footer, array[i]);
 
         if (direction >= 0) {
             list.insertBefore(item, list.firstChild);
@@ -617,7 +620,7 @@ function locateMessage() {
     locate();
 }
 
-function addTranslation(item, message) {
+function addTranslation(item, footer, message) {
     var button = document.createElement('button');
     var output = document.createElement('div');
     var translated = '';
@@ -626,7 +629,7 @@ function addTranslation(item, message) {
     button.textContent = 'Translate';
     output.className = 'translation';
     output.setAttribute('role', 'status');
-    item.appendChild(button);
+    footer.appendChild(button);
     item.appendChild(output);
 
     button.onclick = async function() {
@@ -637,6 +640,7 @@ function addTranslation(item, message) {
         }
         button.disabled = true;
         output.textContent = 'Translating…';
+        var failure = 'Translation is temporarily unavailable.';
         try {
             var language = navigator.language || 'en';
             var response = await fetch('/translate', {
@@ -647,6 +651,13 @@ function addTranslation(item, message) {
             if (response && response.ok) {
                 translated = (await response.json()).text;
             } else {
+                if (response) {
+                    if (response.status === 404) failure = 'This message is no longer available.';
+                    if (response.status === 503) failure = 'Translation is unavailable on this server.';
+                    if (response.status === 429) failure = 'Too many translation requests. Try again shortly.';
+                } else {
+                    failure = 'Could not connect to Malten to translate this message.';
+                }
                 translated = await translateInBrowser(message.Text, language);
             }
             output.lang = language;
@@ -654,7 +665,7 @@ function addTranslation(item, message) {
             output.textContent = translated;
             button.textContent = 'Hide translation';
         } catch {
-            output.textContent = 'Translation unavailable. Try Translate in your browser menu if available.';
+            output.textContent = failure;
         } finally {
             button.disabled = false;
         }
