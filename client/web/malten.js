@@ -605,11 +605,8 @@ function locateMessage() {
             return;
         }
         var oldest = document.querySelector('#messages > li:last-child time');
-        if (!oldest) {
-            status.textContent = 'This message is no longer in the stream.';
-            return;
-        }
-        $.get(messageUrl, {stream: stream, direction: -1, last: oldest.dataset.time, limit: limit})
+        var cursor = oldest ? oldest.dataset.time : Date.now() * 1e6;
+        $.get(messageUrl, {stream: stream, direction: -1, last: cursor, limit: limit})
             .done(function(page) {
                 if (stream !== getStream()) return;
                 if (!page || !page.some(function(message) { return !(message.Id in seen); })) {
