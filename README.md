@@ -10,6 +10,14 @@ Each stream holds up to 1,024 messages of 4,096 UTF-8 bytes each (4 MiB of messa
 
 Streams can be discovered through exploration or via the API.
 
+## Private sessions
+
+Choose **Join → Book a private session with Malten** or visit [the booking page](https://malten.me/session).
+Choose the number of places, including yours, to see the price and duration before paying through Mu.
+Once payment is confirmed, send one invite to each guest. Guests can join the waiting room before you press **Start session**.
+Everyone shares one end time and can post reflections or ask Malten. Return in the same browser to keep your place.
+Clearing its cookies loses access to the booking. The private conversation expires when the session ends.
+
 ## Features
 
 - [x] Presence - User presence status
