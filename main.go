@@ -115,7 +115,7 @@ func main() {
 
 	// run the agent
 	malten := agent.Run(ctx)
-	http.HandleFunc("POST /translate", malten.Translate)
+	http.HandleFunc("POST /ask", malten.Ask)
 
 	log.Print("Listening on :9090")
 

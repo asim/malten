@@ -46,10 +46,16 @@ for public replies. A starting instruction:
 > replies brief and grounded in the source. Everyone in the stream can read
 > your replies to `@malten` mentions.
 
-Tap **Explain** on the Daily Reminder to read the passage with tafsir on Reminder.dev.
-To translate a reflection, open its timestamp and tap **Translate**. Malten asks
-the same Mu agent that answers `@malten` mentions for a translation into your
-browser’s preferred language. The translation appears inline for you.
+Choose **Ask Malten** beside a reflection or the Daily Reminder. Select **Explain this**
+or type your own question. For example, you can ask what a phrase means, request a
+translation, or ask for a source. The Daily Reminder also links to the passage with
+tafsir on Reminder.dev.
+
+The answer appears in your own dialog. Malten sends the selected post, its source,
+and your question to the configured Mu agent. Each request starts a separate Mu
+conversation. For a follow-up, Malten includes an excerpt of the preceding exchange
+from the open dialog. Closing the dialog clears it from the page. Mu keeps its own
+conversation history. Use `@malten` in the stream composer to ask publicly.
 
 ## MCP
 

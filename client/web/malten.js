@@ -14,6 +14,7 @@ var maxMessages = 1000;
 var seen = {};
 var streams = {};
 var source;
+var activeAsk;
 var id = ID();
 
 String.prototype.parseURL = function(embed) {
@@ -106,7 +107,6 @@ function escapeHTML(str) {
 function displayMessages(array, direction) {
     var list = document.getElementById('messages');
     var permalinkURL = new URL(window.location.href);
-    var selectedId = permalinkURL.searchParams.get('message');
 
     for (i = 0; i < array.length; i++) {
         if (array[i].Id in seen) {
@@ -122,6 +122,7 @@ function displayMessages(array, direction) {
         var item = document.createElement('li');
         var footer = document.createElement('div');
         footer.className = 'message-footer';
+        var tafsirURL = '';
 
         var timestamp = document.createElement('time');
         var posted = new Date(Number(array[i].Created) / 1e6);
@@ -155,12 +156,7 @@ function displayMessages(array, direction) {
             if (source.origin === 'https://reminder.dev' && /^\/quran\/\d+(?:\/\d+)?\/?$/.test(source.pathname)) {
                 var commentary = new URL(source.href);
                 commentary.searchParams.set('commentary', '1');
-                var explain = document.createElement('a');
-                explain.href = commentary.href;
-                explain.className = 'message-action';
-                explain.textContent = 'Explain';
-                explain.title = 'Read tafsir on Reminder.dev';
-                footer.appendChild(explain);
+                tafsirURL = commentary.href;
             }
             var passage = array[i].Text.split(/\r?\n\s*\n/);
             d2.appendChild(source);
@@ -215,11 +211,9 @@ function displayMessages(array, direction) {
         permalink.href = permalinkURL.href;
         permalink.setAttribute('aria-label', 'Open reflection from ' + timestamp.title);
         permalink.appendChild(timestamp);
-        footer.prepend(permalink);
+        footer.appendChild(permalink);
+        footer.appendChild(askButton(array[i], tafsirURL));
         item.appendChild(footer);
-        if (array[i].Id === selectedId && !item.classList.contains('daily-reminder')) {
-            addTranslation(item, footer, array[i]);
-        }
 
         if (direction >= 0) {
             list.insertBefore(item, list.firstChild);
@@ -558,6 +552,7 @@ function setCurrent() {
 }
 
 function loadStream() {
+    document.getElementById('ask-malten').close();
     document.getElementById("present").textContent = "";
     document.getElementById("link-status").textContent = "";
     getStreams()
@@ -634,83 +629,105 @@ function locateMessage() {
     locate();
 }
 
-function addTranslation(item, footer, message) {
-    var link = document.createElement('a');
-    var output = document.createElement('div');
-    var translated = '';
-    var pending = false;
-    link.href = 'https://micro.mu/agent/malten';
-    link.className = 'message-action';
-    link.textContent = 'Translate';
-    link.title = 'Translate this message';
-    link.setAttribute('aria-expanded', 'false');
-    output.className = 'translation';
-    output.setAttribute('role', 'status');
-    footer.appendChild(link);
-    item.appendChild(output);
-
-    link.onclick = async function(event) {
-        // Modified clicks keep the normal link to the hosted agent.
-        if (event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        event.preventDefault();
-        if (pending) return;
-        if (translated) {
-            output.hidden = !output.hidden;
-            link.title = output.hidden ? 'Show translation' : 'Hide translation';
-            link.setAttribute('aria-expanded', String(!output.hidden));
-            return;
-        }
-        pending = true;
-        link.setAttribute('aria-expanded', 'true');
-        output.textContent = 'Translating…';
-        var failure = 'Translation is temporarily unavailable.';
-        try {
-            var language = navigator.language || 'en';
-            var response = await fetch('/translate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({id: message.Id, stream: message.Stream, to: language})
-            }).catch(() => null);
-            if (response && response.ok) {
-                translated = (await response.json()).text;
-            } else {
-                if (response) {
-                    if (response.status === 404) failure = 'This message is no longer available.';
-                    if (response.status === 503) failure = 'Translation is unavailable on this server.';
-                    if (response.status === 429) failure = 'Too many translation requests. Try again shortly.';
-                } else {
-                    failure = 'Could not connect to Malten to translate this message.';
-                }
-                translated = await translateInBrowser(message.Text, language);
-            }
-            output.lang = language;
-            output.dir = 'auto';
-            output.textContent = translated;
-            link.title = 'Hide translation';
-        } catch {
-            output.textContent = failure;
-        } finally {
-            pending = false;
-        }
-    };
+function askButton(message, tafsirURL) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'message-action';
+    button.textContent = 'Ask Malten';
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.onclick = () => openAsk(message, tafsirURL);
+    return button;
 }
 
-async function translateInBrowser(text, language) {
-    if (!window.LanguageDetector || !window.Translator ||
-        await LanguageDetector.availability() !== 'available') throw new Error();
-    var detector = await LanguageDetector.create();
-    try {
-        var matches = await detector.detect(text);
-        var options = {sourceLanguage: matches[0].detectedLanguage, targetLanguage: language.split('-')[0]};
-        if (options.sourceLanguage === options.targetLanguage) return text;
-        if (await Translator.availability(options) !== 'available') throw new Error();
-        var translator = await Translator.create(options);
+function openAsk(message, tafsirURL) {
+    const dialog = document.getElementById('ask-malten');
+    const form = document.getElementById('ask-form');
+    const question = form.elements.question;
+    const submit = form.querySelector('button');
+    const status = document.getElementById('ask-status');
+    const turns = document.getElementById('ask-turns');
+    const tafsir = document.getElementById('ask-tafsir');
+    if (activeAsk) activeAsk.abort();
+    const controller = new AbortController();
+    activeAsk = controller;
+    let previous;
+
+    document.getElementById('ask-reflection').textContent = message.Text;
+    tafsir.hidden = !tafsirURL;
+    if (tafsirURL) tafsir.href = tafsirURL;
+    else tafsir.removeAttribute('href');
+    turns.replaceChildren();
+    status.textContent = '';
+    form.reset();
+    submit.disabled = false;
+    question.oninput = function() {
+        const explainLabel = previous ? 'Explain further' : 'Explain this';
+        submit.textContent = question.value.trim() ? 'Ask' : explainLabel;
+        question.setCustomValidity(utf8.encode(question.value.trim()).length > maxMessageBytes
+            ? 'Your question exceeds 4,096 bytes.' : '');
+    };
+    question.oninput();
+
+    dialog.querySelector('.close-dialog').onclick = () => dialog.close();
+    dialog.onclose = function() {
+        if (dialog.open) return;
+        controller.abort();
+        activeAsk = null;
+        form.onsubmit = null;
+        form.reset();
+        previous = undefined;
+        turns.replaceChildren();
+    };
+    form.onsubmit = async function(event) {
+        event.preventDefault();
+        if (submit.disabled) return;
+        const prompt = question.value.trim();
+        const questionText = prompt || submit.textContent;
+        submit.disabled = true;
+        status.textContent = 'Asking Malten…';
         try {
-            return await translator.translate(text);
+            const response = await fetch('/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({stream: message.Stream, id: message.Id, question: prompt, previous}),
+                signal: controller.signal
+            });
+            if (!response.ok) {
+                const failures = {
+                    404: 'This reflection is no longer in the stream.',
+                    413: 'There is too much text to send together. Try a shorter question.',
+                    429: 'Malten is busy. Try again shortly.',
+                    503: 'Malten is unavailable on this server.'
+                };
+                throw new Error(failures[response.status] || 'Malten could not answer. Try again.');
+            }
+            const reply = await response.json();
+            if (!dialog.open || controller.signal.aborted) return;
+            const asked = document.createElement('p');
+            asked.className = 'reader-question';
+            asked.textContent = questionText;
+            const answer = document.createElement('div');
+            answer.className = 'agent-reply';
+            answer.dir = 'auto';
+            if (agentMarkdown) {
+                answer.innerHTML = agentMarkdown.render(reply.text);
+            } else {
+                answer.style.whiteSpace = 'pre-wrap';
+                answer.textContent = reply.text;
+            }
+            turns.append(asked, answer);
+            previous = {question: questionText, answer: reply.text.slice(0, maxMessageBytes)};
+            if (question.value.trim() === prompt) question.value = '';
+            question.oninput();
+            status.textContent = '';
+            asked.scrollIntoView({block: 'nearest'});
+        } catch (err) {
+            if (!controller.signal.aborted && dialog.open) {
+                status.textContent = err instanceof TypeError ? 'Could not reach Malten. Try again.' : err.message;
+            }
         } finally {
-            translator.destroy();
+            if (!controller.signal.aborted) submit.disabled = false;
         }
-    } finally {
-        detector.destroy();
-    }
+    };
+    dialog.showModal();
 }

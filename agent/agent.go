@@ -107,13 +107,26 @@ type muRequest struct {
 	} `json:"context"`
 }
 
+const muRequestBytes = 32_000
+
+func excerpt(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	end := limit - len("…")
+	for !utf8.RuneStart(text[end]) {
+		end--
+	}
+	return text[:end] + "…"
+}
+
 func streamRequest(s *server.Server, command *server.Message) muRequest {
 	req := muRequest{Prompt: command.Text, Thread: s.Thread(command.Stream)}
 	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection. Posts expire after 24 hours by default. The home stream includes a daily Qur’an passage. Everyone in this stream can read the answer to an @malten mention."}
 	req.Context.Messages = []contextMessage{info}
 	// Account for JSON escaping in Mu's 32 KB HTTP body limit.
 	base, _ := json.Marshal(req)
-	remaining := 32_000 - len(base)
+	remaining := muRequestBytes - len(base)
 	var recent []contextMessage
 	count := 0
 	haveReminder := false
@@ -128,13 +141,7 @@ func streamRequest(s *server.Server, command *server.Message) muRequest {
 			haveReminder = true
 		} else if m.Type == "message" && m.Source == "" && count < 6 {
 			count++
-			if len(entry.Text) > 1200 {
-				end := 1197
-				for !utf8.RuneStart(entry.Text[end]) {
-					end--
-				}
-				entry.Text = entry.Text[:end] + "…"
-			}
+			entry.Text = excerpt(entry.Text, 1200)
 		} else {
 			continue
 		}
@@ -169,6 +176,9 @@ func (a *Agent) ask(ctx context.Context, request muRequest) (muReply, error) {
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return reply, err
+	}
+	if len(payload) > muRequestBytes {
+		return reply, muStatusError(http.StatusRequestEntityTooLarge)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint, bytes.NewReader(payload))
 	if err != nil {
