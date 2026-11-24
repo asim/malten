@@ -4,7 +4,7 @@
     <meta http-equiv="content-language" content="en">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home</title>
-    <link rel="stylesheet" type="text/css" href="malten.css?v=translate-handle1">
+    <link rel="stylesheet" type="text/css" href="malten.css?v=ask-malten1">
     <link rel="canonical" href="https://malten.me" />
     <link rel="manifest" href="/manifest.webmanifest">
   </head>
@@ -24,7 +24,7 @@
           <button id="open-join" type="button" aria-haspopup="dialog">Join</button>
         </nav>
       </header>
-      <dialog id="join" aria-labelledby="join-title">
+      <dialog id="join" class="stream-dialog" aria-labelledby="join-title">
         <header><h2 id="join-title">Join a stream</h2>
           <button id="close-join" type="button" aria-label="Close">×</button>
         </header>
@@ -40,15 +40,29 @@
         </form>
         <p><a href="/session">Book a private session with Malten</a></p>
       </dialog>
+      <dialog id="ask-malten" class="stream-dialog" aria-labelledby="ask-title">
+        <header><h2 id="ask-title">Ask Malten</h2>
+          <button type="button" class="close-dialog" aria-label="Close">×</button>
+        </header>
+        <blockquote id="ask-reflection" dir="auto"></blockquote>
+        <a id="ask-tafsir" hidden>Read tafsir on Reminder.dev</a>
+        <div id="ask-turns" role="log" aria-label="Answers from Malten"></div>
+        <form id="ask-form">
+          <label for="ask-question">Your question (optional)</label>
+          <textarea id="ask-question" name="question" rows="2" placeholder="What would you like to understand?"></textarea>
+          <small>Only you see this exchange in Malten.</small>
+          <button type="submit">Explain this</button>
+        </form>
+        <p id="ask-status" role="status"></p>
+      </dialog>
       <div id="think">
-        <form action="/commands" method="post" id="form" onsubmit="return submitCommand(this);">
-          <textarea id="prompt" name="prompt" rows="1" placeholder="What’s on your mind?" aria-describedby="chars" aria-label="What’s on your mind?" autocomplete="off"></textarea>
-	  <input id="message" name="message" type="hidden">
+        <form action="/messages" method="post" id="form" onsubmit="return postMessage();">
+          <textarea id="prompt" name="message" rows="1" placeholder="What’s on your mind?" aria-describedby="chars" aria-label="What’s on your mind?" autocomplete="off"></textarea>
           <input id="stream" name="stream" type="hidden">
 	  <div id="controls">
             <button id="send" type="submit">Send</button>
             <button id="speak" type="button">Talk</button>
-	    <span id="words"></span>
+	    <span id="words" role="status"></span>
             <span id="chars" role="status"></span>
           </div>
         </form>
@@ -60,7 +74,7 @@
     </div>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js" integrity="sha384-wLhprpjsmjc/XYIcF+LpMxd8yS1gss6jhevOp6F6zhiIoFK6AmHtm4bGKtehTani" crossorigin="anonymous"></script>
-    <script src="malten.js?v=translate-label1"></script>
+    <script src="malten.js?v=ask-malten2"></script>
     <script type="text/javascript">
 	$(document).ready(function() {
             setCurrent();

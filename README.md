@@ -37,8 +37,9 @@ Clearing its cookies loses access to the booking. The private conversation expir
 Set `MU_TOKEN` to enable a [Mu](https://micro.mu) agent. For a deployment running as the
 `malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
-Mention `@malten` at the start of a message, for example `@malten what is this?`
-or `@malten what does today’s passage mean?`. The original `/malten` shortcut also works. Mentioning Malten sends Mu a bounded excerpt of up to six preceding reflections
+Mention `@malten` anywhere in a message, for example `@malten what is this?`
+or `What does today’s passage mean, @malten?`. The original `/malten` shortcut
+also works at the start. Mentioning Malten sends Mu a bounded excerpt of up to six preceding reflections
 from that stream in Mu’s per-request `context.messages`. The visitor’s question
 is sent as `prompt`. Mu saves the question and answer in the thread; an answer may quote an excerpt. Everyone in the stream sees the question and the reply from Malten. Both appear
 in stream history on refresh. The stream saves its Mu thread with the existing
@@ -54,9 +55,16 @@ for public replies. A starting instruction:
 > replies brief and grounded in the source. Everyone in the stream can read
 > your replies to `@malten` mentions.
 
-Tap **Translate** beside a timestamp to read the message in your browser’s
-preferred language. Malten sends the selected text to the same Mu agent that
-answers `@malten` mentions. The translation appears inline for you.
+Choose **Ask Malten** beside a reflection or the Daily Reminder. Select **Explain this**
+or type your own question. For example, you can ask what a phrase means, request a
+translation, or ask for a source. The Daily Reminder also links to the passage with
+tafsir on Reminder.dev.
+
+The answer appears in your own dialog. Malten sends the selected post, its source,
+and your question to the configured Mu agent. Each request starts a separate Mu
+conversation. For a follow-up, Malten includes an excerpt of the preceding exchange
+from the open dialog. Closing the dialog clears it from the page. Mu keeps its own
+conversation history. Use `@malten` in the stream composer to ask publicly.
 
 ## MCP
 

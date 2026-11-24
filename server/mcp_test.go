@@ -13,7 +13,9 @@ import (
 func TestMCPStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	web := httptest.NewServer(MCPHandler(New()))
+	s := New()
+	s.Commands = make(chan *Message, 1)
+	web := httptest.NewServer(MCPHandler(s))
 	defer web.Close()
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: web.URL, DisableStandaloneSSE: true}, nil)
@@ -48,5 +50,14 @@ func TestMCPStream(t *testing.T) {
 	call("read_messages", map[string]int{"limit": 1}, &read)
 	if len(read.Messages) != 1 || read.Messages[0].Text != "First line\nSecond line" {
 		t.Fatal(read)
+	}
+	call("post_message", map[string]string{"text": "Could you explain this? @malten"}, nil)
+	select {
+	case question := <-s.Commands:
+		if question.Text != "Could you explain this?" || question.Stream != DefaultStream {
+			t.Fatalf("wrong question: %+v", question)
+		}
+	default:
+		t.Fatal("MCP mention did not reach the agent")
 	}
 }

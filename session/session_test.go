@@ -189,8 +189,9 @@ func TestGuestBooking(t *testing.T) {
 		t.Fatal("second Start changed the clock")
 	}
 	guest.want(t, "post", &input{Room: ref, Text: "A shared reflection."}, 200)
-	v = host.want(t, "post", &input{Room: ref, Text: "@Malten What did the guest say?"}, 200)
-	if len(v.Messages) != 3 || v.Messages[0].Author != "Guest 1" || v.Messages[2].Author != "Malten" || len(m.asks) != 1 || m.asks[0] != "What did the guest say?" || len(m.history) != 1 {
+	const question = "What did the guest say? @Malten"
+	v = host.want(t, "post", &input{Room: ref, Text: question}, 200)
+	if len(v.Messages) != 3 || v.Messages[0].Author != "Guest 1" || v.Messages[1].Text != question || v.Messages[2].Author != "Malten" || len(m.asks) != 1 || m.asks[0] != "What did the guest say?" || len(m.history) != 1 {
 		t.Fatal("wrong shared paid turn", v.Messages, m.asks)
 	}
 	if guest.want(t, "state?room="+ref, nil, 200).EndsAt != ends {

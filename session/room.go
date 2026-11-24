@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/asim/malten/server"
 	"github.com/yuin/goldmark"
@@ -114,14 +113,8 @@ func (s *Store) append(r *room, author, text string) error {
 
 func (s *Store) post(ctx context.Context, r *room, who string, in input) error {
 	body := strings.TrimSpace(in.Text)
-	prompt := body
-	first := body
-	if i := strings.IndexFunc(body, unicode.IsSpace); i >= 0 {
-		first = body[:i]
-	}
-	if strings.EqualFold(first, "@malten") {
-		in.Ask, prompt = true, strings.TrimSpace(body[len(first):])
-	}
+	prompt, mentioned := server.MentionPrompt(body)
+	in.Ask = in.Ask || mentioned
 	if prompt == "" || len(body) > server.MaxMessageSize {
 		return clientError{400, "Write a message of up to 4,096 UTF-8 bytes."}
 	}

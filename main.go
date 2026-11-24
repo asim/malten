@@ -114,7 +114,7 @@ func main() {
 
 	// run the agent
 	malten := agent.Run(ctx)
-	http.HandleFunc("POST /translate", malten.Translate)
+	http.HandleFunc("POST /ask", malten.Ask)
 
 	bookings, err := session.Open("sessions", malten)
 	if err != nil {
