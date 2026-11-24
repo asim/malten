@@ -15,6 +15,7 @@ import (
 
 	"github.com/asim/malten/agent"
 	"github.com/asim/malten/server"
+	"github.com/asim/malten/session"
 )
 
 //go:embed client/web/*
@@ -105,8 +106,6 @@ func main() {
 		}
 	})
 
-	h := server.WithCors(http.DefaultServeMux)
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -116,6 +115,17 @@ func main() {
 	// run the agent
 	malten := agent.Run(ctx)
 	http.HandleFunc("POST /translate", malten.Translate)
+
+	bookings, err := session.Open("sessions", malten)
+	if err != nil {
+		log.Fatal(err)
+	}
+	go bookings.Run(ctx)
+	h := http.NewServeMux()
+	private := bookings.Handler()
+	h.Handle("/session", private)
+	h.Handle("/session/", private)
+	h.Handle("/", server.WithCors(http.DefaultServeMux))
 
 	log.Print("Listening on :9090")
 
