@@ -46,9 +46,10 @@ for public replies. A starting instruction:
 > replies brief and grounded in the source. Everyone in the stream can read
 > your replies to `@malten` mentions.
 
-Tap **Translate** beside a timestamp to read the message in your browser’s
-preferred language. Malten sends the selected text to the same Mu agent that
-answers `@malten` mentions. The translation appears inline for you.
+Tap **Explain** on the Daily Reminder to read the passage with tafsir on Reminder.dev.
+To translate a reflection, open its timestamp and tap **Translate**. Malten asks
+the same Mu agent that answers `@malten` mentions for a translation into your
+browser’s preferred language. The translation appears inline for you.
 
 ## MCP
 

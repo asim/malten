@@ -105,6 +105,8 @@ function escapeHTML(str) {
 
 function displayMessages(array, direction) {
     var list = document.getElementById('messages');
+    var permalinkURL = new URL(window.location.href);
+    var selectedId = permalinkURL.searchParams.get('message');
 
     for (i = 0; i < array.length; i++) {
         if (array[i].Id in seen) {
@@ -118,6 +120,8 @@ function displayMessages(array, direction) {
         }
 
         var item = document.createElement('li');
+        var footer = document.createElement('div');
+        footer.className = 'message-footer';
 
         var timestamp = document.createElement('time');
         var posted = new Date(Number(array[i].Created) / 1e6);
@@ -148,6 +152,16 @@ function displayMessages(array, direction) {
             var source = document.createElement('a');
             source.href = array[i].Source;
             source.textContent = 'Daily Reminder';
+            if (source.origin === 'https://reminder.dev' && /^\/quran\/\d+(?:\/\d+)?\/?$/.test(source.pathname)) {
+                var commentary = new URL(source.href);
+                commentary.searchParams.set('commentary', '1');
+                var explain = document.createElement('a');
+                explain.href = commentary.href;
+                explain.className = 'message-action';
+                explain.textContent = 'Explain';
+                explain.title = 'Read tafsir on Reminder.dev';
+                footer.appendChild(explain);
+            }
             var passage = array[i].Text.split(/\r?\n\s*\n/);
             d2.appendChild(source);
             if (passage.length > 1) {
@@ -197,15 +211,15 @@ function displayMessages(array, direction) {
 
         item.id = 'message-' + array[i].Id;
         var permalink = document.createElement('a');
-        var url = new URL(window.location.href);
-        url.searchParams.set('message', array[i].Id);
-        permalink.href = url.href;
+        permalinkURL.searchParams.set('message', array[i].Id);
+        permalink.href = permalinkURL.href;
+        permalink.setAttribute('aria-label', 'Open reflection from ' + timestamp.title);
         permalink.appendChild(timestamp);
-        var footer = document.createElement('div');
-        footer.className = 'message-footer';
-        footer.appendChild(permalink);
+        footer.prepend(permalink);
         item.appendChild(footer);
-        addTranslation(item, footer, array[i]);
+        if (array[i].Id === selectedId && !item.classList.contains('daily-reminder')) {
+            addTranslation(item, footer, array[i]);
+        }
 
         if (direction >= 0) {
             list.insertBefore(item, list.firstChild);
@@ -626,7 +640,7 @@ function addTranslation(item, footer, message) {
     var translated = '';
     var pending = false;
     link.href = 'https://micro.mu/agent/malten';
-    link.className = 'translate';
+    link.className = 'message-action';
     link.textContent = 'Translate';
     link.title = 'Translate this message';
     link.setAttribute('aria-expanded', 'false');
