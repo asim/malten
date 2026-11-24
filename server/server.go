@@ -474,14 +474,22 @@ func Run() { Default.Run() }
 
 // SubmitCommand stores the question before the worker can publish its reply.
 func (s *Server) SubmitCommand(command *Message) bool {
+	return s.queueCommand(command, command.Text)
+}
+
+func (s *Server) queueCommand(message *Message, prompt string) bool {
 	s.commandMu.Lock()
 	defer s.commandMu.Unlock()
 	if len(s.Commands) >= cap(s.Commands) {
 		return false
 	}
-	s.store(command)
-	s.Broadcast(command)
-	s.Commands <- command
+	if !s.store(message) {
+		return true
+	}
+	s.Broadcast(message)
+	command := *message
+	command.Text = prompt
+	s.Commands <- &command
 	return true
 }
 

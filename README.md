@@ -10,6 +10,14 @@ Each stream holds up to 1,024 messages of 4,096 UTF-8 bytes each (4 MiB of messa
 
 Streams can be discovered through exploration or via the API.
 
+## Private sessions
+
+Choose **Join → Book a private session with Malten** or visit [the booking page](https://malten.me/session).
+Choose the number of places, including yours, to see the price and duration before paying through Mu.
+Once payment is confirmed, send one invite to each guest. Guests can join the waiting room before you press **Start session**.
+Everyone shares one end time and can post reflections or ask Malten. Return in the same browser to keep your place.
+Clearing its cookies loses access to the booking. The private conversation expires when the session ends.
+
 ## Features
 
 - [x] Presence - User presence status
@@ -29,8 +37,9 @@ Streams can be discovered through exploration or via the API.
 Set `MU_TOKEN` to enable a [Mu](https://micro.mu) agent. For a deployment running as the
 `malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
-Mention `@malten` at the start of a message, for example `@malten what is this?`
-or `@malten what does today’s passage mean?`. The original `/malten` shortcut also works. Mentioning Malten sends Mu a bounded excerpt of up to six preceding reflections
+Mention `@malten` anywhere in a message, for example `@malten what is this?`
+or `What does today’s passage mean, @malten?`. The original `/malten` shortcut
+also works at the start. Mentioning Malten sends Mu a bounded excerpt of up to six preceding reflections
 from that stream in Mu’s per-request `context.messages`. The visitor’s question
 is sent as `prompt`. Mu saves the question and answer in the thread; an answer may quote an excerpt. Everyone in the stream sees the question and the reply from Malten. Both appear
 in stream history on refresh. The stream saves its Mu thread with the existing

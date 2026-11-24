@@ -60,7 +60,9 @@ func MCPHandler(s *Server) http.Handler {
 			args.Stream = DefaultStream
 		}
 		message := NewMessage(args.Text, args.Stream)
-		s.Publish(message)
+		if err := s.postMessage(message); err != nil {
+			return nil, nil, err
+		}
 		return nil, map[string]string{"id": message.Id, "stream": message.Stream}, nil
 	})
 	mcp.AddTool(api, &mcp.Tool{Name: "create_stream", Description: "Create a stream with a rolling 24-hour TTL."}, func(ctx context.Context, req *mcp.CallToolRequest, args createStreamArgs) (*mcp.CallToolResult, map[string]string, error) {

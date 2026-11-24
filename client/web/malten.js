@@ -1,13 +1,11 @@
 var agentMarkdown = window.markdownit && window.markdownit({ html: false }).disable('image');
 
-var commandUrl = "/commands";
 var messageUrl = "/messages";
 var streamUrl = "/streams";
 var eventUrl = "/events";
 var limit = 25;
 var last = timeAgo();
 var typing = false;
-var maltenMention = /^[@\/]malten(?:[:,])?\s+/i;
 var maxMessageBytes = 4096;
 var utf8 = new TextEncoder();
 var maxMessages = 1000;
@@ -75,8 +73,7 @@ function updateComposer() {
     var prompt = document.getElementById('prompt');
     prompt.style.height = 'auto';
     prompt.style.height = prompt.scrollHeight + 'px';
-    var text = prompt.value.replace(maltenMention, '');
-    var excess = utf8.encode(text).length - maxMessageBytes;
+    var excess = utf8.encode(prompt.value).length - maxMessageBytes;
     var warning = excess > 0 ? excess + ' bytes over the limit' : '';
     prompt.setCustomValidity(warning);
     document.getElementById('chars').textContent = warning;
@@ -97,11 +94,8 @@ function clipMessages() {
 
 function escapeHTML(str) {
     var div = document.createElement('div');
-    div.style.display = 'none';
-    str = str.replace(/(?:\r\n|\r|\n)/g, '<br>');
-    div.innerHTML = str;
-    //div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
+    div.textContent = str;
+    return div.innerHTML.replace(/\r\n|\r|\n/g, '<br>');
 };
 
 function displayMessages(array, direction) {
@@ -468,26 +462,11 @@ function pollMessages() {
     }, 5000);
 }
 
-function postCommand(draft) {
-    var prompt = document.getElementById('prompt');
-    var status = document.getElementById('words');
-    status.textContent = '';
-    $.post(commandUrl, {prompt: draft.replace(maltenMention, ''), stream: getStream()})
-        .done(function() {
-            if (prompt.value === draft) prompt.value = '';
-            updateComposer();
-        })
-        .fail(function() {
-            status.textContent = 'Malten is unavailable. Please try again.';
-        });
-    return false;
-}
-
 function postMessage() {
     var prompt = document.getElementById('prompt');
     var status = document.getElementById('words');
     var draft = prompt.value;
-    if (!draft) return false;
+    if (!draft.trim()) return false;
     var send = document.getElementById('send');
     send.disabled = true;
     status.textContent = '';
@@ -497,7 +476,10 @@ function postMessage() {
             updateComposer();
             loadMessages();
         })
-        .fail(function() { status.textContent = 'Could not send. Please try again.'; })
+        .fail(function(xhr) {
+            var plainText = xhr.getResponseHeader('Content-Type')?.startsWith('text/plain');
+            status.textContent = plainText && xhr.responseText ? xhr.responseText.trim() : 'Could not send. Please try again.';
+        })
         .always(function() { send.disabled = false; });
     return false;
 }
@@ -568,25 +550,6 @@ function start() {
 
 function stop() {
     typing = true;
-};
-
-function submitCommand() {
-    var form = document.getElementById('form');
-    var el = form.elements;
-
-    if (el["prompt"].value.length <= 0) {
-        return false;
-    }
-
-    if (el["prompt"].value.match(/^\s+$/)) {
-        return false;
-    }
-
-    if (el["prompt"].value.match(maltenMention)) {
-        return postCommand(el["prompt"].value);
-    }
-
-    return postMessage();
 };
 
 function tagText(text) {

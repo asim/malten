@@ -40,6 +40,26 @@ reads optional settings from `/etc/default/malten`. When deployed with the exist
 If you already manage a `malten.service`, its executable must point to
 `/usr/local/bin/malten`.
 
+### Enable paid sessions
+
+In Mu, open **Edit agent → Mu Pay** for Malten. Enable payments and set the price
+per participant to `300` minor units, currency to `GBP`, duration to `60` minutes,
+and the app return URL to `https://malten.me/session`. Malten displays the quote
+returned by Mu for each booking. Use the existing server-side `MU_TOKEN` with
+agent API read and write access. Mu handles Stripe checkout and its webhook.
+Malten reads the booking from Mu when the host returns or chooses **Check payment**.
+The Mu payment notification URL can be left blank.
+
+Serve Malten over HTTPS and forward the original Host and protocol from the reverse proxy.
+Guest places are tied to an HTTP-only browser cookie. The service writes booking
+and seat changes to its private `sessions/` directory before acknowledging them.
+Paid bookings stay available until the host starts them. Once the shared time ends,
+Malten closes access immediately and removes the room and its messages from disk
+on its next one-second cleanup or on startup. Mu manages its own payment records
+and agent thread.
+
+### Automatic updates
+
 To check the current branch’s upstream every five minutes, add this to the
 root user's crontab, adjusting the checkout path:
 

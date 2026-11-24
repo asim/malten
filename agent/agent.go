@@ -101,6 +101,7 @@ type contextMessage struct {
 
 type muRequest struct {
 	Prompt  string `json:"prompt"`
+	Session string `json:"session,omitempty"`
 	Thread  string `json:"thread,omitempty"`
 	Context struct {
 		Messages []contextMessage `json:"messages"`
@@ -185,20 +186,24 @@ func (a *Agent) ask(ctx context.Context, request muRequest) (muReply, error) {
 		return reply, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+a.token)
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return reply, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return reply, muStatusError(resp.StatusCode)
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 512<<10)).Decode(&reply); err != nil {
+	if err := a.do(req, &reply); err != nil {
 		return reply, err
 	}
 	if strings.TrimSpace(reply.Text) == "" {
 		return reply, errors.New("empty reply")
 	}
 	return reply, nil
+}
+
+func (a *Agent) do(req *http.Request, output any) error {
+	req.Header.Set("Authorization", "Bearer "+a.token)
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return muStatusError(resp.StatusCode)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 512<<10)).Decode(output)
 }

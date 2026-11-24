@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Private sessions · Malten</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/session/web/session.css">
+  <script defer src="/session/web/session.js"></script>
+</head>
+<body>
+  <main>
+    <header><a href="/" class="brand"><img src="/logo.jpg" width="22" height="22" alt="">Malten</a><a href="/">Home</a></header>
+    <h1 id="title">Private sessions</h1>
+    <p id="status" role="status">Loading…</p>
+    <p id="error" role="alert" hidden></p>
+    <section id="home" hidden>
+      <form id="book">
+        <label for="places">How many places, including yours?</label>
+        <div class="row"><input id="places" type="number" value="1" min="1" max="100" required><button>See price</button></div>
+      </form>
+      <section id="your-bookings" hidden><h2>Your bookings</h2><ul id="bookings"></ul></section>
+    </section>
+    <section id="invitation" hidden><button id="claim">Claim this place</button></section>
+    <section id="room" hidden>
+      <p id="quote" hidden></p>
+      <div class="row"><a id="checkout" class="primary" hidden>Continue to checkout</a><button id="refresh" class="secondary" hidden>Check payment</button><button id="start" hidden>Start session</button></div>
+      <section id="guests" hidden><h2>Guest invites</h2><p>Send one link to each guest. Each link admits one browser.</p><ul id="seats"></ul></section>
+      <section id="chat" hidden>
+        <h2>Conversation</h2>
+        <p id="audience">Everyone in this session can see messages and Malten’s replies.</p>
+        <ol id="messages" aria-label="Session messages"></ol>
+        <form id="compose">
+          <label class="sr-only" for="message">What’s on your mind?</label>
+          <textarea id="message" aria-describedby="audience" rows="2" required placeholder="What’s on your mind?"></textarea>
+          <div class="row"><button type="submit">Send</button><button type="submit" class="secondary" value="ask">Ask Malten</button></div>
+        </form>
+      </section>
+      <p><a href="/session">All bookings</a></p>
+    </section>
+    <noscript>Enable JavaScript to book or join a session.</noscript>
+  </main>
+</body>
+</html>

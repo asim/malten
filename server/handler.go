@@ -202,7 +202,13 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Default.Publish(NewMessage(message, stream))
+	if err := Default.postMessage(NewMessage(message, stream)); err != nil {
+		status := http.StatusServiceUnavailable
+		if err == errNoQuestion {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+	}
 }
 
 func WithCors(h http.Handler) http.Handler {
