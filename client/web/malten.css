@@ -262,3 +262,35 @@ ul li {
 
 .message-footer { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-top: .65rem; }
 .message-footer .time { margin-top: 0; }
+
+#messages a.profile-link, .stream-dialog a.profile-link {
+  color: #315d46;
+  text-decoration: underline;
+  text-underline-offset: .15em;
+}
+
+.agent-profile {
+  max-width: 38rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+.agent-profile .back {
+  color: #315d46;
+  font-weight: normal;
+  text-decoration: underline;
+  text-underline-offset: .15em;
+}
+.agent-profile header { display: flex; align-items: center; gap: 1rem; margin: 2.5rem 0 1rem; }
+.agent-profile h1 { margin: 0; color: #24372b; font: 2.4rem/1.15 Georgia, serif; }
+.agent-profile .handle { margin: .2rem 0 0; color: #526159; }
+.agent-profile section { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #ced9d2; }
+.agent-profile h2 { margin: 0; color: #24372b; font-size: 1.25rem; }
+.agent-profile .book {
+  display: inline-block;
+  padding: .65rem 1rem;
+  background: #24533e;
+  color: white;
+  border-radius: 8px;
+}

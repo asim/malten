@@ -16,7 +16,7 @@ var activeAsk;
 var id = ID();
 
 String.prototype.parseURL = function(embed) {
-    return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:%&~\?\/.=]+/g, function(url) {
+    return this.replace(/[A-Za-z]+:\/\/[A-Za-z0-9-_]+\.[A-Za-z0-9-_:@%&~\?\/.=]+/g, function(url) {
         if (embed == true) {
             var match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
             if (match && match[2].length == 11) {
@@ -30,13 +30,6 @@ String.prototype.parseURL = function(embed) {
         };
         var pretty = url.replace(/^http(s)?:\/\/(www\.)?/, '');
         return pretty.link(url);
-    });
-};
-
-String.prototype.parseUsername = function() {
-    return this.replace(/[@]+[A-Za-z0-9-_]+/g, function(u) {
-        var username = u.replace("@", "");
-        return u.link("http://twitter.com/" + username);
     });
 };
 
@@ -127,12 +120,9 @@ function displayMessages(array, direction) {
         timestamp.textContent = relativeTime(array[i].Created, Date.now());
         var d2 = document.createElement('div');
         d2.className = 'message';
-        if (array[i].Type === 'command' || array[i].Source === 'https://micro.mu/agent/malten') {
+        if (array[i].Type === 'command' || array[i].Source === muMaltenProfile) {
             if (array[i].Source) {
-                var author = document.createElement('a');
-                author.href = array[i].Source;
-                author.textContent = 'Malten';
-                item.appendChild(author);
+                item.appendChild(maltenProfileLink('Malten'));
             }
             if (array[i].Type !== 'command' && agentMarkdown) {
                 d2.classList.add('agent-reply');
@@ -173,6 +163,7 @@ function displayMessages(array, direction) {
                 d2.appendChild(link);
             }
         }
+        linkMaltenMentions(d2);
         item.appendChild(d2);
 
         if (array[i].Metadata != null && array[i].Metadata.Type != "player") {
@@ -615,7 +606,9 @@ function openAsk(message, tafsirURL) {
     activeAsk = controller;
     let previous;
 
-    document.getElementById('ask-reflection').textContent = message.Text;
+    const reflection = document.getElementById('ask-reflection');
+    reflection.textContent = message.Text;
+    linkMaltenMentions(reflection);
     tafsir.hidden = !tafsirURL;
     if (tafsirURL) tafsir.href = tafsirURL;
     else tafsir.removeAttribute('href');
@@ -679,6 +672,8 @@ function openAsk(message, tafsirURL) {
                 answer.textContent = reply.text;
             }
             turns.append(asked, answer);
+            linkMaltenMentions(asked);
+            linkMaltenMentions(answer);
             previous = {question: questionText, answer: reply.text.slice(0, maxMessageBytes)};
             if (question.value.trim() === prompt) question.value = '';
             question.oninput();

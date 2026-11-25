@@ -37,6 +37,9 @@ func main() {
 
 	// serve the html directory by default
 	http.Handle("/", http.FileServer(http.FS(htmlContent)))
+	http.HandleFunc("GET /@malten", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, htmlContent, "profile.html")
+	})
 
 	http.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 		server.GetEvents(w, r)
