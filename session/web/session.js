@@ -80,8 +80,7 @@ function showMessages(messages) {
   lastMessages = key;
   el("messages").replaceChildren(...messages.map(m => {
     const li = document.createElement("li");
-    const name = document.createElement(m.author === "Malten" ? "a" : "strong");
-    if (m.author === "Malten") name.href = "https://micro.mu/agent/malten";
+    const name = m.author === "Malten" ? maltenProfileLink(m.author) : document.createElement("strong");
     name.textContent = m.author;
     const time = document.createElement("time");
     const at = new Date(m.created * 1000);
@@ -93,6 +92,7 @@ function showMessages(messages) {
       text.className = "agent-reply";
       text.innerHTML = m.html;
     } else { text.textContent = m.text; }
+    linkMaltenMentions(text);
     li.append(name, time, text);
     return li;
   }));

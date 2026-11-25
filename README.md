@@ -12,7 +12,8 @@ Streams can be discovered through exploration or via the API.
 
 ## Private sessions
 
-Choose **Join → Book a private session with Malten** or visit [the booking page](https://malten.me/session).
+Select Malten’s name on a reply or an `@malten` mention to open [Malten’s profile](https://malten.me/@malten) and choose **Book a private session**.
+You can also book from **Join** or visit [the booking page](https://malten.me/session).
 Choose the number of places, including yours, to see the price and duration before paying through Mu.
 Once payment is confirmed, send one invite to each guest. Guests can join the waiting room before you press **Start session**.
 Everyone shares one end time and can post reflections or ask Malten. Return in the same browser to keep your place.
