@@ -29,7 +29,7 @@ async function request(path, data) {
   const response = await fetch("/session/" + path, {cache: "no-store", ...options});
   if (response.status === 204) return null;
   if (!response.ok) {
-    const error = new Error((await response.text()).trim() || "Couldn’t load the session.");
+    const error = new Error((await response.text()).trim() || "Couldn’t load this private reflection.");
     error.status = response.status;
     error.posted = response.headers.get("X-Malten-Posted") === "1";
     throw error;
@@ -125,13 +125,13 @@ function render(data) {
   const end = new Date((data.ends_at || 0) * 1000);
   el("invitation").hidden = el("home").hidden = true;
   el("room").hidden = false;
-  el("title").textContent = "Private session with Malten";
+  el("title").textContent = "Private reflection";
   const states = {
     unconfirmed: "Your booking is saved in this browser. Check again to get the price.",
     pending: "Awaiting payment. Return here after checkout to confirm your booking.",
-    paid: data.host ? "Payment confirmed. Start when everyone is ready." : "Your place is saved. The host will start the session.",
-    active: "This session ends at " + end.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", timeZoneName: "short"}) + ".",
-    expired: "This session has ended."
+    paid: data.host ? "Payment confirmed. Start when everyone is ready." : "Your place is saved. The host will start the reflection.",
+    active: "This private reflection ends at " + end.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", timeZoneName: "short"}) + ".",
+    expired: "This private reflection has ended."
   };
   el("status").textContent = states[data.status];
   el("quote").hidden = !(data.host && data.amount && (pending || paid));
@@ -228,8 +228,8 @@ el("compose").onsubmit = event => {
 async function load() {
   const returned = params.get("session");
   if (room && invite) {
-    el("title").textContent = "Join a private session";
-    el("status").textContent = "Claim your place on this browser. You can come back to it during the session.";
+    el("title").textContent = "Join a private reflection";
+    el("status").textContent = "Claim your place in this browser. You can return here until the reflection ends.";
     el("invitation").hidden = false;
     return;
   }
@@ -242,7 +242,7 @@ async function load() {
     return;
   }
   const data = await request("state");
-  el("status").textContent = data.available ? "Book time with Malten, on your own or with guests. The clock starts when you press Start." : "Booking is currently unavailable.";
+  el("status").textContent = data.available ? "Reserve a private room for yourself or a group. The price is per person. Your time starts when you choose Start reflection." : "Booking is currently unavailable.";
   el("home").hidden = false;
   el("book").hidden = !data.available;
   el("your-bookings").hidden = !data.rooms?.length;

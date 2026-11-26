@@ -101,7 +101,7 @@ func (s *Store) append(r *room, author, text, parent string) (Message, error) {
 	}
 	b := r.booking
 	if parent != "" && !slices.ContainsFunc(b.Messages, func(m Message) bool { return m.ID == parent }) {
-		return Message{}, clientError{409, "The original message is no longer in this session."}
+		return Message{}, clientError{409, "The original message is no longer in this private reflection."}
 	}
 	m := Message{ID: uuid.NewString(), Author: author, Text: text, Parent: parent, Created: s.now().Unix()}
 	if author == "Malten" {

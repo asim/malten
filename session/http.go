@@ -25,7 +25,7 @@ func (e clientError) Error() string { return e.text }
 var (
 	errMissing  = clientError{404, "This booking is unavailable in this browser."}
 	errHost     = clientError{403, "Only the host can do that."}
-	errInactive = clientError{409, "This session is not active."}
+	errInactive = clientError{409, "This private reflection is not active."}
 	errInvite   = clientError{409, "This invite is unavailable or has already been claimed."}
 	errReply    = clientError{502, "Your question was posted. Malten couldn’t reply."}
 )
@@ -184,7 +184,7 @@ func (s *Store) Handler() http.Handler {
 	api := func(w http.ResponseWriter, r *http.Request) {
 		who := visitor(r)
 		if who == "" {
-			http.Error(w, "Open the session page and allow cookies in this browser.", http.StatusUnauthorized)
+			http.Error(w, "Open the booking page and allow cookies in this browser.", http.StatusUnauthorized)
 			return
 		}
 		var data any
@@ -214,7 +214,7 @@ func (s *Store) Handler() http.Handler {
 				return
 			}
 			log.Printf("session request: %v", err)
-			http.Error(w, "Couldn’t confirm the session. Please try again.", 502)
+			http.Error(w, "Couldn’t update this private reflection. Please try again.", 502)
 			return
 		}
 		if v, ok := data.(view); ok && r.Method == http.MethodGet && v.Status != "expired" &&

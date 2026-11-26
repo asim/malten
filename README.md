@@ -11,18 +11,19 @@ It draws on the day’s Qur’an passage, hadith and Name of Allah from Reminder
 By default, messages expire 24 hours after posting and idle streams expire after 24 hours. 
 Each stream holds up to 1,024 messages of 4,096 UTF-8 bytes each (4 MiB of message text per stream).
 
-Choose **Reply** on a reflection to quote it in the same stream or private session. Select the quote to open the original. The excerpt is available for as long as the original remains in the conversation.
+Choose **Reply** to quote a message in the same stream or private reflection. Select the quote to open the original. The excerpt is available for as long as the original remains in the conversation.
 
 Streams can be discovered through exploration or via the API.
 
-## Private sessions
+## Private reflections
 
-Select Malten’s name on a reply or an `@malten` mention to open [Malten’s profile](https://malten.me/@malten) and choose **Book a private session**.
+A private reflection gives you a room to work through an idea or a problem on your own or with guests. The booking covers a place for each participant for the time shown.
+Select Malten’s name on a reply or an `@malten` mention to open [Malten’s profile](https://malten.me/@malten) and choose **Book a private reflection**.
 You can also book from **Join** or visit [the booking page](https://malten.me/session).
 Choose the number of places, including yours, to see the price and duration before paying through Mu.
-Once payment is confirmed, send one invite to each guest. Guests can join the waiting room before you press **Start session**.
-Everyone shares one end time and can post reflections or ask Malten. Return in the same browser to keep your place.
-Clearing its cookies loses access to the booking. The private conversation expires when the session ends.
+Once payment is confirmed, send one invite to each guest. Guests can join the waiting room before you press **Start reflection**.
+Everyone in the room can read and write. Choose **Ask Malten** or mention `@malten` if you want the AI to respond. Return in the same browser to keep your place.
+Clearing its cookies loses access to the booking. The conversation expires when the private reflection ends.
 
 ## Features
 
@@ -60,8 +61,10 @@ for public replies. A starting instruction:
 
 > You are Malten, the AI in a network for reflection rooted in Islamic values.
 > Start with what the person shared and follow their lead on faith. Use everyday
-> language. When someone asks about an Islamic teaching, explain unfamiliar terms
-> and name the source. Everyone in the stream can read your replies to `@malten` mentions.
+> language. When someone asks about an Islamic teaching, point them to a source
+> you can verify and distinguish its words from your reflection. Refer personal
+> religious rulings to a qualified scholar. Everyone in the stream can read your
+> replies to `@malten` mentions.
 
 Choose **Ask Malten** beside any reflection, including the daily post. Select **Explain this**
 or type your own question. For example, you can ask what a phrase means, request a

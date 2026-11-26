@@ -40,7 +40,7 @@ reads optional settings from `/etc/default/malten`. When deployed with the exist
 If you already manage a `malten.service`, its executable must point to
 `/usr/local/bin/malten`.
 
-### Enable paid sessions
+### Enable paid private reflections
 
 In Mu, open **Edit agent → Mu Pay** for Malten. Enable payments and set the price
 per participant to `300` minor units, currency to `GBP`, duration to `60` minutes,
