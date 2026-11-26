@@ -15,6 +15,8 @@ Choose **Reply** to quote a message in the same stream or private reflection. Se
 
 Streams can be discovered through exploration or via the API.
 
+Use the flag beside a public reflection to report abuse, harassment or spam. A moderator reviews the post and can dismiss the report or remove the post from the stream and its quoted previews. Reports expire with the post. Private rooms and unlisted streams stay outside the public review queue.
+
 ## Private reflections
 
 A private reflection gives you a room to work through an idea or a problem on your own or with guests. The booking covers a place for each participant for the time shown.

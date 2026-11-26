@@ -11,6 +11,7 @@ var utf8 = new TextEncoder();
 var maxMessages = 1024;
 var seen = {};
 var streams = {};
+var reviewRevision = null;
 var source;
 var activeAsk;
 var streamReply;
@@ -77,6 +78,7 @@ function clearMessages() {
     document.getElementById('messages').innerHTML = "";
     last = timeAgo();
     seen = {};
+    reviewRevision = null;
 };
 
 function clipMessages() {
@@ -94,6 +96,14 @@ function escapeHTML(str) {
     div.textContent = str;
     return div.innerHTML.replace(/\r\n|\r|\n/g, '<br>');
 };
+
+function webURL(value) {
+    try {
+        const url = new URL(value);
+        if (url.protocol === 'https:' || url.protocol === 'http:') return url.href;
+    } catch {}
+    return '';
+}
 
 function messageLink(id) {
     const url = new URL(window.location.href);
@@ -245,17 +255,21 @@ function displayMessages(array, direction) {
             var d5 = document.createElement('div');
             var img = document.createElement('img');
 
-            a1.innerHTML = array[i].Metadata.Site + ": " + array[i].Metadata.Title;
-            a1.href = array[i].Metadata.Url;
-            a2.href = array[i].Metadata.Url;
+            const metadata = array[i].Metadata;
+            a1.textContent = metadata.Site + ": " + metadata.Title;
+            const href = webURL(metadata.Url);
+            if (href) a1.href = a2.href = href;
             d3.className = 'image';
             d4.className = 'title';
             d5.className = 'desc';
-            img.src = array[i].Metadata.Image;
-            a2.appendChild(img);
-            d3.appendChild(a2);
+            const image = webURL(metadata.Image);
+            if (image) {
+                img.src = image;
+                a2.appendChild(img);
+                d3.appendChild(a2);
+            }
             d4.appendChild(a1);
-            d5.innerHTML = array[i].Metadata.Description;
+            d5.textContent = metadata.Description;
             item.appendChild(d3);
             item.appendChild(d4);
             item.appendChild(d5);
@@ -273,6 +287,7 @@ function displayMessages(array, direction) {
         actions.className = 'message-actions';
         actions.append(replyButton(() => streamReply.select(message.Id, streamQuote(message, message.Id))),
             askButton(message, tafsirURL));
+        if (message.Reportable) actions.append(reportButton(message));
         footer.appendChild(actions);
         item.appendChild(footer);
 
@@ -473,8 +488,18 @@ function loadMessages(initial) {
         form.elements["stream"].value = '';
     };
 
-    $.get(messageUrl + params, function(data) {
+    $.get(messageUrl + params, function(data, _status, xhr) {
             if (stream !== getStream()) return;
+            const revision = xhr.getResponseHeader('X-Malten-Review-Revision');
+            if (reviewRevision !== null && revision !== reviewRevision) {
+                clearMessages();
+                streamReply?.clear();
+                document.getElementById('ask-malten').close();
+                document.getElementById('report').close();
+                loadMessages(true);
+                return;
+            }
+            reviewRevision = revision;
             if (data != undefined && data.length > 0) {
                 displayMessages(data, 1);
                 clipMessages();
@@ -591,6 +616,17 @@ function processEvent(stream, event) {
     if (ev.Type != "event") {
         return
     }
+    if (ev.Text === 'removed' && ev.Parent) {
+        const id = ev.Parent;
+        seen[id] = true;
+        document.getElementById('message-' + id)?.remove();
+        document.querySelectorAll('.reply-quote[data-parent="' + CSS.escape(id) + '"]').forEach(q => q.replaceWith(replyQuote(null)));
+        if (streamReply?.parent === id) streamReply.clear();
+        for (const name of ['report', 'ask-malten']) {
+            const dialog = document.getElementById(name);
+            if (dialog.dataset.message === id) dialog.close();
+        }
+    }
 
     if (stream === getStream() && typeof ev.Observers === 'number') {
         setObservers(ev.Observers);
@@ -619,6 +655,7 @@ function setCurrent() {
 function loadStream() {
     streamReply?.clear();
     document.getElementById('ask-malten').close();
+    document.getElementById('report').close();
     document.getElementById("present").textContent = "";
     document.getElementById("link-status").textContent = "";
     getStreams()
@@ -676,6 +713,47 @@ function locateMessage() {
     locate();
 }
 
+function reportButton(message) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'message-action';
+    button.textContent = '⚑';
+    button.title = 'Report reflection';
+    button.setAttribute('aria-label', button.title);
+    button.onclick = () => {
+        const dialog = document.getElementById('report');
+        const form = document.getElementById('report-form');
+        const status = document.getElementById('report-status');
+        const send = form.querySelector('button');
+        form.reset();
+        send.disabled = false;
+        status.textContent = '';
+        dialog.dataset.message = message.Id;
+        dialog.querySelector('header button').onclick = () => dialog.close();
+        form.onsubmit = async event => {
+            event.preventDefault();
+            if (send.disabled) return;
+            send.disabled = true;
+            try {
+                const response = await fetch('/reports', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({stream: message.Stream, id: message.Id, reason: document.getElementById('report-reason').value})
+                });
+                if (!response.ok) throw new Error((await response.text()).trim());
+                if (dialog.open && dialog.dataset.message === message.Id) dialog.close();
+                if (getStream() === message.Stream) document.getElementById('link-status').textContent = 'Report sent for moderator review.';
+            } catch (err) {
+                if (dialog.dataset.message === message.Id) {
+                    status.textContent = err.message || 'Could not send the report.';
+                    send.disabled = false;
+                }
+            }
+        };
+        dialog.showModal();
+    };
+    return button;
+}
+
 function askButton(message, tafsirURL) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -688,6 +766,7 @@ function askButton(message, tafsirURL) {
 
 function openAsk(message, tafsirURL) {
     const dialog = document.getElementById('ask-malten');
+    dialog.dataset.message = message.Id;
     const form = document.getElementById('ask-form');
     const question = form.elements.question;
     const submit = form.querySelector('button');
@@ -748,7 +827,8 @@ function openAsk(message, tafsirURL) {
                     429: 'Malten is busy. Try again shortly.',
                     503: 'Malten is unavailable on this server.'
                 };
-                throw new Error(failures[response.status] || 'Malten could not answer. Try again.');
+                const detail = response.status === 429 ? (await response.text()).trim() : '';
+                throw new Error(detail || failures[response.status] || 'Malten could not answer. Try again.');
             }
             const reply = await response.json();
             if (!dialog.open || controller.signal.aborted) return;

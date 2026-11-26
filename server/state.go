@@ -127,13 +127,23 @@ func (s *Server) Checkpoint() error {
 		copy.Observers = 0
 		snapshot[name] = &copy
 	}
-	tmp := s.statePath + ".tmp"
+	if err := saveJSON(s.statePath, snapshot); err != nil {
+		return err
+	}
+	s.nextDiskExpiry = nextExpiry
+	s.dirty = false
+	return nil
+}
+
+// The caller serializes writes to path.
+func saveJSON(path string, data any) error {
+	tmp := path + ".tmp"
 	file, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp)
-	err = json.NewEncoder(file).Encode(snapshot)
+	err = json.NewEncoder(file).Encode(data)
 	if err == nil {
 		err = file.Sync()
 	}
@@ -144,10 +154,5 @@ func (s *Server) Checkpoint() error {
 	if closeErr != nil {
 		return closeErr
 	}
-	if err = os.Rename(tmp, s.statePath); err != nil {
-		return err
-	}
-	s.nextDiskExpiry = nextExpiry
-	s.dirty = false
-	return nil
+	return os.Rename(tmp, path)
 }

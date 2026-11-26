@@ -109,6 +109,11 @@ ul li {
 #ask-question { resize: vertical; }
 #ask-form button { justify-self: start; background: #24533e; color: white; }
 #ask-status:empty { margin: 0; }
+#report-form { display: grid; gap: .75rem; margin-top: 1.25rem; }
+#report-form select { font: inherit; padding: .5rem; }
+#report-form button { justify-self: start; }
+.moderation blockquote { margin-inline: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.moderation button { font: inherit; padding: .4rem .65rem; cursor: pointer; margin: 0 .4rem .4rem 0; }
 .linked-message { outline: 2px solid #64846c; outline-offset: -2px; }
 #gstream:focus-visible { outline: 2px solid #64846c; }
 #main { margin: 0 auto; }

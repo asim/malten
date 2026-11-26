@@ -51,7 +51,11 @@ func (a *Agent) runReminders(ctx context.Context) {
 func (a *Agent) publishDaily(ctx context.Context, client *http.Client, base, date string) error {
 	var reminder *server.Message
 	var publishErr error
-	if stored := a.server.Retrieve("reminder-"+date, reminderStream, 0, 0, 1); len(stored) > 0 {
+	id := "reminder-" + date
+	if a.server.Removed(id, reminderStream) {
+		return a.server.Checkpoint()
+	}
+	if stored := a.server.Retrieve(id, reminderStream, 0, 0, 1); len(stored) > 0 {
 		reminder = stored[0]
 	} else {
 		var err error
@@ -70,7 +74,7 @@ func (a *Agent) publishDaily(ctx context.Context, client *http.Client, base, dat
 
 func (a *Agent) publishReflection(ctx context.Context, reminder *server.Message, date string) error {
 	id := "reflection-" + date
-	if !a.Available() || len(a.server.Retrieve(id, server.DefaultStream, 0, 0, 1)) > 0 {
+	if !a.Available() || a.server.Removed(id, server.DefaultStream) || len(a.server.Retrieve(id, server.DefaultStream, 0, 0, 1)) > 0 {
 		return nil
 	}
 	// Earlier releases used the same home ID for both kinds of post. Keep

@@ -25,6 +25,9 @@ func main() {
 	if err := server.Default.Restore("streams.json"); err != nil {
 		log.Fatal(err)
 	}
+	if err := server.Default.ConfigureAI("ai-usage.json", os.Getenv("MALTEN_AI_DAILY_LIMIT")); err != nil {
+		log.Fatal(err)
+	}
 	http.Handle("/mcp", server.MCPHandler(server.Default))
 	htmlContent, err := fs.Sub(html, "client/web")
 	if err != nil {
@@ -125,6 +128,9 @@ func main() {
 	}
 	go bookings.Run(ctx)
 	h := http.NewServeMux()
+	moderation := server.Default.ModerationHandler(os.Getenv("MALTEN_MOD_TOKEN"))
+	h.Handle("/reports", moderation)
+	h.Handle("/moderation", moderation)
 	private := bookings.Handler()
 	h.Handle("/session", private)
 	h.Handle("/session/", private)

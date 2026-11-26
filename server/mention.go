@@ -34,13 +34,16 @@ var (
 )
 
 // postMessage publishes the original text and sends an addressed question to Mu once.
-func (s *Server) postMessage(message *Message) error {
+func (s *Server) postMessage(message *Message, network string) error {
 	prompt, mentioned := MentionPrompt(message.Text)
 	if !mentioned {
+		if err := s.limitWrites("post", network, 15); err != nil {
+			return err
+		}
 		return s.Publish(message)
 	}
 	if prompt == "" {
 		return errNoQuestion
 	}
-	return s.queueCommand(message, prompt)
+	return s.queueCommand(message, prompt, network)
 }

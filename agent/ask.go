@@ -51,6 +51,14 @@ func (a *Agent) Ask(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	finish, err := a.server.BeginAI(server.ClientNetwork(r))
+	if err != nil {
+		if !server.WriteQuotaError(w, err) {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		}
+		return
+	}
+	defer finish()
 	req := readerRequest(messages[0], input.Question, input.Previous)
 	reply, err := a.ask(r.Context(), req)
 	if err != nil {

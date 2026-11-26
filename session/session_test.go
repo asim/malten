@@ -238,6 +238,44 @@ func TestGuestBooking(t *testing.T) {
 	host.want(t, "state?room="+ref, nil, 404)
 }
 
+func TestAIAllowancePerBookedPlace(t *testing.T) {
+	dir := t.TempDir()
+	m := &testMu{}
+	s, err := Open(dir, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, guest := browser(t, s.Handler()), browser(t, s.Handler())
+	ref := uuid.NewString()
+	booking := &input{Room: ref, Participants: 2}
+	host.want(t, "book", booking, 200)
+	m.receipt.Status = "paid"
+	paid := host.want(t, "refresh", booking, 200)
+	guest.want(t, "claim", &input{Room: ref, Invite: paid.Invites[0]}, 200)
+	host.want(t, "start", booking, 200)
+	ask := &input{Room: ref, Text: "A question", Ask: true}
+	for range 10 {
+		host.want(t, "post", ask, 200)
+	}
+	s, err = Open(dir, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.handler, guest.handler = s.Handler(), s.Handler()
+	host.want(t, "post", ask, 429)
+	host.want(t, "post", &input{Room: ref, Text: "Plain reflection"}, 200)
+	r := s.rooms[ref]
+	r.op.Lock()
+	guest.want(t, "post", ask, 429)
+	r.op.Unlock()
+	guest.want(t, "post", ask, 200)
+	s.now = func() time.Time { return time.Now().Add(11 * time.Minute) }
+	host.want(t, "post", ask, 200)
+	if len(m.asks) != 12 {
+		t.Fatal("unexpected paid Mu calls", len(m.asks))
+	}
+}
+
 func TestOneClaimWinsAndForeignOriginsCannotPost(t *testing.T) {
 	m := new(testMu)
 	s, err := Open(t.TempDir(), m)

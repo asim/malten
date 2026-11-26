@@ -95,18 +95,32 @@ func (s *Store) claim(r *room, who, invite string) error {
 	return errInvite
 }
 
-func (s *Store) append(r *room, author, text, parent string) (Message, error) {
-	if s.rooms[r.Reference] != r || r.status(s.now().Unix()) != "active" {
+func (s *Store) append(r *room, m Message, aiSeat int) (Message, error) {
+	now := s.now()
+	if s.rooms[r.Reference] != r || r.status(now.Unix()) != "active" {
 		return Message{}, errInactive
 	}
 	b := r.booking
-	if parent != "" && !slices.ContainsFunc(b.Messages, func(m Message) bool { return m.ID == parent }) {
+	if m.Parent != "" && !slices.ContainsFunc(b.Messages, func(p Message) bool { return p.ID == m.Parent }) {
 		return Message{}, clientError{409, "The original message is no longer in this private reflection."}
 	}
-	m := Message{ID: uuid.NewString(), Author: author, Text: text, Parent: parent, Created: s.now().Unix()}
-	if author == "Malten" {
+	if aiSeat >= 0 {
+		usage := make([]seatUsage, b.Participants)
+		copy(usage, b.AIUsage)
+		b.AIUsage = usage
+		seat := &usage[aiSeat]
+		if now.Unix() >= seat.Until {
+			seat.Until, seat.Count = now.Add(10*time.Minute).Unix(), 0
+		}
+		if seat.Count >= 10 {
+			return Message{}, clientError{429, "You’ve used your ten AI questions for this ten-minute period. You can still post."}
+		}
+		seat.Count++
+	}
+	m.ID, m.Created = uuid.NewString(), now.Unix()
+	if m.Author == "Malten" {
 		var html bytes.Buffer
-		if err := goldmark.Convert([]byte(text), &html); err != nil {
+		if err := goldmark.Convert([]byte(m.Text), &html); err != nil {
 			return Message{}, err
 		}
 		m.HTML = html.String()
@@ -123,7 +137,9 @@ func (s *Store) post(ctx context.Context, r *room, who string, in input) error {
 		return clientError{400, "Write a message of up to 4,096 UTF-8 bytes."}
 	}
 	if in.Ask {
-		r.op.Lock()
+		if !r.op.TryLock() {
+			return clientError{429, "This room is busy. Please try again shortly."}
+		}
 		defer r.op.Unlock()
 	}
 	if err := ctx.Err(); err != nil {
@@ -140,7 +156,10 @@ func (s *Store) post(ctx context.Context, r *room, who string, in input) error {
 		author = fmt.Sprintf("Guest %d", place)
 	}
 	id, history := r.Receipt.ID, r.Messages
-	question, err := s.append(r, author, body, in.Parent)
+	if !in.Ask {
+		place = -1
+	}
+	question, err := s.append(r, Message{Author: author, Text: body, Parent: in.Parent}, place)
 	s.mu.Unlock()
 	if err != nil || !in.Ask {
 		return err
@@ -153,7 +172,7 @@ func (s *Store) post(ctx context.Context, r *room, who string, in input) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.append(r, "Malten", server.NewMessage(reply, "").Text, question.ID); err != nil {
+	if _, err := s.append(r, Message{Author: "Malten", Text: server.NewMessage(reply, "").Text, Parent: question.ID}, -1); err != nil {
 		log.Printf("save paid agent reply: %v", err)
 		return errReply
 	}

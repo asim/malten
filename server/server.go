@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +48,8 @@ type Stream struct {
 	Thread        string `json:",omitempty"`
 	ThreadExpires int64  `json:",omitempty"`
 	// stream observers
-	Observers int64
+	Observers      int64
+	ReviewRevision uint64 `json:",omitempty"`
 }
 
 // Quote is a read-time excerpt of the live parent. Expires is Unix milliseconds.
@@ -78,6 +80,10 @@ type Message struct {
 	Stream     string
 	Metadata   *Metadata
 	References []Reference `json:",omitempty"`
+	// Review is local to the recovery snapshot. Reportable is set on reader copies.
+	Review     string `json:",omitempty"`
+	Reportable bool   `json:",omitempty"`
+	finish     func()
 }
 
 type Observer struct {
@@ -93,6 +99,7 @@ type Server struct {
 	Commands chan *Message
 
 	commandMu      sync.Mutex
+	limits         limits
 	statePath      string
 	nextDiskExpiry int64
 	dirty          bool
@@ -124,6 +131,7 @@ func Random(i int) string {
 func New() *Server {
 	return &Server{
 		Created:   time.Now().UnixNano(),
+		limits:    limits{windows: make(map[string]usageWindow), dailyLimit: defaultDailyAI},
 		Events:    make(chan *Message, 100),
 		streams:   make(map[string]*Stream),
 		metadata:  make(map[string]*Metadata),
@@ -248,17 +256,23 @@ func (s *Server) Broadcast(message *Message) {
 	var observers []*Observer
 
 	s.mtx.RLock()
+	defer s.mtx.RUnlock()
 	for _, o := range s.observers {
 		if o.Stream == message.Stream {
 			observers = append(observers, o)
 		}
 	}
-	if st := s.streams[message.Stream]; len(observers) > 0 && st != nil && message.Type != "event" {
-		batch := []*Message{message}
-		s.forReadersLocked(st, batch, time.Now().UnixNano())
+	if len(observers) > 0 && message.Type != "event" {
+		st := s.streams[message.Stream]
+		now := time.Now().UnixNano()
+		stored := st.liveMessage(message.Id, now)
+		if stored == nil {
+			return
+		}
+		batch := []*Message{stored}
+		s.forReadersLocked(st, batch, now)
 		message = batch[0]
 	}
-	s.mtx.RUnlock()
 
 	if message.Type == "event" {
 		message.Observers = len(observers)
@@ -296,7 +310,9 @@ func (s *Server) Metadata(t *Message) {
 			continue
 		}
 		s.mtx.Lock()
-		s.metadata[t.Id] = g
+		if s.streams[t.Stream].liveMessage(t.Id, time.Now().UnixNano()) != nil {
+			s.metadata[t.Id] = g
+		}
 		s.mtx.Unlock()
 		return
 	}
@@ -360,13 +376,21 @@ func (s *Server) store(message *Message) error {
 var errDuplicate = errors.New("message already exists")
 var errParentGone = errors.New("The original reflection is no longer in this stream.")
 
-func (st *Stream) liveMessage(id string, now int64) *Message {
+func (st *Stream) record(id string, now int64) *Message {
 	if st != nil {
 		for _, m := range st.Messages {
 			if m.Id == id && now-m.Created < st.TTL {
 				return m
 			}
 		}
+	}
+	return nil
+}
+
+func (st *Stream) liveMessage(id string, now int64) *Message {
+	m := st.record(id, now)
+	if m != nil && m.Type != removedMessage {
+		return m
 	}
 	return nil
 }
@@ -393,9 +417,10 @@ func (s *Server) storeLocked(message *Message, public bool) error {
 	}
 
 	// A caller can republish a retrieved message. Store only its own content.
-	if message.Quote != nil || message.Expires != 0 {
+	if message.Quote != nil || message.Expires != 0 || message.Reportable || message.Review != "" {
 		copy := *message
 		copy.Quote, copy.Expires = nil, 0
+		copy.Reportable, copy.Review = false, ""
 		message = &copy
 	}
 	s.dirty = true
@@ -422,14 +447,15 @@ func (s *Server) forReadersLocked(st *Stream, messages []*Message, now int64) {
 	}
 	if len(parents) != 0 {
 		for _, m := range st.Messages {
-			if _, wanted := parents[m.Id]; wanted && now-m.Created < st.TTL {
+			if _, wanted := parents[m.Id]; wanted && m.Type != removedMessage && now-m.Created < st.TTL {
 				parents[m.Id] = m
 			}
 		}
 	}
 	for i, m := range messages {
 		view := *m
-		view.Quote = nil
+		view.Quote, view.Review = nil, ""
+		view.Reportable = !st.Private
 		view.Expires = time.Unix(0, m.Created+st.TTL).UnixMilli()
 		if meta := s.metadata[m.Id]; meta != nil {
 			view.Metadata = meta
@@ -469,17 +495,18 @@ func (s *Server) Retrieve(id, stream string, direction, last, limit int64) []*Me
 	case direction < 0:
 		for i := len(st.Messages) - 1; i >= 0 && int64(len(messages)) < limit; i-- {
 			m := st.Messages[i]
-			if m.Created < last && now-m.Created < st.TTL {
+			if m.Type != removedMessage && m.Created < last && now-m.Created < st.TTL {
 				messages = append(messages, m)
 			}
 		}
 	default:
-		start := max(0, int64(len(st.Messages))-limit)
-		for _, m := range st.Messages[start:] {
-			if m.Created > last && now-m.Created < st.TTL {
+		for i := len(st.Messages) - 1; i >= 0 && int64(len(messages)) < limit; i-- {
+			m := st.Messages[i]
+			if m.Type != removedMessage && m.Created > last && now-m.Created < st.TTL {
 				messages = append(messages, m)
 			}
 		}
+		slices.Reverse(messages)
 	}
 	s.forReadersLocked(st, messages, now)
 	return messages
@@ -534,16 +561,24 @@ func Run() { Default.Run() }
 
 // SubmitCommand stores the question before the worker can publish its reply.
 func (s *Server) SubmitCommand(command *Message) bool {
-	return s.queueCommand(command, command.Text) == nil
+	return s.queueCommand(command, command.Text, "local") == nil
 }
 
-func (s *Server) queueCommand(message *Message, prompt string) error {
+func (s *Server) queueCommand(message *Message, prompt, network string) error {
 	s.commandMu.Lock()
 	defer s.commandMu.Unlock()
 	if len(s.Commands) >= cap(s.Commands) {
 		return errAgentUnavailable
 	}
+	if message.Parent != "" && len(s.Retrieve(message.Parent, message.Stream, 0, 0, 1)) == 0 {
+		return errParentGone
+	}
+	finish, err := s.BeginAI(network)
+	if err != nil {
+		return err
+	}
 	if err := s.store(message); err != nil {
+		finish()
 		if err == errDuplicate {
 			return nil
 		}
@@ -552,6 +587,7 @@ func (s *Server) queueCommand(message *Message, prompt string) error {
 	s.Broadcast(message)
 	command := *message
 	command.Text = prompt
+	command.finish = finish
 	s.Commands <- &command
 	return nil
 }

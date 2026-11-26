@@ -57,6 +57,11 @@ type seat struct {
 	Member string `json:"member,omitempty"`
 }
 
+type seatUsage struct {
+	Until int64
+	Count int
+}
+
 type booking struct {
 	Revision       uint64
 	StartRequested bool
@@ -65,8 +70,9 @@ type booking struct {
 	Participants   int
 	Created        int64
 	Receipt        Receipt
-	Seats          []seat    // The host already occupies the first place.
-	Messages       []Message `json:",omitempty"`
+	Seats          []seat      // The host already occupies the first place.
+	AIUsage        []seatUsage `json:",omitempty"` // Index zero is the host.
+	Messages       []Message   `json:",omitempty"`
 }
 
 type room struct {
