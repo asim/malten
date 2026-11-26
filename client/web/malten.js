@@ -109,54 +109,71 @@ function streamQuote(message, id) {
     return {text: (message.Type === 'command' ? '@malten ' : '') + message.Text, author, expires: message.Expires};
 }
 
+function appendReading(body, text) {
+    const paragraphs = text.split(/\r?\n\s*\n/);
+    if (paragraphs.length > 1) {
+        const reference = document.createElement('p');
+        reference.className = 'reference';
+        reference.textContent = paragraphs.shift();
+        body.append(reference);
+    }
+    const quote = document.createElement('blockquote');
+    quote.dir = 'auto';
+    quote.textContent = paragraphs.join('\n\n');
+    body.append(quote);
+}
+
+function verseCommentary(link) {
+    if (link.origin !== 'https://reminder.dev' || !/^\/quran\/\d+(?:\/\d+)?\/?$/.test(link.pathname)) return '';
+    const url = new URL(link.href);
+    url.searchParams.set('commentary', '1');
+    return url.href;
+}
+
 function renderDailyReminder(body, message) {
+    const byMalten = message.Source === muMaltenProfile;
     const source = document.createElement('a');
     source.href = message.Source;
-    source.textContent = 'Daily Reminder';
-    body.append(source);
+    if (byMalten) {
+        body.append('Daily reflection by ', maltenProfileLink('Malten'));
+    } else {
+        source.textContent = 'Daily Reminder';
+        body.append(source);
+    }
 
-    const isReflection = source.origin === 'https://reminder.dev' && source.pathname.startsWith('/daily/');
-    const passage = isReflection ? message.Metadata?.Description : message.Text;
-    const verseURL = isReflection ? message.Metadata?.Url : message.Source;
-    let container = body;
-    if (isReflection) {
+    const dated = source.origin === 'https://reminder.dev' && source.pathname.startsWith('/daily/');
+    const readings = message.References || (dated && message.Metadata
+        ? [{Title: 'Qur’an passage', Text: message.Metadata.Description, URL: message.Metadata.Url}] : []);
+    if (!byMalten && (!dated || readings.some(r => r.Text === message.Text))) {
+        appendReading(body, message.Text);
+    } else {
         const reflection = document.createElement('p');
         reflection.className = 'reflection-text';
         reflection.dir = 'auto';
         reflection.textContent = message.Text;
         body.append(reflection);
-        if (passage) {
-            container = document.createElement('details');
-            const summary = document.createElement('summary');
-            summary.textContent = 'Read the Qur’an passage';
-            container.append(summary);
-            body.append(container);
-        }
     }
-    if (passage) {
-        const paragraphs = passage.split(/\r?\n\s*\n/);
-        if (paragraphs.length > 1) {
-            const reference = document.createElement('p');
-            reference.className = 'reference';
-            reference.textContent = paragraphs.shift();
-            container.append(reference);
-        }
-        const verse = document.createElement('blockquote');
-        verse.dir = 'auto';
-        verse.textContent = paragraphs.join('\n\n');
-        container.append(verse);
+
+    let commentary = verseCommentary(source);
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'Explore the Islamic sources';
+    details.append(summary);
+    for (const reading of readings) {
+        if (!reading.Text && reading.URL === message.Source) continue;
+        const section = document.createElement('div');
+        section.className = 'daily-reading';
+        const link = document.createElement('a');
+        if (reading.URL) link.href = reading.URL;
+        const title = link.origin === 'https://reminder.dev' ? link : document.createElement('strong');
+        title.textContent = reading.Title === 'Hadith' ? 'A teaching of the Prophet Muhammad (hadith)' : reading.Title;
+        section.append(title);
+        if (reading.Text && reading.Text !== message.Text) appendReading(section, reading.Text);
+        details.append(section);
+        if (reading.Title === 'Qur’an passage') commentary = verseCommentary(link);
     }
-    if (!verseURL) return '';
-    const link = document.createElement('a');
-    link.href = verseURL;
-    if (link.origin !== 'https://reminder.dev' || !/^\/quran\/\d+(?:\/\d+)?\/?$/.test(link.pathname)) return '';
-    if (isReflection) {
-        link.textContent = passage ? 'Open passage on Reminder.dev' : 'Read the Qur’an passage';
-        container.append(link);
-    }
-    const commentary = new URL(link.href);
-    commentary.searchParams.set('commentary', '1');
-    return commentary.href;
+    if (details.children.length > 1) body.append(details);
+    return commentary;
 }
 
 function displayMessages(array, direction) {
@@ -188,7 +205,11 @@ function displayMessages(array, direction) {
         timestamp.textContent = relativeTime(array[i].Created, Date.now());
         var d2 = document.createElement('div');
         d2.className = 'message';
-        if (array[i].Type === 'command' || array[i].Source === muMaltenProfile) {
+        if (isReminder) {
+            item.className = 'daily-reminder';
+            item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
+            tafsirURL = renderDailyReminder(d2, array[i]);
+        } else if (array[i].Type === 'command' || array[i].Source === muMaltenProfile) {
             if (array[i].Source) {
                 item.appendChild(maltenProfileLink('Malten'));
             }
@@ -199,10 +220,6 @@ function displayMessages(array, direction) {
                 d2.style.whiteSpace = 'pre-wrap';
                 d2.textContent = (array[i].Type === 'command' ? '@malten ' : '') + array[i].Text;
             }
-        } else if (isReminder) {
-            item.className = 'daily-reminder';
-            item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
-            tafsirURL = renderDailyReminder(d2, array[i]);
         } else {
             d2.innerHTML = escapeHTML(tagText(array[i].Text)).parseURL(embed).parseHashTag();
             if (array[i].Source) {

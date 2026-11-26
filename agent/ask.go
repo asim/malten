@@ -75,7 +75,7 @@ func (a *Agent) Ask(w http.ResponseWriter, r *http.Request) {
 func readerRequest(message *server.Message, question string, previous *readerTurn) muRequest {
 	selected := contextMessage{Author: "Selected reflection", Text: message.Text}
 	if message.Stream == server.DefaultStream && strings.HasPrefix(message.Id, "reminder-") {
-		selected.Author = "Daily Reminder"
+		selected.Author = dailyByline(message)
 	}
 	req := muRequest{}
 	req.Context.Messages = []contextMessage{selected}
@@ -94,13 +94,6 @@ func readerRequest(message *server.Message, question string, previous *readerTur
 		question = "Explain this reflection in plain language."
 	}
 	req.Prompt = "Answer the reader about the selected reflection. " + reflectionGuidance + " Use relevant sources available to you when verification is needed and cite what you used.\n\n" + question
-	if passage := reminderPassage(message); passage != "" {
-		original := req.Context.Messages
-		req.Context.Messages = append(original, contextMessage{Author: "Qur’an passage", Text: passage})
-		// Preserve the reader’s question and earlier exchange when space is tight.
-		if wire, _ := json.Marshal(req); len(wire) > muRequestBytes {
-			req.Context.Messages = original
-		}
-	}
+	req.addReminderSources(message)
 	return req
 }

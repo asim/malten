@@ -246,6 +246,7 @@ ul li {
   color: #315d46;
   cursor: pointer;
 }
+.daily-reading { margin-top: .9rem; }
 .daily-reminder .reference {
   font-weight: bold;
   margin-bottom: .35rem;
@@ -256,6 +257,8 @@ ul li {
   color: #24372b;
   white-space: pre-line;
 }
+
+.daily-reminder .daily-reading blockquote { font: inherit; }
 
 .agent-reply ul { list-style: disc; }
 .agent-reply ul, .agent-reply ol { padding-inline-start: 1.6em; }

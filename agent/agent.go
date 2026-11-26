@@ -30,14 +30,14 @@ func Run(ctx context.Context) *Agent {
 	a := &Agent{
 		server:   server.Default,
 		client:   &http.Client{Timeout: 90 * time.Second},
-		endpoint: "https://micro.mu/agent/malten",
+		endpoint: muMaltenURL,
 		token:    os.Getenv("MU_TOKEN"),
 	}
 	if a.token != "" {
 		a.server.Commands = make(chan *server.Message, 32)
 		go a.runMu(ctx)
 	}
-	go runReminders(ctx, a.server.Events)
+	go a.runReminders(ctx)
 	return a
 }
 
@@ -108,6 +108,7 @@ type muRequest struct {
 	} `json:"context"`
 }
 
+const muMaltenURL = "https://micro.mu/agent/malten"
 const muRequestBytes = 32_000
 
 const reflectionGuidance = "Start with what the person shared. Use everyday language, follow their lead on faith, and explain unfamiliar terms when they ask about Islamic sources."
@@ -140,28 +141,37 @@ func (req *muRequest) addQuote(text, source string) {
 
 func streamRequest(s *server.Server, command *server.Message) muRequest {
 	req := muRequest{Prompt: command.Text, Thread: s.Thread(command.Stream)}
-	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection rooted in Islamic values and open to everyone. Posts expire after 24 hours by default. The home stream shares a daily reflection from Reminder.dev with its sources. Everyone in this stream can read the answer to an @malten mention. " + reflectionGuidance}
+	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection rooted in Islamic values and open to everyone. Posts expire after 24 hours by default. The home stream shares a daily reflection inspired by the Qur’an, hadith and a Name of Allah from Reminder.dev. Everyone in this stream can read the answer to an @malten mention. " + reflectionGuidance}
 	req.Context.Messages = []contextMessage{info}
+	haveReminder := false
 	if command.Parent != "" {
 		if parent := s.Retrieve(command.Parent, command.Stream, 0, 0, 1); len(parent) == 1 {
 			quoted := parent[0]
-			req.addQuote(reflectionWithPassage(quoted), quoted.Source)
+			req.addQuote(quoted.Text, quoted.Source)
+			req.addReminderSources(quoted)
+			haveReminder = command.Stream == server.DefaultStream && strings.HasPrefix(quoted.Id, "reminder-")
 		}
 	}
 	// Account for JSON escaping in Mu's 32 KB HTTP body limit.
 	base, _ := json.Marshal(req)
 	remaining := muRequestBytes - len(base)
+	contextRemaining := 16_000
+	for _, m := range req.Context.Messages {
+		contextRemaining -= len(m.Text) + len(m.Author)
+	}
 	var recent []contextMessage
 	count := 0
-	haveReminder := false
 	for _, m := range s.Retrieve("", command.Stream, -1, command.Created, server.MaxMessages) {
 		if m.Id == command.Parent || strings.TrimSpace(m.Text) == "" {
 			continue
 		}
 		entry := contextMessage{Text: m.Text}
 		if strings.HasPrefix(m.Id, "reminder-") && m.Source != "" && command.Stream == server.DefaultStream && !haveReminder {
-			entry.Author = "Daily Reminder"
-			entry.Text = reflectionWithPassage(m) + "\n" + m.Source
+			entry.Author = dailyByline(m)
+			entry.Text = excerpt(m.Text, 1200) + "\n" + m.Source
+			if sources := reminderContext(m); sources != "" {
+				entry.Text += "\n" + sources
+			}
 			haveReminder = true
 		} else if m.Type == "message" && m.Source == "" && count < 6 {
 			count++
@@ -171,7 +181,8 @@ func streamRequest(s *server.Server, command *server.Message) muRequest {
 		}
 		// Six bounded excerpts plus a reminder and app description fit the
 		// 16,000-byte context limit. Skip an entry if its wire encoding won't fit.
-		if len(entry.Text)+len(entry.Author) > 5000 {
+		size := len(entry.Text) + len(entry.Author)
+		if size > 5000 || size > contextRemaining {
 			continue
 		}
 		encoded, _ := json.Marshal(entry)
@@ -179,6 +190,7 @@ func streamRequest(s *server.Server, command *server.Message) muRequest {
 			continue
 		}
 		remaining -= len(encoded) + 1
+		contextRemaining -= size
 		recent = append(recent, entry)
 	}
 	slices.Reverse(recent)

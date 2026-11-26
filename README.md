@@ -5,7 +5,8 @@ A network for reflection
 ## Overview
 
 Malten is rooted in Islamic values and open to everyone. Share something from your day, ask a question, or read along.
-The home stream carries a short reflection from Reminder.dev. Open the Qur’an passage if you’d like to read further.
+Each day Malten shares a short reflection and a question you can answer from your own experience.
+It draws on the day’s Qur’an passage, hadith and Name of Allah from Reminder.dev. Open **Explore the Islamic sources** to read them and follow their links.
 
 By default, messages expire 24 hours after posting and idle streams expire after 24 hours. 
 Each stream holds up to 1,024 messages of 4,096 UTF-8 bytes each (4 MiB of message text per stream).
@@ -42,6 +43,8 @@ Clearing its cookies loses access to the booking. The private conversation expir
 Set `MU_TOKEN` to enable a [Mu](https://micro.mu) agent. For a deployment running as the
 `malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
+With the token configured, Malten asks Mu for one original post per daily entry. It sends the public readings in a fresh request. A daily post already in the stream is reused after a restart. If Mu is unavailable, Malten shares the original entry credited to Reminder.dev.
+
 Mention `@malten` anywhere in a message, for example `@malten what is this?`
 or `What does today’s passage mean, @malten?`. The original `/malten` shortcut
 also works at the start. Mentioning Malten sends Mu a bounded excerpt of up to six preceding reflections
@@ -60,9 +63,9 @@ for public replies. A starting instruction:
 > language. When someone asks about an Islamic teaching, explain unfamiliar terms
 > and name the source. Everyone in the stream can read your replies to `@malten` mentions.
 
-Choose **Ask Malten** beside a reflection or the Daily Reminder. Select **Explain this**
+Choose **Ask Malten** beside any reflection, including the daily post. Select **Explain this**
 or type your own question. For example, you can ask what a phrase means, request a
-translation, or ask for a source. The Daily Reminder links to the full entry on
+translation, or ask for a source. The daily post links to the full entry on
 Reminder.dev. When it includes a verse, you can also read its commentary (tafsir).
 
 The answer appears in your own dialog. Malten sends the selected post, its source,

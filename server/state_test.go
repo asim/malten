@@ -135,6 +135,7 @@ func TestQuotesFollowTheOriginal(t *testing.T) {
 	}
 	parent := NewMessage(strings.Repeat("界", 200), "quiet")
 	parent.Source = "https://reminder.dev/quran/1/1"
+	parent.References = []Reference{{Title: "Reading", Text: "an excerpt that must expire"}}
 	if err := s.store(parent); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +183,7 @@ func TestQuotesFollowTheOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err = os.ReadFile(path)
-	if err != nil || strings.Contains(string(data), "界") || strings.Contains(string(data), parent.Source) {
+	if err != nil || strings.Contains(string(data), "界") || strings.Contains(string(data), parent.Source) || strings.Contains(string(data), parent.References[0].Text) {
 		t.Fatal("original survived its expiry on disk", err)
 	}
 }
