@@ -111,7 +111,7 @@ type muRequest struct {
 const muMaltenURL = "https://micro.mu/agent/malten"
 const muRequestBytes = 32_000
 
-const reflectionGuidance = "Start with what the person shared. Use everyday language, follow their lead on faith, and explain unfamiliar terms when they ask about Islamic sources."
+const reflectionGuidance = "Start with what the person shared. Use everyday language and follow their lead on faith. Help them put a thought into words or offer a question they can consider. When asked about Islam, explain unfamiliar terms, cite sources you can verify and distinguish the teaching from your own reflection. Refer personal religious rulings to a qualified scholar."
 
 func excerpt(text string, limit int) string {
 	if len(text) <= limit {
