@@ -16,7 +16,7 @@ Run `malten` if the Go install directory is on your PATH. For a downloaded binar
 ./malten
 ```
 
-Browse to `localhost:9090` or host behind an nginx proxy
+Browse to `http://localhost:9090` locally.
 
 ## Deploy or redeploy on Linux
 
@@ -40,11 +40,17 @@ reads optional settings from `/etc/default/malten`. When deployed with the exist
 If you already manage a `malten.service`, its executable must point to
 `/usr/local/bin/malten`.
 
+### nginx on malten.me
+
+nginx handles public HTTPS and proxies requests to Malten on `127.0.0.1:9090`. For an existing HTTPS site, put the `map` in nginx’s `http` context and use the example’s proxy directives in the active `location /`. Keep the site’s TLS settings. The upgrade headers carry live stream events, including moderation removals. [Example nginx configuration](config/nginx.conf)
+
+nginx appends the visitor’s address to `X-Forwarded-For`. Malten uses the last address when the connection comes from loopback. For other connections it uses the peer address. After editing the active site, run `sudo nginx -t && sudo systemctl reload nginx`. The Malten deployment script restarts the Go service separately.
+
 ### Moderation and AI usage
 
 Readers can report public posts as soon as Malten is running. To review them, set `MALTEN_MOD_TOKEN` to a strong unique password in the service environment and restart Malten. Open `/moderation` over HTTPS and sign in with the username `moderator` and that password. The queue uses the live stream snapshot. Dismissing a report keeps the post visible. Removing it clears its text and quoted previews.
 
-Malten allows five free AI requests per network address per ten minutes, up to four outstanding at once and 100 per UTC day across the site. Mentions, the command endpoint, private **Ask Malten** dialogs and MCP share the allowance. Set `MALTEN_AI_DAILY_LIMIT` to change the daily request count, or to `0` to pause free AI. Reading and ordinary posts stay available. The date and total are saved in `ai-usage.json` before Mu is called. Network addresses are kept in memory. With the supplied local nginx proxy, Malten uses the final address nginx appends to `X-Forwarded-For`. For direct connections it uses the peer address.
+Malten allows five free AI requests per network address per ten minutes, up to four outstanding at once and 100 per UTC day across the site. Mentions, the command endpoint, private **Ask Malten** dialogs and MCP share the allowance. Set `MALTEN_AI_DAILY_LIMIT` to change the daily request count, or to `0` to pause free AI. Reading and ordinary posts stay available. The date and total are saved in `ai-usage.json` before Mu is called. Network addresses are kept in memory.
 
 Ordinary stream posts are limited to 15 per minute per network and reports to five. The scheduled daily reflection has its own publishing path. Paid rooms allow one AI question at a time and ten per participant per ten minutes, separately from the free allowance.
 
