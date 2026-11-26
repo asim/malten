@@ -80,6 +80,30 @@ func TestAskAboutSelectedReflection(t *testing.T) {
 	}
 }
 
+func TestPrivateAskSharesThePublicAllowance(t *testing.T) {
+	s := server.New()
+	post := server.NewMessage("Discuss this", server.DefaultStream)
+	if err := s.Publish(post); err != nil {
+		t.Fatal(err)
+	}
+	for range 5 {
+		done, err := s.BeginAI("192.0.2.3")
+		if err != nil {
+			t.Fatal(err)
+		}
+		done()
+	}
+	a := &Agent{server: s, token: "test"}
+	body, _ := json.Marshal(map[string]string{"id": post.Id})
+	r := httptest.NewRequest("POST", "/ask", bytes.NewReader(body))
+	r.RemoteAddr = "192.0.2.3:1234"
+	w := httptest.NewRecorder()
+	a.Ask(w, r)
+	if w.Code != 429 || w.Header().Get("Retry-After") == "" {
+		t.Fatal("reader reached Mu after exhausting the allowance", w.Code)
+	}
+}
+
 func TestAskRequiresLiveReflectionInStream(t *testing.T) {
 	s := server.New()
 	post := server.NewMessage("A reflection", "gardens")

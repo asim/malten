@@ -42,7 +42,7 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	message := NewCommand(command, stream)
 	message.Parent = r.Form.Get("parent")
-	if err := Default.queueCommand(message, command); err != nil {
+	if err := Default.queueCommand(message, command, ClientNetwork(r)); err != nil {
 		writePostError(w, err)
 	}
 }
@@ -72,6 +72,8 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 		stream = DefaultStream
 	}
 
+	// Read the revision first so a racing removal is caught by the next poll.
+	w.Header().Set("X-Malten-Review-Revision", strconv.FormatUint(Default.reviewRevision(stream), 10))
 	messages := Default.Retrieve(message, stream, direction, last, limit)
 	b, _ := json.Marshal(messages)
 	w.Header().Set("Content-Type", "application/json")
@@ -205,12 +207,15 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 
 	post := NewMessage(message, stream)
 	post.Parent = r.Form.Get("parent")
-	if err := Default.postMessage(post); err != nil {
+	if err := Default.postMessage(post, ClientNetwork(r)); err != nil {
 		writePostError(w, err)
 	}
 }
 
 func writePostError(w http.ResponseWriter, err error) {
+	if WriteQuotaError(w, err) {
+		return
+	}
 	status := http.StatusServiceUnavailable
 	switch err {
 	case errNoQuestion:

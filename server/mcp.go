@@ -26,6 +26,7 @@ type createStreamArgs struct {
 }
 
 func MCPHandler(s *Server) http.Handler {
+	type networkKey struct{}
 	api := mcp.NewServer(&mcp.Implementation{Name: "malten", Version: "1"}, nil)
 	mcp.AddTool(api, &mcp.Tool{Name: "list_streams", Description: "List public stream names."}, func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, map[string][]string, error) {
 		names := []string{}
@@ -62,7 +63,8 @@ func MCPHandler(s *Server) http.Handler {
 		}
 		message := NewMessage(args.Text, args.Stream)
 		message.Parent = args.Parent
-		if err := s.postMessage(message); err != nil {
+		network, _ := ctx.Value(networkKey{}).(string)
+		if err := s.postMessage(message, network); err != nil {
 			return nil, nil, err
 		}
 		return nil, map[string]string{"id": message.Id, "stream": message.Stream}, nil
@@ -77,5 +79,7 @@ func MCPHandler(s *Server) http.Handler {
 		return nil, map[string]string{"stream": args.Name}, nil
 	})
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return api }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 1 << 20})
-	return http.NewCrossOriginProtection().Handler(handler)
+	return http.NewCrossOriginProtection().Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), networkKey{}, ClientNetwork(r))))
+	}))
 }

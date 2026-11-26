@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reported reflections · Malten</title>
+  <link rel="stylesheet" href="/malten.css?v=moderation1">
+</head>
+<body>
+  <main class="agent-profile moderation">
+    <a class="back" href="/">Home stream</a>
+    <h1>Reported reflections</h1>
+    {{range .}}
+    <section>
+      <h2>{{.Reason}}</h2>
+      <p><a href="{{.Link}}">{{if eq .Stream "_"}}Home{{else}}#{{.Stream}}{{end}} · {{.Posted.Format "2 Jan, 15:04 UTC"}}</a></p>
+      <blockquote dir="auto">{{.Text}}</blockquote>
+      <form method="post" action="/moderation">
+        <input type="hidden" name="stream" value="{{.Stream}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button name="action" value="dismiss">Dismiss report</button>
+        <button name="action" value="remove">Remove post</button>
+      </form>
+    </section>
+    {{else}}<p>No reports to review.</p>{{end}}
+  </main>
+</body>
+</html>

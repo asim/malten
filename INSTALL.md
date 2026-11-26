@@ -40,6 +40,14 @@ reads optional settings from `/etc/default/malten`. When deployed with the exist
 If you already manage a `malten.service`, its executable must point to
 `/usr/local/bin/malten`.
 
+### Moderation and AI usage
+
+Readers can report public posts as soon as Malten is running. To review them, set `MALTEN_MOD_TOKEN` to a strong unique password in the service environment and restart Malten. Open `/moderation` over HTTPS and sign in with the username `moderator` and that password. The queue uses the live stream snapshot. Dismissing a report keeps the post visible. Removing it clears its text and quoted previews.
+
+Malten allows five free AI requests per network address per ten minutes, up to four outstanding at once and 100 per UTC day across the site. Mentions, the command endpoint, private **Ask Malten** dialogs and MCP share the allowance. Set `MALTEN_AI_DAILY_LIMIT` to change the daily request count, or to `0` to pause free AI. Reading and ordinary posts stay available. The date and total are saved in `ai-usage.json` before Mu is called. Network addresses are kept in memory. With the supplied local nginx proxy, Malten uses the final address nginx appends to `X-Forwarded-For`. For direct connections it uses the peer address.
+
+Ordinary stream posts are limited to 15 per minute per network and reports to five. The scheduled daily reflection has its own publishing path. Paid rooms allow one AI question at a time and ten per participant per ten minutes, separately from the free allowance.
+
 ### Enable paid private reflections
 
 In Mu, open **Edit agent → Mu Pay** for Malten. Enable payments and set the price

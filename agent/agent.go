@@ -49,6 +49,16 @@ func (a *Agent) runMu(ctx context.Context) {
 	outstanding := 0
 	start := func(command *server.Message) {
 		go func() {
+			defer func() {
+				command.FinishCommand()
+				select {
+				case completed <- command.Stream:
+				case <-ctx.Done():
+				}
+			}()
+			if len(s.Retrieve(command.Id, command.Stream, 0, 0, 1)) == 0 {
+				return
+			}
 			reply, err := a.ask(ctx, streamRequest(s, command))
 			if ctx.Err() != nil {
 				return
@@ -58,10 +68,6 @@ func (a *Agent) runMu(ctx context.Context) {
 				reply = muReply{Text: "Malten couldn’t get a reply from Mu. Please try again."}
 			}
 			s.Reply(command, reply.Text, a.endpoint, reply.Thread)
-			select {
-			case completed <- command.Stream:
-			case <-ctx.Done():
-			}
 		}()
 	}
 	for {

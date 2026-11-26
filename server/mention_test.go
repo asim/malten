@@ -26,7 +26,7 @@ func TestMentionPrompt(t *testing.T) {
 
 func TestMentionAdmission(t *testing.T) {
 	s := New()
-	post := func(text string) error { return s.postMessage(NewMessage(text, DefaultStream)) }
+	post := func(text string) error { return s.postMessage(NewMessage(text, DefaultStream), "visitor") }
 	if err := post("Hello @malten"); err != errAgentUnavailable {
 		t.Fatalf("disabled agent: %v", err)
 	}
