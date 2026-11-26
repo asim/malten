@@ -184,7 +184,7 @@ function displayMessages(array, direction) {
             continue;
         };
 
-        const isReminder = array[i].Source && array[i].Id.startsWith('reminder-');
+        const isReminder = array[i].Source && (array[i].Id.startsWith('reminder-') || array[i].Id.startsWith('reflection-'));
         var embed = true;
 
         if (array[i].Metadata != null && array[i].Metadata.Type != "player") {

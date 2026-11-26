@@ -354,7 +354,7 @@ func (s *Server) store(message *Message) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	return s.storeLocked(message)
+	return s.storeLocked(message, false)
 }
 
 var errDuplicate = errors.New("message already exists")
@@ -371,9 +371,12 @@ func (st *Stream) liveMessage(id string, now int64) *Message {
 	return nil
 }
 
-func (s *Server) storeLocked(message *Message) error {
+func (s *Server) storeLocked(message *Message, public bool) error {
 	stream := s.streams[message.Stream]
 	if stream != nil {
+		if public && stream.Private {
+			return errors.New("cannot publish publicly in an unlisted stream")
+		}
 		for _, previous := range stream.Messages {
 			if previous.Id == message.Id {
 				return errDuplicate
@@ -385,8 +388,7 @@ func (s *Server) storeLocked(message *Message) error {
 		return errParentGone
 	}
 	if stream == nil {
-		// default to a private stream
-		stream = NewStream(message.Stream, "", message.Stream != DefaultStream, int(StreamTTL.Seconds()))
+		stream = NewStream(message.Stream, "", !public && message.Stream != DefaultStream, int(StreamTTL.Seconds()))
 		s.streams[stream.Id] = stream
 	}
 
@@ -484,7 +486,19 @@ func (s *Server) Retrieve(id, stream string, direction, last, limit int64) []*Me
 }
 
 func (s *Server) Publish(message *Message) error {
-	if err := s.store(message); err != nil {
+	return s.publish(message, false)
+}
+
+// PublishPublic creates a listed stream if needed and respects existing unlisted streams.
+func (s *Server) PublishPublic(message *Message) error {
+	return s.publish(message, true)
+}
+
+func (s *Server) publish(message *Message, public bool) error {
+	s.mtx.Lock()
+	err := s.storeLocked(message, public)
+	s.mtx.Unlock()
+	if err != nil {
 		if err == errDuplicate {
 			return nil
 		}
@@ -557,7 +571,7 @@ func (s *Server) Reply(command *Message, text, source, thread string) {
 	reply.Source = source
 	reply.Parent = command.Id
 	s.mtx.Lock()
-	if err := s.storeLocked(reply); err != nil {
+	if err := s.storeLocked(reply, false); err != nil {
 		s.mtx.Unlock()
 		return
 	}

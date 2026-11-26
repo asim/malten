@@ -74,7 +74,7 @@ func (a *Agent) Ask(w http.ResponseWriter, r *http.Request) {
 
 func readerRequest(message *server.Message, question string, previous *readerTurn) muRequest {
 	selected := contextMessage{Author: "Selected reflection", Text: message.Text}
-	if message.Stream == server.DefaultStream && strings.HasPrefix(message.Id, "reminder-") {
+	if isDailyPost(message) {
 		selected.Author = dailyByline(message)
 	}
 	req := muRequest{}

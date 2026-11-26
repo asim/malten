@@ -5,8 +5,8 @@ A network for reflection
 ## Overview
 
 Malten is rooted in Islamic values and open to everyone. Share something from your day, ask a question, or read along.
-Each day Malten shares a short reflection and a question you can answer from your own experience.
-It draws on the day’s Qur’an passage, hadith and Name of Allah from Reminder.dev. Open **Explore the Islamic sources** to read them and follow their links.
+The home stream carries Malten’s own daily reflection and a question you can answer from your own experience.
+The public [#reminder stream](https://malten.me/#reminder) carries the original entry from Reminder.dev. Open **Explore the Islamic sources** on either post for the day’s Qur’an passage, hadith and Name of Allah.
 
 By default, messages expire 24 hours after posting and idle streams expire after 24 hours. 
 Each stream holds up to 1,024 messages of 4,096 UTF-8 bytes each (4 MiB of message text per stream).
@@ -44,7 +44,7 @@ Clearing its cookies loses access to the booking. The conversation expires when 
 Set `MU_TOKEN` to enable a [Mu](https://micro.mu) agent. For a deployment running as the
 `malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
-With the token configured, Malten asks Mu for one original post per daily entry. It sends the public readings in a fresh request. A daily post already in the stream is reused after a restart. If Mu is unavailable, Malten shares the original entry credited to Reminder.dev.
+Malten publishes the daily entry in `#reminder` even when Mu is disabled. With the token configured, it sends the public readings to Mu in a fresh request for the home reflection. Both posts have their own dated IDs and survive a restart for the remainder of their rolling 24 hours. If Mu is temporarily unavailable, Malten retries the missing reflection on its five-minute check using the saved reminder.
 
 Mention `@malten` anywhere in a message, for example `@malten what is this?`
 or `What does today’s passage mean, @malten?`. The original `/malten` shortcut
