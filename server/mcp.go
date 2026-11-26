@@ -16,6 +16,7 @@ type readStreamArgs struct {
 	Limit  int    `json:"limit,omitempty" jsonschema:"Number of recent messages (default 25)"`
 }
 type postMessageArgs struct {
+	Parent string `json:"parent,omitempty" jsonschema:"ID of the reflection to quote in this stream"`
 	Stream string `json:"stream,omitempty" jsonschema:"Stream name (defaults to the home stream)"`
 	Text   string `json:"text" jsonschema:"Reflection to publish, up to 4096 bytes"`
 }
@@ -60,6 +61,7 @@ func MCPHandler(s *Server) http.Handler {
 			args.Stream = DefaultStream
 		}
 		message := NewMessage(args.Text, args.Stream)
+		message.Parent = args.Parent
 		if err := s.postMessage(message); err != nil {
 			return nil, nil, err
 		}

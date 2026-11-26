@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/asim/malten/server"
+	"github.com/google/uuid"
 	"github.com/yuin/goldmark"
 )
 
@@ -94,21 +95,24 @@ func (s *Store) claim(r *room, who, invite string) error {
 	return errInvite
 }
 
-func (s *Store) append(r *room, author, text string) error {
+func (s *Store) append(r *room, author, text, parent string) (Message, error) {
 	if s.rooms[r.Reference] != r || r.status(s.now().Unix()) != "active" {
-		return errInactive
+		return Message{}, errInactive
 	}
 	b := r.booking
-	m := Message{Author: author, Text: text, Created: s.now().Unix()}
+	if parent != "" && !slices.ContainsFunc(b.Messages, func(m Message) bool { return m.ID == parent }) {
+		return Message{}, clientError{409, "The original message is no longer in this session."}
+	}
+	m := Message{ID: uuid.NewString(), Author: author, Text: text, Parent: parent, Created: s.now().Unix()}
 	if author == "Malten" {
 		var html bytes.Buffer
 		if err := goldmark.Convert([]byte(text), &html); err != nil {
-			return err
+			return Message{}, err
 		}
 		m.HTML = html.String()
 	}
 	b.Messages = append(slices.Clone(b.Messages[max(0, len(b.Messages)-server.MaxMessages+1):]), m)
-	return s.save(r, b)
+	return m, s.save(r, b)
 }
 
 func (s *Store) post(ctx context.Context, r *room, who string, in input) error {
@@ -136,19 +140,24 @@ func (s *Store) post(ctx context.Context, r *room, who string, in input) error {
 		author = fmt.Sprintf("Guest %d", place)
 	}
 	id, history := r.Receipt.ID, r.Messages
-	err := s.append(r, author, body)
+	question, err := s.append(r, author, body, in.Parent)
 	s.mu.Unlock()
 	if err != nil || !in.Ask {
 		return err
 	}
-	reply, err := s.muPay.AskSession(ctx, id, prompt, history)
+	question.Text = prompt
+	reply, err := s.muPay.AskSession(ctx, id, question, history)
 	if err != nil {
 		log.Printf("paid agent reply: %v", err)
 		return errReply
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.append(r, "Malten", server.NewMessage(reply, "").Text)
+	if _, err := s.append(r, "Malten", server.NewMessage(reply, "").Text, question.ID); err != nil {
+		log.Printf("save paid agent reply: %v", err)
+		return errReply
+	}
+	return nil
 }
 
 // A checkout redirect carries a public lookup ID. Only Mu's authenticated

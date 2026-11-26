@@ -41,7 +41,7 @@ type Stream struct {
 	Private bool
 	// In nanoseconds
 	Updated int64
-	// In seconds
+	// In nanoseconds
 	TTL int64
 	// Private continuation state, included only in the recovery snapshot.
 	Thread        string `json:",omitempty"`
@@ -50,15 +50,26 @@ type Stream struct {
 	Observers int64
 }
 
+// Quote is a read-time excerpt of the live parent. Expires is Unix milliseconds.
+type Quote struct {
+	Text    string
+	Source  string `json:",omitempty"`
+	Expires int64
+}
+
 type Message struct {
 	Observers int `json:",omitempty"`
 	Source    string
-	Id        string
-	Text      string
-	Type      string
-	Created   int64 `json:",string"`
-	Stream    string
-	Metadata  *Metadata
+	Parent    string `json:",omitempty"`
+	// Quote and Expires are populated on copies sent to readers.
+	Quote    *Quote `json:",omitempty"`
+	Expires  int64  `json:",omitempty"`
+	Id       string
+	Text     string
+	Type     string
+	Created  int64 `json:",string"`
+	Stream   string
+	Metadata *Metadata
 }
 
 type Observer struct {
@@ -234,6 +245,11 @@ func (s *Server) Broadcast(message *Message) {
 			observers = append(observers, o)
 		}
 	}
+	if st := s.streams[message.Stream]; len(observers) > 0 && st != nil && message.Type != "event" {
+		batch := []*Message{message}
+		s.forReadersLocked(st, batch, time.Now().UnixNano())
+		message = batch[0]
+	}
 	s.mtx.RUnlock()
 
 	if message.Type == "event" {
@@ -326,25 +342,51 @@ func (s *Server) Observe(o *Observer) {
 	}()
 }
 
-func (s *Server) store(message *Message) bool {
+func (s *Server) store(message *Message) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	return s.storeLocked(message)
 }
 
-func (s *Server) storeLocked(message *Message) bool {
-	stream, ok := s.streams[message.Stream]
-	if !ok {
+var errDuplicate = errors.New("message already exists")
+var errParentGone = errors.New("The original reflection is no longer in this stream.")
+
+func (st *Stream) liveMessage(id string, now int64) *Message {
+	if st != nil {
+		for _, m := range st.Messages {
+			if m.Id == id && now-m.Created < st.TTL {
+				return m
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) storeLocked(message *Message) error {
+	stream := s.streams[message.Stream]
+	if stream != nil {
+		for _, previous := range stream.Messages {
+			if previous.Id == message.Id {
+				return errDuplicate
+			}
+		}
+	}
+	now := time.Now().UnixNano()
+	if message.Parent != "" && stream.liveMessage(message.Parent, now) == nil {
+		return errParentGone
+	}
+	if stream == nil {
 		// default to a private stream
 		stream = NewStream(message.Stream, "", message.Stream != DefaultStream, int(StreamTTL.Seconds()))
 		s.streams[stream.Id] = stream
 	}
 
-	for _, previous := range stream.Messages {
-		if previous.Id == message.Id {
-			return false
-		}
+	// A caller can republish a retrieved message. Store only its own content.
+	if message.Quote != nil || message.Expires != 0 {
+		copy := *message
+		copy.Quote, copy.Expires = nil, 0
+		message = &copy
 	}
 	s.dirty = true
 	stream.Messages = append(stream.Messages, message)
@@ -352,103 +394,99 @@ func (s *Server) storeLocked(message *Message) bool {
 		stream.Messages = stream.Messages[1:]
 	}
 
-	stream.Updated = time.Now().UnixNano()
-	return true
+	stream.Updated = now
+	return nil
 }
 
-func (s *Server) Retrieve(message string, streem string, direction, last, limit int64) []*Message {
+// forReadersLocked resolves all parents in one pass, including those outside
+// the requested page. A quote never becomes part of the stored child.
+func (s *Server) forReadersLocked(st *Stream, messages []*Message, now int64) {
+	if len(messages) == 0 {
+		return
+	}
+	parents := make(map[string]*Message)
+	for _, m := range messages {
+		if m.Parent != "" {
+			parents[m.Parent] = nil
+		}
+	}
+	if len(parents) != 0 {
+		for _, m := range st.Messages {
+			if _, wanted := parents[m.Id]; wanted && now-m.Created < st.TTL {
+				parents[m.Id] = m
+			}
+		}
+	}
+	for i, m := range messages {
+		view := *m
+		view.Quote = nil
+		view.Expires = time.Unix(0, m.Created+st.TTL).UnixMilli()
+		if meta := s.metadata[m.Id]; meta != nil {
+			view.Metadata = meta
+		}
+		if p := parents[m.Parent]; p != nil {
+			text := p.Text
+			if p.Type == "command" {
+				text = "@malten " + text
+			}
+			if chars := []rune(text); len(chars) > 180 {
+				text = string(chars[:179]) + "…"
+			}
+			view.Quote = &Quote{Text: text, Source: p.Source, Expires: time.Unix(0, p.Created+st.TTL).UnixMilli()}
+		}
+		messages[i] = &view
+	}
+}
+
+func (s *Server) Retrieve(id, stream string, direction, last, limit int64) []*Message {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
-
-	var stream *Stream
-
-	stream, ok := s.streams[streem]
-	if !ok {
+	st := s.streams[stream]
+	if st == nil {
 		return []*Message{}
 	}
-
-	if len(message) == 0 {
-		var messages []*Message
-
-		if limit <= 0 {
-			return messages
+	now := time.Now().UnixNano()
+	var messages []*Message
+	switch {
+	case id != "":
+		if m := st.liveMessage(id, now); m != nil {
+			messages = append(messages, m)
+		} else {
+			return []*Message{}
 		}
-
-		li := int(limit)
-
-		// go back in time
-		if direction < 0 {
-			for i := len(stream.Messages) - 1; i >= 0; i-- {
-				if len(messages) >= li {
-					return messages
-				}
-
-				message := stream.Messages[i]
-
-				if message.Created < last {
-					if g, ok := s.metadata[message.Id]; ok {
-						tc := *message
-						tc.Metadata = g
-						messages = append(messages, &tc)
-					} else {
-						messages = append(messages, message)
-					}
-				}
-			}
-			return messages
-		}
-
-		start := 0
-		if len(stream.Messages) > li {
-			start = len(stream.Messages) - li
-		}
-
-		for i := start; i < len(stream.Messages); i++ {
-			if len(messages) >= li {
-				return messages
-			}
-
-			message := stream.Messages[i]
-
-			if message.Created > last {
-				if g, ok := s.metadata[message.Id]; ok {
-					tc := *message
-					tc.Metadata = g
-					messages = append(messages, &tc)
-				} else {
-					messages = append(messages, message)
-				}
+	case limit <= 0:
+		return nil
+	case direction < 0:
+		for i := len(st.Messages) - 1; i >= 0 && int64(len(messages)) < limit; i-- {
+			m := st.Messages[i]
+			if m.Created < last && now-m.Created < st.TTL {
+				messages = append(messages, m)
 			}
 		}
-		return messages
-	}
-
-	// retrieve one
-	for _, t := range stream.Messages {
-		var messages []*Message
-		if message == t.Id {
-			if g, ok := s.metadata[t.Id]; ok {
-				tc := *t
-				tc.Metadata = g
-				messages = append(messages, &tc)
-			} else {
-				messages = append(messages, t)
+	default:
+		start := max(0, int64(len(st.Messages))-limit)
+		for _, m := range st.Messages[start:] {
+			if m.Created > last && now-m.Created < st.TTL {
+				messages = append(messages, m)
 			}
-			return messages
 		}
 	}
-
-	return []*Message{}
+	s.forReadersLocked(st, messages, now)
+	return messages
 }
 
-func (s *Server) Publish(message *Message) {
-	if !s.store(message) {
-		return
+func (s *Server) Publish(message *Message) error {
+	if err := s.store(message); err != nil {
+		if err == errDuplicate {
+			return nil
+		}
+		return err
 	}
 	if message.Source == "" {
 		go s.Metadata(message)
 	}
 	s.Broadcast(message)
+	return nil
 }
 
 func (s *Server) Run() {
@@ -474,23 +512,26 @@ func Run() { Default.Run() }
 
 // SubmitCommand stores the question before the worker can publish its reply.
 func (s *Server) SubmitCommand(command *Message) bool {
-	return s.queueCommand(command, command.Text)
+	return s.queueCommand(command, command.Text) == nil
 }
 
-func (s *Server) queueCommand(message *Message, prompt string) bool {
+func (s *Server) queueCommand(message *Message, prompt string) error {
 	s.commandMu.Lock()
 	defer s.commandMu.Unlock()
 	if len(s.Commands) >= cap(s.Commands) {
-		return false
+		return errAgentUnavailable
 	}
-	if !s.store(message) {
-		return true
+	if err := s.store(message); err != nil {
+		if err == errDuplicate {
+			return nil
+		}
+		return err
 	}
 	s.Broadcast(message)
 	command := *message
 	command.Text = prompt
 	s.Commands <- &command
-	return true
+	return nil
 }
 
 func (s *Server) Thread(stream string) string {
@@ -506,24 +547,17 @@ func (s *Server) Thread(stream string) string {
 func (s *Server) Reply(command *Message, text, source, thread string) {
 	reply := NewMessage(text, command.Stream)
 	reply.Source = source
+	reply.Parent = command.Id
 	s.mtx.Lock()
-	st := s.streams[command.Stream]
-	if st == nil || reply.Created-command.Created >= st.TTL {
+	if err := s.storeLocked(reply); err != nil {
 		s.mtx.Unlock()
 		return
 	}
-	for _, question := range st.Messages {
-		if question.Id != command.Id {
-			continue
-		}
-		s.storeLocked(reply)
-		if thread != "" {
-			st.Thread = thread
-			st.ThreadExpires = reply.Created + min(st.TTL, int64(StreamTTL))
-		}
-		s.mtx.Unlock()
-		s.Broadcast(reply)
-		return
+	if thread != "" {
+		st := s.streams[command.Stream]
+		st.Thread = thread
+		st.ThreadExpires = reply.Created + min(st.TTL, int64(StreamTTL))
 	}
 	s.mtx.Unlock()
+	s.Broadcast(reply)
 }

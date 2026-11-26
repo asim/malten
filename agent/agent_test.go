@@ -75,6 +75,9 @@ func TestMuCommandThreads(t *testing.T) {
 	for {
 		msg := s.Retrieve("", "a", 1, 0, 10)
 		if len(msg) == 5 && msg[4].Text == "Reply to again" {
+			if msg[3].Parent != msg[1].Id || msg[4].Parent != msg[2].Id {
+				t.Fatal("interleaved replies quoted the wrong question", msg)
+			}
 			break
 		}
 		select {
@@ -132,6 +135,9 @@ func TestPostedMentionGetsSharedReply(t *testing.T) {
 	if len(history) != 2 || history[0].Text != post || history[1].Source != mu.URL || s.Thread(server.DefaultStream) != "stream-thread" {
 		t.Fatal("question or reply missing on refresh", history)
 	}
+	if answer := history[1]; answer.Parent != history[0].Id || answer.Quote == nil || answer.Quote.Text != post {
+		t.Fatal("answer did not quote the reader’s original wording", answer)
+	}
 }
 
 func TestStreamPromptUsesOnlySameStream(t *testing.T) {
@@ -164,5 +170,28 @@ func TestStreamContextBudgetAndCutoff(t *testing.T) {
 	prompt := string(data)
 	if len(req.Context.Messages) != 7 || !strings.Contains(prompt, "closest reflection") || strings.Contains(prompt, "later post") || req.Prompt != q.Text {
 		t.Fatal("incorrect context selection or budget")
+	}
+}
+
+func TestQuotedStreamContext(t *testing.T) {
+	s := server.New()
+	parent := server.NewMessage("The specific passage", "quiet")
+	parent.Source = "https://reminder.dev/quran/1/1"
+	s.Publish(parent)
+	for range 8 {
+		s.Publish(server.NewMessage("More recent reflection", "quiet"))
+	}
+	for _, stream := range []string{"quiet", "other"} {
+		q := server.NewCommand("What does this mean?", stream)
+		q.Parent = parent.Id
+		context := streamRequest(s, q).Context.Messages
+		data, _ := json.Marshal(context)
+		if stream == "quiet" {
+			if len(context) != 8 || context[1].Author != "Quoted reflection" || !strings.Contains(context[1].Text, parent.Source) || strings.Count(string(data), parent.Text) != 1 {
+				t.Fatal("Mu did not receive the specific older reflection", context)
+			}
+		} else if strings.Contains(string(data), parent.Text) {
+			t.Fatal("quoted text crossed streams", context)
+		}
 	}
 }

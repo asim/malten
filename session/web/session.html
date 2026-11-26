@@ -8,7 +8,9 @@
   <link rel="icon" href="/favicon.ico">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/session/web/session.css">
+  <link rel="stylesheet" href="/replies.css">
   <script defer src="/profile-links.js"></script>
+  <script defer src="/replies.js"></script>
   <script defer src="/session/web/session.js"></script>
 </head>
 <body>
@@ -35,6 +37,10 @@
         <ol id="messages" aria-label="Session messages"></ol>
         <form id="compose">
           <label class="sr-only" for="message">What’s on your mind?</label>
+          <div id="reply-draft" class="reply-draft" hidden>
+            <div class="reply-preview"></div>
+            <button type="button" aria-label="Cancel reply">Cancel</button>
+          </div>
           <textarea id="message" aria-describedby="audience" rows="2" required placeholder="What’s on your mind?"></textarea>
           <div class="row"><button type="submit">Send</button><button type="submit" class="secondary" value="ask">Ask Malten</button></div>
         </form>

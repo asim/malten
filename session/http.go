@@ -99,6 +99,7 @@ func (s *Store) view(r *room, who string, detail bool) view {
 }
 
 type input struct {
+	Parent       string `json:"parent"`
 	Payment      string `json:"payment"`
 	Room         string `json:"room"`
 	Participants int    `json:"participants"`

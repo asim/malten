@@ -1,6 +1,7 @@
 "use strict";
 
 const el = id => document.getElementById(id);
+const roomReply = replyComposer(el("reply-draft"), el("message"));
 const params = new URLSearchParams(location.search);
 let room = params.get("room") || "";
 let invite = new URLSearchParams(location.hash.slice(1)).get("invite");
@@ -74,10 +75,22 @@ function showInvites(invites) {
   }));
 }
 
+function highlightRoomMessage() {
+  const list = el("messages");
+  list.querySelector(".linked-message")?.classList.remove("linked-message");
+  if (location.hash.startsWith("#message-")) {
+    const target = el(location.hash.slice(1));
+    if (target?.parentElement === list) target.classList.add("linked-message");
+  }
+}
+
 function showMessages(messages) {
   const key = JSON.stringify(messages);
   if (key === lastMessages) return;
   lastMessages = key;
+  const byID = new Map(messages.map(m => [m.id, m]));
+  if (roomReply.parent && !byID.has(roomReply.parent)) roomReply.unavailable();
+  const quote = m => m && ({text: m.text, author: m.author, expires: current.ends_at * 1000});
   el("messages").replaceChildren(...messages.map(m => {
     const li = document.createElement("li");
     const name = m.author === "Malten" ? maltenProfileLink(m.author) : document.createElement("strong");
@@ -93,9 +106,13 @@ function showMessages(messages) {
       text.innerHTML = m.html;
     } else { text.textContent = m.text; }
     linkMaltenMentions(text);
-    li.append(name, time, text);
+    li.id = "message-" + m.id;
+    li.append(name, time);
+    if (m.parent) li.append(replyQuote(quote(byID.get(m.parent)), m.parent, "#message-" + m.parent));
+    li.append(text, replyButton(() => roomReply.select(m.id, quote(m))));
     return li;
   }));
+  highlightRoomMessage();
 }
 
 function render(data) {
@@ -130,7 +147,10 @@ function render(data) {
   el("refresh").textContent = unconfirmed ? "Get price" : "Check payment";
   el("start").hidden = !(data.host && paid);
   el("chat").hidden = !active;
-  if (!active) el("message").value = "";
+  if (!active) {
+    el("message").value = "";
+    roomReply.clear();
+  }
   showInvites(data.invites || []);
   showMessages(active ? (data.messages || []) : []);
   clearTimeout(expiryTimer);
@@ -141,8 +161,10 @@ function render(data) {
 }
 
 function selectRoom(data) {
-  history.replaceState(null, "", "/session?" + new URLSearchParams({room: data.room}));
+  const target = location.hash.startsWith("#message-") ? location.hash : "";
+  history.replaceState(null, "", "/session?" + new URLSearchParams({room: data.room}) + target);
   render(data);
+  if (target) document.getElementById(target.slice(1))?.scrollIntoView({block: "center"});
 }
 
 async function act(task) {
@@ -185,12 +207,19 @@ el("compose").onsubmit = event => {
     const text = el("message").value.trim();
     if (!text) return;
     if (new TextEncoder().encode(text).length > 4096) throw new Error("Write a message of up to 4,096 UTF-8 bytes.");
+    const parent = roomReply.parent;
+    function clearSentDraft() {
+      if (el("message").value.trim() === text && roomReply.parent === parent) {
+        el("message").value = "";
+        roomReply.clear();
+      }
+    }
     try {
-      const data = await request("post", {room, text, ask});
-      if (el("message").value.trim() === text) el("message").value = "";
+      const data = await request("post", {room, text, ask, parent});
+      clearSentDraft();
       render(data);
     } catch (error) {
-      if (error.posted && el("message").value.trim() === text) el("message").value = "";
+      if (error.posted) clearSentDraft();
       throw error;
     }
   });
@@ -241,4 +270,5 @@ async function poll() {
 load().catch(error => { if (!current) el("status").textContent = ""; errorMessage(error.message); });
 setInterval(poll, 5000);
 document.addEventListener("visibilitychange", poll);
+window.addEventListener("hashchange", highlightRoomMessage);
 window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });

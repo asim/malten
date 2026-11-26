@@ -8,6 +8,8 @@ Malten is a network for daily reflection. Its made up of streams of text and not
 By default, messages expire 24 hours after posting and idle streams expire after 24 hours. 
 Each stream holds up to 1,024 messages of 4,096 UTF-8 bytes each (4 MiB of message text per stream).
 
+Choose **Reply** on a reflection to quote it in the same stream or private session. Select the quote to open the original. The excerpt is available for as long as the original remains in the conversation.
+
 Streams can be discovered through exploration or via the API.
 
 ## Private sessions
@@ -42,7 +44,7 @@ Mention `@malten` anywhere in a message, for example `@malten what is this?`
 or `What does today’s passage mean, @malten?`. The original `/malten` shortcut
 also works at the start. Mentioning Malten sends Mu a bounded excerpt of up to six preceding reflections
 from that stream in Mu’s per-request `context.messages`. The visitor’s question
-is sent as `prompt`. Mu saves the question and answer in the thread; an answer may quote an excerpt. Everyone in the stream sees the question and the reply from Malten. Both appear
+is sent as `prompt`. If you use **Reply** and mention `@malten`, Mu also receives the reflection you selected. Mu saves the question and answer in the thread. Everyone in the stream sees Malten’s answer with a linked quote of the question. Both appear
 in stream history on refresh. The stream saves its Mu thread with the existing
 recovery snapshot, so follow-ups can continue after a restart. The local link
 expires after the stream TTL or 24 hours of agent inactivity, whichever is shorter.
@@ -69,4 +71,4 @@ conversation history. Use `@malten` in the stream composer to ask publicly.
 
 ## MCP
 
-Connect an agent to `https://malten.me/mcp` using Streamable HTTP to list public streams, read or post reflections, and create streams.
+Connect an agent to `https://malten.me/mcp` using Streamable HTTP to list public streams, read or post reflections, and create streams. Pass a message ID as the optional `parent` argument to `post_message` to reply to it in the same stream.

@@ -51,10 +51,15 @@ func TestMCPStream(t *testing.T) {
 	if len(read.Messages) != 1 || read.Messages[0].Text != "First line\nSecond line" {
 		t.Fatal(read)
 	}
-	call("post_message", map[string]string{"text": "Could you explain this? @malten"}, nil)
+	parent := *read.Messages[0]
+	call("post_message", map[string]string{"text": "Could you explain this? @malten", "parent": parent.Id}, nil)
+	call("read_messages", map[string]int{"limit": 1}, &read)
+	if len(read.Messages) != 1 || read.Messages[0].Parent != parent.Id || read.Messages[0].Quote == nil || read.Messages[0].Quote.Text != parent.Text {
+		t.Fatal("MCP reader lost the quoted reflection", read.Messages)
+	}
 	select {
 	case question := <-s.Commands:
-		if question.Text != "Could you explain this?" || question.Stream != DefaultStream {
+		if question.Text != "Could you explain this?" || question.Stream != DefaultStream || question.Parent != parent.Id {
 			t.Fatalf("wrong question: %+v", question)
 		}
 	default:
