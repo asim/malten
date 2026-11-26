@@ -8,11 +8,12 @@ var last = timeAgo();
 var typing = false;
 var maxMessageBytes = 4096;
 var utf8 = new TextEncoder();
-var maxMessages = 1000;
+var maxMessages = 1024;
 var seen = {};
 var streams = {};
 var source;
 var activeAsk;
+var streamReply;
 var id = ID();
 
 String.prototype.parseURL = function(embed) {
@@ -80,8 +81,11 @@ function clearMessages() {
 
 function clipMessages() {
     var list = document.getElementById('messages');
-    while (list.length > maxMessages) {
-        list.removeChild(list.lastChild);
+    while (list.children.length > maxMessages) {
+        const id = list.lastElementChild.dataset.id;
+        delete seen[id];
+        list.lastElementChild.remove();
+        document.querySelectorAll('.reply-quote[data-parent="' + CSS.escape(id) + '"]').forEach(quote => quote.replaceWith(replyQuote(null)));
     }
 };
 
@@ -91,11 +95,24 @@ function escapeHTML(str) {
     return div.innerHTML.replace(/\r\n|\r|\n/g, '<br>');
 };
 
+function messageLink(id) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('message', id);
+    return url.href;
+}
+
+function streamQuote(message, id) {
+    if (!message) return null;
+    let author = '';
+    if (message.Source === muMaltenProfile) author = 'Malten';
+    else if (message.Source && id.startsWith('reminder-')) author = 'Daily Reminder';
+    return {text: (message.Type === 'command' ? '@malten ' : '') + message.Text, author, expires: message.Expires};
+}
+
 function displayMessages(array, direction) {
     var list = document.getElementById('messages');
-    var permalinkURL = new URL(window.location.href);
 
-    for (i = 0; i < array.length; i++) {
+    for (let i = 0; i < array.length; i++) {
         if (array[i].Id in seen) {
             continue;
         };
@@ -163,6 +180,10 @@ function displayMessages(array, direction) {
                 d2.appendChild(link);
             }
         }
+        const message = array[i];
+        if (message.Parent) {
+            item.appendChild(replyQuote(streamQuote(message.Quote, message.Parent), message.Parent, messageLink(message.Parent)));
+        }
         linkMaltenMentions(d2);
         item.appendChild(d2);
 
@@ -192,12 +213,17 @@ function displayMessages(array, direction) {
 
         item.id = 'message-' + array[i].Id;
         var permalink = document.createElement('a');
-        permalinkURL.searchParams.set('message', array[i].Id);
-        permalink.href = permalinkURL.href;
+        item.dataset.id = message.Id;
+        if (message.Expires) item.dataset.expires = message.Expires;
+        permalink.href = messageLink(message.Id);
         permalink.setAttribute('aria-label', 'Open reflection from ' + timestamp.title);
         permalink.appendChild(timestamp);
         footer.appendChild(permalink);
-        footer.appendChild(askButton(array[i], tafsirURL));
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+        actions.append(replyButton(() => streamReply.select(message.Id, streamQuote(message, message.Id))),
+            askButton(message, tafsirURL));
+        footer.appendChild(actions);
         item.appendChild(footer);
 
         if (direction >= 0) {
@@ -205,7 +231,7 @@ function displayMessages(array, direction) {
         } else {
             list.appendChild(item);
         }
-        seen[array[i].Id] = array[i];
+        seen[message.Id] = true;
     }
 
     if (direction >= 0) {
@@ -315,6 +341,7 @@ function newStream() {
 }
 
 function loadListeners() {
+    streamReply = replyComposer(document.getElementById('reply-draft'), document.getElementById('prompt'));
     if (window.navigator.standalone) {
         $.ajaxSetup({
             isLocal: true
@@ -362,6 +389,7 @@ function loadMore() {
         oldest = divs[divs.length - 1].getAttribute('data-time');
     }
 
+    var stream = getStream();
     var params = "?direction=-1&limit=" + limit + "&last=" + oldest;
 
     if (window.location.hash.length > 0) {
@@ -369,6 +397,7 @@ function loadMore() {
     };
 
     $.get(messageUrl + params, function(data) {
+            if (stream !== getStream()) return;
             if (data != undefined && data.length > 0) {
                 displayMessages(data, -1);
             }
@@ -441,8 +470,14 @@ function pollMessages() {
         var label = relativeTime(timestamp.dataset.time, now);
         if (timestamp.textContent !== label) timestamp.textContent = label;
     });
-    document.querySelectorAll('.daily-reminder[data-expires]').forEach(function(item) {
-        if (Number(item.dataset.expires) <= Date.now()) item.remove();
+    document.querySelectorAll('#messages > li[data-expires]').forEach(function(item) {
+        if (Number(item.dataset.expires) <= now) {
+            delete seen[item.dataset.id];
+            item.remove();
+        }
+    });
+    document.querySelectorAll('.reply-quote[data-expires]').forEach(function(quote) {
+        if (Number(quote.dataset.expires) <= now) quote.replaceWith(replyQuote(null));
     });
     if (typing == false) {
         loadMessages();
@@ -461,13 +496,20 @@ function postMessage() {
     var send = document.getElementById('send');
     send.disabled = true;
     status.textContent = '';
-    $.post(messageUrl, {message: draft, stream: getStream()})
+    const stream = getStream();
+    const parent = streamReply.parent;
+    $.post(messageUrl, {message: draft, stream: stream, parent: parent})
         .done(function() {
-            if (prompt.value === draft) prompt.value = '';
+            if (stream !== getStream()) return;
+            if (prompt.value === draft && streamReply.parent === parent) {
+                prompt.value = '';
+                streamReply.clear();
+            }
             updateComposer();
             loadMessages();
         })
         .fail(function(xhr) {
+            if (stream !== getStream()) return;
             var plainText = xhr.getResponseHeader('Content-Type')?.startsWith('text/plain');
             status.textContent = plainText && xhr.responseText ? xhr.responseText.trim() : 'Could not send. Please try again.';
         })
@@ -484,7 +526,7 @@ function processEvent(stream, event) {
 
     var ev = JSON.parse(event.data);
 
-    if (ev.Stream != stream) {
+    if (ev.Stream !== stream || stream !== getStream()) {
         return
     }
 
@@ -525,6 +567,7 @@ function setCurrent() {
 }
 
 function loadStream() {
+    streamReply?.clear();
     document.getElementById('ask-malten').close();
     document.getElementById("present").textContent = "";
     document.getElementById("link-status").textContent = "";

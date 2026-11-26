@@ -54,11 +54,11 @@ func (m *testMu) StartSession(ctx context.Context, id string) (Receipt, error) {
 	}
 	return m.Payment(ctx, id)
 }
-func (m *testMu) AskSession(_ context.Context, id, prompt string, history []Message) (string, error) {
+func (m *testMu) AskSession(_ context.Context, id string, question Message, history []Message) (string, error) {
 	if id != m.receipt.ID || m.receipt.Status != "active" {
 		return "", errors.New("wrong paid session")
 	}
-	m.asks = append(m.asks, prompt)
+	m.asks = append(m.asks, question.Text)
 	m.history = slices.Clone(history)
 	return "A private reply.", nil
 }
@@ -188,11 +188,18 @@ func TestGuestBooking(t *testing.T) {
 	if host.want(t, "start", in, 200).EndsAt != ends {
 		t.Fatal("second Start changed the clock")
 	}
-	guest.want(t, "post", &input{Room: ref, Text: "A shared reflection."}, 200)
+	firstPost := guest.want(t, "post", &input{Room: ref, Text: "A shared reflection."}, 200).Messages[0]
+	if firstPost.ID == "" {
+		t.Fatal("private message has no ID")
+	}
+	host.want(t, "post", &input{Room: ref, Text: "missing parent", Ask: true, Parent: uuid.NewString()}, 409)
 	const question = "What did the guest say? @Malten"
-	v = host.want(t, "post", &input{Room: ref, Text: question}, 200)
+	v = host.want(t, "post", &input{Room: ref, Text: question, Parent: firstPost.ID}, 200)
 	if len(v.Messages) != 3 || v.Messages[0].Author != "Guest 1" || v.Messages[1].Text != question || v.Messages[2].Author != "Malten" || len(m.asks) != 1 || m.asks[0] != "What did the guest say?" || len(m.history) != 1 {
 		t.Fatal("wrong shared paid turn", v.Messages, m.asks)
+	}
+	if v.Messages[1].Parent != firstPost.ID || v.Messages[1].ID == "" || v.Messages[2].Parent != v.Messages[1].ID {
+		t.Fatal("incorrect private reply chain", v.Messages)
 	}
 	if guest.want(t, "state?room="+ref, nil, 200).EndsAt != ends {
 		t.Fatal("guest clock differs")
@@ -205,8 +212,8 @@ func TestGuestBooking(t *testing.T) {
 	s = open()
 	h = s.Handler()
 	guest.handler, host.handler, stranger.handler = h, h, h
-	if len(guest.want(t, "state?room="+ref, nil, 200).Messages) != 3 {
-		t.Fatal("restart lost private history")
+	if messages := guest.want(t, "state?room="+ref, nil, 200).Messages; !slices.Equal(messages, v.Messages) {
+		t.Fatal("restart changed private messages or their links", messages)
 	}
 	late := stranger.want(t, "claim", &input{Room: ref, Invite: second}, 200)
 	if late.EndsAt != ends || len(late.Messages) != 3 {
@@ -344,5 +351,31 @@ func TestLatePaymentRecoversOnlyForOriginalHost(t *testing.T) {
 	}
 	if host.want(t, "return", returned, 200).Invites[0] != v.Invites[0] {
 		t.Fatal("receipt replay reissued a seat")
+	}
+}
+
+func TestLegacyRoomMessageLinks(t *testing.T) {
+	dir := t.TempDir()
+	ref := uuid.NewString()
+	b := booking{Reference: ref, Host: "host", Participants: 1, Created: time.Now().Unix(), Receipt: Receipt{ID: "paid-1", Status: "active", EndsAt: time.Now().Add(time.Hour).Unix()},
+		Messages: []Message{{Author: "Host", Text: "First"}, {Author: "Host", Text: "Second"}}}
+	data, err := json.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ref+".json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var parent string
+	for range 2 {
+		s, err := Open(dir, new(testMu))
+		if err != nil {
+			t.Fatal(err)
+		}
+		msg := s.rooms[ref].Messages
+		if msg[0].ID == "" || msg[0].ID == msg[1].ID || (parent != "" && msg[0].ID != parent) || msg[0].Parent != "" {
+			t.Fatal("invalid links in pre-existing room", msg)
+		}
+		parent = msg[0].ID
 	}
 }

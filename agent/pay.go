@@ -73,16 +73,28 @@ func (a *Agent) StartSession(ctx context.Context, id string) (session.Receipt, e
 	return a.paid(ctx, http.MethodPost, "/"+id+"/start", nil)
 }
 
-func (a *Agent) AskSession(ctx context.Context, id, prompt string, history []session.Message) (string, error) {
+func (a *Agent) AskSession(ctx context.Context, id string, question session.Message, history []session.Message) (string, error) {
 	if !a.Available() || !muID.MatchString(id) {
 		return "", errors.New("missing paid agent session")
 	}
-	req := muRequest{Prompt: prompt, Session: id}
+	req := muRequest{Prompt: question.Text, Session: id}
 	req.Context.Messages = []contextMessage{{Author: "Malten", Text: "This is a private Malten reflection session. The host and invited guests can read and respond."}}
+	if question.Parent != "" {
+		for _, m := range history {
+			if m.ID == question.Parent {
+				req.addQuote(m.Text, m.Author)
+				break
+			}
+		}
+	}
 	base, _ := json.Marshal(req)
-	budget := min(15_000, 32_000-len(base))
+	encodedContext, _ := json.Marshal(req.Context)
+	budget := min(15_000-len(encodedContext), muRequestBytes-len(base))
 	var recent []contextMessage
 	for i := len(history) - 1; i >= 0 && len(recent) < 6; i-- {
+		if question.Parent != "" && history[i].ID == question.Parent {
+			continue
+		}
 		m := contextMessage{Author: history[i].Author, Text: history[i].Text}
 		encoded, _ := json.Marshal(m)
 		if len(encoded)+1 > budget {

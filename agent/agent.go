@@ -121,10 +121,30 @@ func excerpt(text string, limit int) string {
 	return text[:end] + "…"
 }
 
+// Include the specific post being discussed before filling the recent-history
+// budget. Even the most heavily JSON-escaped text must fit Mu's request limit.
+func (req *muRequest) addQuote(text, source string) {
+	base, _ := json.Marshal(req)
+	limit := min(1800, (muRequestBytes-len(base)-64)/6)
+	if limit < len("…") {
+		return
+	}
+	text = excerpt(text, 1400)
+	if source != "" {
+		text += "\n" + excerpt(source, 300)
+	}
+	req.Context.Messages = append(req.Context.Messages, contextMessage{Author: "Quoted reflection", Text: excerpt(text, limit)})
+}
+
 func streamRequest(s *server.Server, command *server.Message) muRequest {
 	req := muRequest{Prompt: command.Text, Thread: s.Thread(command.Stream)}
 	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection. Posts expire after 24 hours by default. The home stream includes a daily Qur’an passage. Everyone in this stream can read the answer to an @malten mention."}
 	req.Context.Messages = []contextMessage{info}
+	if command.Parent != "" {
+		if parent := s.Retrieve(command.Parent, command.Stream, 0, 0, 1); len(parent) == 1 {
+			req.addQuote(parent[0].Text, parent[0].Source)
+		}
+	}
 	// Account for JSON escaping in Mu's 32 KB HTTP body limit.
 	base, _ := json.Marshal(req)
 	remaining := muRequestBytes - len(base)
@@ -132,7 +152,7 @@ func streamRequest(s *server.Server, command *server.Message) muRequest {
 	count := 0
 	haveReminder := false
 	for _, m := range s.Retrieve("", command.Stream, -1, command.Created, server.MaxMessages) {
-		if strings.TrimSpace(m.Text) == "" {
+		if m.Id == command.Parent || strings.TrimSpace(m.Text) == "" {
 			continue
 		}
 		entry := contextMessage{Text: m.Text}

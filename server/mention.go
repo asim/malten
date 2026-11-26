@@ -37,14 +37,10 @@ var (
 func (s *Server) postMessage(message *Message) error {
 	prompt, mentioned := MentionPrompt(message.Text)
 	if !mentioned {
-		s.Publish(message)
-		return nil
+		return s.Publish(message)
 	}
 	if prompt == "" {
 		return errNoQuestion
 	}
-	if !s.queueCommand(message, prompt) {
-		return errAgentUnavailable
-	}
-	return nil
+	return s.queueCommand(message, prompt)
 }

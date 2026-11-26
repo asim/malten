@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,8 @@ type Receipt struct {
 }
 
 type Message struct {
+	ID      string `json:"id"`
+	Parent  string `json:"parent,omitempty"`
 	Author  string `json:"author"`
 	Text    string `json:"text"`
 	Created int64  `json:"created"`
@@ -46,7 +49,7 @@ type Provider interface {
 	Checkout(context.Context, string, int) (Receipt, error)
 	Payment(context.Context, string) (Receipt, error)
 	StartSession(context.Context, string) (Receipt, error)
-	AskSession(context.Context, string, string, []Message) (string, error)
+	AskSession(context.Context, string, Message, []Message) (string, error)
 }
 
 type seat struct {
@@ -123,6 +126,13 @@ func Open(dir string, provider Provider) (*Store, error) {
 		}
 		if r.Reference != ref || r.Host == "" || r.Participants < 1 || r.Participants > 100 {
 			return nil, errors.New("invalid saved booking " + ref)
+		}
+		// Old room files had no message IDs. Use the saved position so links
+		// stay stable across restarts, even before the next room write.
+		for i := range r.Messages {
+			if r.Messages[i].ID == "" {
+				r.Messages[i].ID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(ref+"/"+strconv.Itoa(i))).String()
+			}
 		}
 		s.rooms[ref] = &r
 	}

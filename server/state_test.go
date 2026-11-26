@@ -34,7 +34,7 @@ func TestRestartAndExpiry(t *testing.T) {
 	if got := restarted.Retrieve("", "quiet", 1, 0, 25); len(got) != 1 || got[0].Created != message.Created || got[0].Id != message.Id {
 		t.Fatal(got)
 	}
-	if restarted.store(message) {
+	if restarted.store(message) != errDuplicate {
 		t.Fatal("stored duplicate after restart")
 	}
 	data, err := os.ReadFile(path)
@@ -81,7 +81,7 @@ func TestSharedCommandAndReplySurviveRestart(t *testing.T) {
 	const source = "https://micro.mu/agent/malten"
 	s.Reply(<-s.Commands, "A reply.", source, "owned-thread")
 	for _, client := range clients {
-		if m := <-client.Events; m.Source != source || m.Text != "A reply." {
+		if m := <-client.Events; m.Source != source || m.Text != "A reply." || m.Parent != q.Id || m.Quote == nil || m.Quote.Text != "@malten "+q.Text {
 			t.Fatal(m)
 		}
 	}
@@ -95,6 +95,9 @@ func TestSharedCommandAndReplySurviveRestart(t *testing.T) {
 	history := restored.Retrieve("", "quiet", 1, 0, 25)
 	if len(history) != 2 || history[0].Id != q.Id || history[1].Source != source || restored.Thread("quiet") != "owned-thread" || restored.Thread("other") != "" {
 		t.Fatalf("incorrect restored conversation: %+v", history)
+	}
+	if history[1].Parent != q.Id || history[1].Quote == nil || history[1].Quote.Text != "@malten "+q.Text {
+		t.Fatal("lost the question on restart", history[1])
 	}
 	if restored.List()["quiet"].Thread != "" {
 		t.Fatal("private thread exposed in stream listing")
@@ -118,5 +121,83 @@ func TestMessageTextLimit(t *testing.T) {
 		if len(text) <= MaxMessageSize && text != reply {
 			t.Fatal("short reply changed")
 		}
+	}
+}
+
+func TestQuotesFollowTheOriginal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "streams.json")
+	s := New()
+	if err := s.Restore(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.New("quiet", "", true, 60); err != nil {
+		t.Fatal(err)
+	}
+	parent := NewMessage(strings.Repeat("界", 200), "quiet")
+	parent.Source = "https://reminder.dev/quran/1/1"
+	if err := s.store(parent); err != nil {
+		t.Fatal(err)
+	}
+	child := NewMessage("My reflection", "quiet")
+	child.Parent = parent.Id
+	if err := s.store(child); err != nil {
+		t.Fatal(err)
+	}
+	page := s.Retrieve("", "quiet", 1, 0, 1)
+	if len(page) != 1 || page[0].Quote == nil {
+		t.Fatal("parent outside the page was unavailable", page)
+	}
+	q := page[0].Quote
+	if q.Source != parent.Source || q.Text != strings.Repeat("界", 179)+"…" || q.Expires != time.Unix(0, parent.Created+int64(time.Minute)).UnixMilli() {
+		t.Fatal("invalid quote", q)
+	}
+	foreign := NewMessage("Other stream", "other")
+	foreign.Parent = parent.Id
+	if s.Publish(foreign) != errParentGone || s.List()["other"] != nil {
+		t.Fatal("accepted a parent from a different stream")
+	}
+	if err := s.Checkpoint(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(data), `"Quote"`) || strings.Contains(string(data), `"Expires"`) || !strings.Contains(string(data), `"Parent":"`+parent.Id+`"`) {
+		t.Fatal("snapshot should store only the link", string(data), err)
+	}
+	parent.Created -= int64(time.Minute)
+	if len(s.Retrieve(parent.Id, "quiet", 0, 0, 1)) != 0 {
+		t.Fatal("returned expired parent before cleanup")
+	}
+	if view := s.Retrieve(child.Id, "quiet", 0, 0, 1)[0]; view.Parent != parent.Id || view.Quote != nil {
+		t.Fatal("returned expired excerpt before cleanup", view)
+	}
+	if err := s.Publish(child); err != nil {
+		t.Fatal("retry of an existing reply changed after parent expiry", err)
+	}
+	late := NewMessage("Too late", "quiet")
+	late.Parent = parent.Id
+	if s.Publish(late) != errParentGone {
+		t.Fatal("accepted reply to expired reflection")
+	}
+	if err := s.Checkpoint(); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil || strings.Contains(string(data), "界") || strings.Contains(string(data), parent.Source) {
+		t.Fatal("original survived its expiry on disk", err)
+	}
+}
+
+func TestEvictedParentDoesNotLeaveAQuote(t *testing.T) {
+	s := New()
+	parent := NewMessage("First", "quiet")
+	s.store(parent)
+	child := NewMessage("Second", "quiet")
+	child.Parent = parent.Id
+	s.store(child)
+	for range MaxMessages - 1 {
+		s.store(NewMessage("Later", "quiet"))
+	}
+	if view := s.Retrieve(child.Id, "quiet", 0, 0, 1)[0]; view.Parent != parent.Id || view.Quote != nil {
+		t.Fatal("evicted parent left a quote", view)
 	}
 }

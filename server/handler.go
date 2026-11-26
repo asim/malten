@@ -41,8 +41,9 @@ func PostCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	message := NewCommand(command, stream)
-	if !Default.SubmitCommand(message) {
-		http.Error(w, "Agent busy", http.StatusServiceUnavailable)
+	message.Parent = r.Form.Get("parent")
+	if err := Default.queueCommand(message, command); err != nil {
+		writePostError(w, err)
 	}
 }
 
@@ -202,13 +203,22 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := Default.postMessage(NewMessage(message, stream)); err != nil {
-		status := http.StatusServiceUnavailable
-		if err == errNoQuestion {
-			status = http.StatusBadRequest
-		}
-		http.Error(w, err.Error(), status)
+	post := NewMessage(message, stream)
+	post.Parent = r.Form.Get("parent")
+	if err := Default.postMessage(post); err != nil {
+		writePostError(w, err)
 	}
+}
+
+func writePostError(w http.ResponseWriter, err error) {
+	status := http.StatusServiceUnavailable
+	switch err {
+	case errNoQuestion:
+		status = http.StatusBadRequest
+	case errParentGone:
+		status = http.StatusConflict
+	}
+	http.Error(w, err.Error(), status)
 }
 
 func WithCors(h http.Handler) http.Handler {

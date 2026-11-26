@@ -30,7 +30,11 @@ func TestMuPayWireContract(t *testing.T) {
 			if req.Session != "paid-1" || req.Thread != "" || strings.Contains(string(raw), "public_only") || len(raw) > 32000 {
 				t.Error("wrong paid request")
 			}
-			if len(req.Context.Messages) < 2 || req.Context.Messages[1].Author != "Host" {
+			if req.Prompt == "A quoted question" {
+				if len(req.Context.Messages) != 8 || req.Context.Messages[1].Author != "Quoted reflection" || strings.Count(string(raw), "A reflection") != 1 {
+					t.Error("missing quoted room message or duplicated context", string(raw))
+				}
+			} else if len(req.Context.Messages) < 2 || req.Context.Messages[1].Author != "Host" {
 				t.Error("missing room context")
 			}
 			io.WriteString(w, `{"text":"Through Mu","thread":"private-to-Mu"}`)
@@ -55,7 +59,7 @@ func TestMuPayWireContract(t *testing.T) {
 	origin = mock.URL
 	a := &Agent{endpoint: origin + "/agent/malten", client: mock.Client(), token: "agent-token"}
 	ctx := context.Background()
-	if _, err := a.AskSession(ctx, "", "unscoped", nil); err == nil {
+	if _, err := a.AskSession(ctx, "", session.Message{Text: "unscoped"}, nil); err == nil {
 		t.Fatal("empty paid session reached Mu")
 	}
 	if p, err := a.Checkout(ctx, "booking", 3); err != nil || p.Amount != 900 {
@@ -67,11 +71,15 @@ func TestMuPayWireContract(t *testing.T) {
 	if _, err := a.StartSession(ctx, "paid-1"); err != nil {
 		t.Fatal(err)
 	}
-	history := []session.Message{{Author: "Host", Text: "A reflection"}}
-	for range 2 {
-		if reply, err := a.AskSession(ctx, "paid-1", "A question", history); err != nil || reply != "Through Mu" {
-			t.Fatal(reply, err)
-		}
+	history := []session.Message{{ID: "parent", Author: "Host", Text: "A reflection"}}
+	if reply, err := a.AskSession(ctx, "paid-1", session.Message{Text: "A question"}, history); err != nil || reply != "Through Mu" {
+		t.Fatal(reply, err)
+	}
+	for range 8 {
+		history = append(history, session.Message{Author: "Guest 1", Text: "A later reflection"})
+	}
+	if reply, err := a.AskSession(ctx, "paid-1", session.Message{Text: "A quoted question", Parent: "parent"}, history); err != nil || reply != "Through Mu" {
+		t.Fatal(reply, err)
 	}
 	want := "POST /agent/malten/pay,GET /agent/malten/pay/paid-1,POST /agent/malten/pay/paid-1/start,POST /agent/malten,POST /agent/malten"
 	if strings.Join(calls, ",") != want {
