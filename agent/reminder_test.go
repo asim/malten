@@ -28,7 +28,7 @@ func TestDailyReminder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Stream != "_" || m.Type != "message" || m.Id != "reminder-"+date || m.Text != "Reference\n\nPassage" || m.Source != "https://reminder.dev/quran/1#1" {
+	if m.Stream != reminderStream || m.Type != "message" || m.Id != "reminder-"+date || m.Text != "Reference\n\nPassage" || m.Source != "https://reminder.dev/quran/1#1" {
 		t.Fatalf("unexpected reminder: %+v", m)
 	}
 	if _, err := fetchReminder(context.Background(), api.Client(), api.URL, "missing"); err == nil {
@@ -55,10 +55,10 @@ func TestDailyReflectionAndItsSources(t *testing.T) {
 	}
 
 	s := server.New()
-	if err := s.Publish(m); err != nil {
+	if err := s.PublishPublic(m); err != nil {
 		t.Fatal(err)
 	}
-	question := server.NewCommand("What does this mean?", server.DefaultStream)
+	question := server.NewCommand("What does this mean?", reminderStream)
 	for _, parent := range []string{"", m.Id} {
 		question.Parent = parent
 		req := streamRequest(s, question)
@@ -168,6 +168,12 @@ func TestPublishOriginalDailyReflection(t *testing.T) {
 		return &Agent{server: s, client: api.Client(), endpoint: api.URL + "/agent/malten", token: "test-token"}
 	}
 	a := newAgent()
+	// The home stream may already have today's source reminder after an upgrade.
+	legacy := server.NewMessage("An earlier posting of the verse", server.DefaultStream)
+	legacy.Id, legacy.Source = "reminder-"+date, reminderOrigin+"/quran/71#25"
+	if err := a.server.Publish(legacy); err != nil {
+		t.Fatal(err)
+	}
 	question := server.NewCommand("Someone’s personal question", server.DefaultStream)
 	a.server.Publish(question)
 	a.server.Reply(question, "Previous shared answer", muMaltenURL, "home-thread")
@@ -175,10 +181,18 @@ func TestPublishOriginalDailyReflection(t *testing.T) {
 		if i > 0 {
 			a = newAgent()
 		}
-		if err := a.publishReminder(context.Background(), api.Client(), api.URL, date); err != nil {
+		if err := a.publishDaily(context.Background(), api.Client(), api.URL, date); err != nil {
 			t.Fatal(err)
 		}
-		posts := a.server.Retrieve("reminder-"+date, server.DefaultStream, 0, 0, 1)
+		sources := a.server.Retrieve("", reminderStream, 1, 0, 10)
+		listing := a.server.List()[reminderStream]
+		if len(sources) != 1 || sources[0].Text != summary || sources[0].Source != reminderOrigin+"/daily/"+date || listing == nil || listing.Private || listing.TTL != int64(server.StreamTTL) {
+			t.Fatal("missing original reminder or public listing", sources, listing)
+		}
+		if old := a.server.Retrieve(legacy.Id, server.DefaultStream, 0, 0, 1); len(old) != 1 || old[0].Text != legacy.Text || old[0].Created != legacy.Created {
+			t.Fatal("the previous home post lost its permalink or expiry")
+		}
+		posts := a.server.Retrieve("reflection-"+date, server.DefaultStream, 0, 0, 1)
 		if len(posts) != 1 || posts[0].Source != muMaltenURL || posts[0].Text != original || len(posts[0].References) != 4 || a.server.Thread(server.DefaultStream) != "home-thread" {
 			t.Fatal("wrong post, attribution, sources or conversation", posts)
 		}
@@ -202,17 +216,21 @@ func TestPublishOriginalDailyReflection(t *testing.T) {
 	}
 }
 
-func TestDailyFallbackKeepsSourceAttribution(t *testing.T) {
+func TestMissingReflectionRetriesFromSavedReminder(t *testing.T) {
 	const sourceText = "What does it mean to care for something you found?"
 	const date = "2026-11-26"
 	for _, tc := range []struct{ name, token, output string }{
 		{"disabled", "", ""}, {"unavailable", "test", ""}, {"copied source", "test", sourceText}, {"oversize reply", "test", strings.Repeat("a", server.MaxMessageSize+1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var muCalls int
+			var archiveCalls, muCalls int
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/agent/malten" {
 					muCalls++
+					if tc.token == "" || muCalls > 1 {
+						json.NewEncoder(w).Encode(muReply{Text: "Who has looked out for you?"})
+						return
+					}
 					if tc.output == "" {
 						http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
 						return
@@ -220,21 +238,76 @@ func TestDailyFallbackKeepsSourceAttribution(t *testing.T) {
 					json.NewEncoder(w).Encode(muReply{Text: tc.output})
 					return
 				}
+				archiveCalls++
 				json.NewEncoder(w).Encode(map[string]string{"message": sourceText, "hadith": "Hadith text"})
 			}))
 			defer api.Close()
 			a := &Agent{server: server.New(), client: api.Client(), endpoint: api.URL + "/agent/malten", token: tc.token}
-			for range 2 {
-				if err := a.publishReminder(context.Background(), api.Client(), api.URL, date); err != nil {
-					t.Fatal(err)
-				}
+			path := filepath.Join(t.TempDir(), "streams.json")
+			if err := a.server.Restore(path); err != nil {
+				t.Fatal(err)
 			}
-			posts := a.server.Retrieve("", server.DefaultStream, 1, 0, 10)
+			if err := a.publishDaily(context.Background(), api.Client(), api.URL, date); (err != nil) != (tc.token != "") {
+				t.Fatal("unexpected first attempt result", err)
+			}
+			if posts := a.server.Retrieve("", server.DefaultStream, 1, 0, 10); len(posts) != 0 {
+				t.Fatal("an unsuccessful generation filled the home stream", posts)
+			}
+			posts := a.server.Retrieve("", reminderStream, 1, 0, 10)
 			if len(posts) != 1 || posts[0].Text != sourceText || posts[0].Source != reminderOrigin+"/daily/"+date || !slices.ContainsFunc(posts[0].References, func(r server.Reference) bool { return r.Text == "Hadith text" }) {
 				t.Fatal("could not recover with the original source", posts)
 			}
-			if (tc.token == "" && muCalls != 0) || (tc.token != "" && muCalls != 1) {
-				t.Fatal("unexpected retries", muCalls)
+			before := muCalls
+			if (tc.token == "" && before != 0) || (tc.token != "" && before != 1) {
+				t.Fatal("unexpected initial calls", before)
+			}
+			a.server, a.token = server.New(), "enabled"
+			if err := a.server.Restore(path); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := a.publishDaily(context.Background(), api.Client(), api.URL, date); err != nil {
+					t.Fatal(err)
+				}
+			}
+			home := a.server.Retrieve("", server.DefaultStream, 1, 0, 10)
+			if len(home) != 1 || home[0].Id != "reflection-"+date || home[0].Source != muMaltenURL || muCalls != before+1 || archiveCalls != 1 {
+				t.Fatal("did not fill only the missing reflection", home, muCalls, archiveCalls)
+			}
+		})
+	}
+}
+
+func TestExistingHomeReflectionOnlyBackfillsReminder(t *testing.T) {
+	const date = "2026-11-26"
+	for _, prefix := range []string{"reflection-", "reminder-"} {
+		t.Run(prefix, func(t *testing.T) {
+			var archiveCalls int
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/daily/"+date {
+					t.Error("unexpected generation for an existing original", r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				archiveCalls++
+				io.WriteString(w, `{"message":"The source reminder."}`)
+			}))
+			defer api.Close()
+			a := &Agent{server: server.New(), client: api.Client(), endpoint: api.URL + "/agent/malten", token: "on"}
+			m := server.NewMessage("An existing original.", server.DefaultStream)
+			m.Id, m.Source = prefix+date, muMaltenURL
+			if err := a.server.Publish(m); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := a.publishDaily(context.Background(), api.Client(), api.URL, date); err != nil {
+					t.Fatal(err)
+				}
+			}
+			home := a.server.Retrieve("", server.DefaultStream, 1, 0, 10)
+			source := a.server.Retrieve("reminder-"+date, reminderStream, 0, 0, 1)
+			if len(home) != 1 || home[0].Id != m.Id || home[0].Created != m.Created || len(source) != 1 || archiveCalls != 1 {
+				t.Fatal("unexpected backfill", home, source, archiveCalls)
 			}
 		})
 	}

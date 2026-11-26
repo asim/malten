@@ -124,6 +124,24 @@ func TestMessageTextLimit(t *testing.T) {
 	}
 }
 
+func TestPublishPublicRespectsExistingVisibility(t *testing.T) {
+	s := New()
+	if err := s.New("unlisted", "", true, int(StreamTTL.Seconds())); err != nil {
+		t.Fatal(err)
+	}
+	m := NewMessage("Public post", "unlisted")
+	if err := s.PublishPublic(m); err == nil || !s.List()["unlisted"].Private || len(s.Retrieve(m.Id, "unlisted", 0, 0, 1)) != 0 {
+		t.Fatal("published into an unlisted stream or changed its visibility")
+	}
+	m.Stream = "listed"
+	if err := s.PublishPublic(m); err != nil {
+		t.Fatal(err)
+	}
+	if st := s.List()["listed"]; st == nil || st.Private || st.TTL != int64(StreamTTL) {
+		t.Fatal("public post is not discoverable with the daily TTL", st)
+	}
+}
+
 func TestQuotesFollowTheOriginal(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "streams.json")
 	s := New()

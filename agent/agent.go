@@ -141,7 +141,7 @@ func (req *muRequest) addQuote(text, source string) {
 
 func streamRequest(s *server.Server, command *server.Message) muRequest {
 	req := muRequest{Prompt: command.Text, Thread: s.Thread(command.Stream)}
-	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection rooted in Islamic values and open to everyone. Posts expire after 24 hours by default. The home stream shares a daily reflection inspired by the Qur’an, hadith and a Name of Allah from Reminder.dev. Everyone in this stream can read the answer to an @malten mention. " + reflectionGuidance}
+	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection rooted in Islamic values and open to everyone. Posts expire after 24 hours by default. The home stream shares Malten’s daily reflection. The #reminder stream carries the original Qur’an, hadith and Name of Allah readings from Reminder.dev. Everyone in this stream can read the answer to an @malten mention. " + reflectionGuidance}
 	req.Context.Messages = []contextMessage{info}
 	haveReminder := false
 	if command.Parent != "" {
@@ -149,7 +149,7 @@ func streamRequest(s *server.Server, command *server.Message) muRequest {
 			quoted := parent[0]
 			req.addQuote(quoted.Text, quoted.Source)
 			req.addReminderSources(quoted)
-			haveReminder = command.Stream == server.DefaultStream && strings.HasPrefix(quoted.Id, "reminder-")
+			haveReminder = isDailyPost(quoted)
 		}
 	}
 	// Account for JSON escaping in Mu's 32 KB HTTP body limit.
@@ -166,7 +166,7 @@ func streamRequest(s *server.Server, command *server.Message) muRequest {
 			continue
 		}
 		entry := contextMessage{Text: m.Text}
-		if strings.HasPrefix(m.Id, "reminder-") && m.Source != "" && command.Stream == server.DefaultStream && !haveReminder {
+		if isDailyPost(m) && m.Source != "" && !haveReminder {
 			entry.Author = dailyByline(m)
 			entry.Text = excerpt(m.Text, 1200) + "\n" + m.Source
 			if sources := reminderContext(m); sources != "" {
