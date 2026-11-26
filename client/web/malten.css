@@ -235,6 +235,17 @@ ul li {
   color: #315d46;
   text-decoration: underline;
 }
+.daily-reminder .reflection-text {
+  margin: .5rem 0;
+  white-space: pre-line;
+}
+.daily-reminder details {
+  margin-top: .75rem;
+}
+.daily-reminder summary {
+  color: #315d46;
+  cursor: pointer;
+}
 .daily-reminder .reference {
   font-weight: bold;
   margin-bottom: .35rem;

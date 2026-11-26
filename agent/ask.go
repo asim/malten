@@ -93,6 +93,14 @@ func readerRequest(message *server.Message, question string, previous *readerTur
 	if question == "" {
 		question = "Explain this reflection in plain language."
 	}
-	req.Prompt = "Answer the reader about the selected reflection. Use relevant sources available to you when verification is needed and cite what you used.\n\n" + question
+	req.Prompt = "Answer the reader about the selected reflection. " + reflectionGuidance + " Use relevant sources available to you when verification is needed and cite what you used.\n\n" + question
+	if passage := reminderPassage(message); passage != "" {
+		original := req.Context.Messages
+		req.Context.Messages = append(original, contextMessage{Author: "Qur’an passage", Text: passage})
+		// Preserve the reader’s question and earlier exchange when space is tight.
+		if wire, _ := json.Marshal(req); len(wire) > muRequestBytes {
+			req.Context.Messages = original
+		}
+	}
 	return req
 }

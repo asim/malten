@@ -4,7 +4,9 @@ A network for reflection
 
 ## Overview
 
-Malten is a network for daily reflection. Its made up of streams of text and nothing more. 
+Malten is rooted in Islamic values and open to everyone. Share something from your day, ask a question, or read along.
+The home stream carries a short reflection from Reminder.dev. Open the Qur’an passage if you’d like to read further.
+
 By default, messages expire 24 hours after posting and idle streams expire after 24 hours. 
 Each stream holds up to 1,024 messages of 4,096 UTF-8 bytes each (4 MiB of message text per stream).
 
@@ -53,15 +55,15 @@ To configure the hosted agent, open **Agents → Malten → Edit** in Mu. Give i
 instructions for a shared reflection stream and select only the services suitable
 for public replies. A starting instruction:
 
-> You are Malten, the guide to a network for reflection. Welcome newcomers,
-> help people reflect on the daily Qur’an passage when asked, and keep your
-> replies brief and grounded in the source. Everyone in the stream can read
-> your replies to `@malten` mentions.
+> You are Malten, the AI in a network for reflection rooted in Islamic values.
+> Start with what the person shared and follow their lead on faith. Use everyday
+> language. When someone asks about an Islamic teaching, explain unfamiliar terms
+> and name the source. Everyone in the stream can read your replies to `@malten` mentions.
 
 Choose **Ask Malten** beside a reflection or the Daily Reminder. Select **Explain this**
 or type your own question. For example, you can ask what a phrase means, request a
-translation, or ask for a source. The Daily Reminder also links to the passage with
-tafsir on Reminder.dev.
+translation, or ask for a source. The Daily Reminder links to the full entry on
+Reminder.dev. When it includes a verse, you can also read its commentary (tafsir).
 
 The answer appears in your own dialog. Malten sends the selected post, its source,
 and your question to the configured Mu agent. Each request starts a separate Mu

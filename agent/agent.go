@@ -110,6 +110,8 @@ type muRequest struct {
 
 const muRequestBytes = 32_000
 
+const reflectionGuidance = "Start with what the person shared. Use everyday language, follow their lead on faith, and explain unfamiliar terms when they ask about Islamic sources."
+
 func excerpt(text string, limit int) string {
 	if len(text) <= limit {
 		return text
@@ -138,11 +140,12 @@ func (req *muRequest) addQuote(text, source string) {
 
 func streamRequest(s *server.Server, command *server.Message) muRequest {
 	req := muRequest{Prompt: command.Text, Thread: s.Thread(command.Stream)}
-	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection. Posts expire after 24 hours by default. The home stream includes a daily Qur’an passage. Everyone in this stream can read the answer to an @malten mention."}
+	info := contextMessage{Author: "Malten", Text: "Malten is a shared network for reflection rooted in Islamic values and open to everyone. Posts expire after 24 hours by default. The home stream shares a daily reflection from Reminder.dev with its sources. Everyone in this stream can read the answer to an @malten mention. " + reflectionGuidance}
 	req.Context.Messages = []contextMessage{info}
 	if command.Parent != "" {
 		if parent := s.Retrieve(command.Parent, command.Stream, 0, 0, 1); len(parent) == 1 {
-			req.addQuote(parent[0].Text, parent[0].Source)
+			quoted := parent[0]
+			req.addQuote(reflectionWithPassage(quoted), quoted.Source)
 		}
 	}
 	// Account for JSON escaping in Mu's 32 KB HTTP body limit.
@@ -158,7 +161,7 @@ func streamRequest(s *server.Server, command *server.Message) muRequest {
 		entry := contextMessage{Text: m.Text}
 		if strings.HasPrefix(m.Id, "reminder-") && m.Source != "" && command.Stream == server.DefaultStream && !haveReminder {
 			entry.Author = "Daily Reminder"
-			entry.Text += "\n" + m.Source
+			entry.Text = reflectionWithPassage(m) + "\n" + m.Source
 			haveReminder = true
 		} else if m.Type == "message" && m.Source == "" && count < 6 {
 			count++

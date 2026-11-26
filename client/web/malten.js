@@ -109,6 +109,56 @@ function streamQuote(message, id) {
     return {text: (message.Type === 'command' ? '@malten ' : '') + message.Text, author, expires: message.Expires};
 }
 
+function renderDailyReminder(body, message) {
+    const source = document.createElement('a');
+    source.href = message.Source;
+    source.textContent = 'Daily Reminder';
+    body.append(source);
+
+    const isReflection = source.origin === 'https://reminder.dev' && source.pathname.startsWith('/daily/');
+    const passage = isReflection ? message.Metadata?.Description : message.Text;
+    const verseURL = isReflection ? message.Metadata?.Url : message.Source;
+    let container = body;
+    if (isReflection) {
+        const reflection = document.createElement('p');
+        reflection.className = 'reflection-text';
+        reflection.dir = 'auto';
+        reflection.textContent = message.Text;
+        body.append(reflection);
+        if (passage) {
+            container = document.createElement('details');
+            const summary = document.createElement('summary');
+            summary.textContent = 'Read the Qur’an passage';
+            container.append(summary);
+            body.append(container);
+        }
+    }
+    if (passage) {
+        const paragraphs = passage.split(/\r?\n\s*\n/);
+        if (paragraphs.length > 1) {
+            const reference = document.createElement('p');
+            reference.className = 'reference';
+            reference.textContent = paragraphs.shift();
+            container.append(reference);
+        }
+        const verse = document.createElement('blockquote');
+        verse.dir = 'auto';
+        verse.textContent = paragraphs.join('\n\n');
+        container.append(verse);
+    }
+    if (!verseURL) return '';
+    const link = document.createElement('a');
+    link.href = verseURL;
+    if (link.origin !== 'https://reminder.dev' || !/^\/quran\/\d+(?:\/\d+)?\/?$/.test(link.pathname)) return '';
+    if (isReflection) {
+        link.textContent = passage ? 'Open passage on Reminder.dev' : 'Read the Qur’an passage';
+        container.append(link);
+    }
+    const commentary = new URL(link.href);
+    commentary.searchParams.set('commentary', '1');
+    return commentary.href;
+}
+
 function displayMessages(array, direction) {
     var list = document.getElementById('messages');
 
@@ -117,6 +167,7 @@ function displayMessages(array, direction) {
             continue;
         };
 
+        const isReminder = array[i].Source && array[i].Id.startsWith('reminder-');
         var embed = true;
 
         if (array[i].Metadata != null && array[i].Metadata.Type != "player") {
@@ -148,28 +199,10 @@ function displayMessages(array, direction) {
                 d2.style.whiteSpace = 'pre-wrap';
                 d2.textContent = (array[i].Type === 'command' ? '@malten ' : '') + array[i].Text;
             }
-        } else if (array[i].Source && array[i].Id.startsWith('reminder-')) {
+        } else if (isReminder) {
             item.className = 'daily-reminder';
             item.dataset.expires = Number(array[i].Created) / 1e6 + 86400000;
-            var source = document.createElement('a');
-            source.href = array[i].Source;
-            source.textContent = 'Daily Reminder';
-            if (source.origin === 'https://reminder.dev' && /^\/quran\/\d+(?:\/\d+)?\/?$/.test(source.pathname)) {
-                var commentary = new URL(source.href);
-                commentary.searchParams.set('commentary', '1');
-                tafsirURL = commentary.href;
-            }
-            var passage = array[i].Text.split(/\r?\n\s*\n/);
-            d2.appendChild(source);
-            if (passage.length > 1) {
-                var reference = document.createElement('p');
-                reference.className = 'reference';
-                reference.textContent = passage.shift();
-                d2.appendChild(reference);
-            }
-            var verse = document.createElement('blockquote');
-            verse.textContent = passage.join('\n\n');
-            d2.appendChild(verse);
+            tafsirURL = renderDailyReminder(d2, array[i]);
         } else {
             d2.innerHTML = escapeHTML(tagText(array[i].Text)).parseURL(embed).parseHashTag();
             if (array[i].Source) {
@@ -187,7 +220,7 @@ function displayMessages(array, direction) {
         linkMaltenMentions(d2);
         item.appendChild(d2);
 
-        if (array[i].Metadata != null && array[i].Metadata.Type != "player") {
+        if (!isReminder && array[i].Metadata != null && array[i].Metadata.Type != "player") {
             var a1 = document.createElement('a');
             var a2 = document.createElement('a');
             var d3 = document.createElement('div');
