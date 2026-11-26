@@ -57,19 +57,27 @@ type Quote struct {
 	Expires int64
 }
 
+// Reference identifies a reading that inspired a message.
+type Reference struct {
+	Title string
+	Text  string `json:",omitempty"`
+	URL   string `json:",omitempty"`
+}
+
 type Message struct {
 	Observers int `json:",omitempty"`
 	Source    string
 	Parent    string `json:",omitempty"`
 	// Quote and Expires are populated on copies sent to readers.
-	Quote    *Quote `json:",omitempty"`
-	Expires  int64  `json:",omitempty"`
-	Id       string
-	Text     string
-	Type     string
-	Created  int64 `json:",string"`
-	Stream   string
-	Metadata *Metadata
+	Quote      *Quote `json:",omitempty"`
+	Expires    int64  `json:",omitempty"`
+	Id         string
+	Text       string
+	Type       string
+	Created    int64 `json:",string"`
+	Stream     string
+	Metadata   *Metadata
+	References []Reference `json:",omitempty"`
 }
 
 type Observer struct {

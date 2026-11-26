@@ -78,7 +78,7 @@ func (a *Agent) AskSession(ctx context.Context, id string, question session.Mess
 		return "", errors.New("missing paid agent session")
 	}
 	req := muRequest{Prompt: question.Text, Session: id}
-	req.Context.Messages = []contextMessage{{Author: "Malten", Text: "This is a private Malten reflection session. The host and invited guests can read and respond."}}
+	req.Context.Messages = []contextMessage{{Author: "Malten", Text: "This is a private Malten reflection session. The host and invited guests can read and respond. " + reflectionGuidance}}
 	if question.Parent != "" {
 		for _, m := range history {
 			if m.ID == question.Parent {
