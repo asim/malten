@@ -24,8 +24,6 @@ Select Malten’s name on a reply or an `@malten` mention to open [Malten’s pr
 Set `MU_TOKEN` to enable a [Mu](https://micro.mu) agent. For a deployment running as the
 `malten` user, put `MU_TOKEN=...` in `/home/malten/.env` and restart the service.
 
-Malten publishes the daily entry in `#reminder` even when Mu is disabled. With the token configured, it sends the public readings to Mu in a fresh request for the home reflection. Both posts have their own dated IDs and survive a restart for the remainder of their rolling 24 hours. If Mu is temporarily unavailable, Malten retries the missing reflection on its five-minute check using the saved reminder.
-
 Mention `@malten` anywhere in a message, for example `@malten what is this?`
 or `What does today’s passage mean, @malten?`. The original `/malten` shortcut
 also works at the start. Mentioning Malten sends Mu a bounded excerpt of up to six preceding reflections
