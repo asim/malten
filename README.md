@@ -4,38 +4,16 @@ A network for reflection
 
 ## Overview
 
-Malten is rooted in Islamic values and open to everyone. Share something from your day, ask a question, or read along.
+Malten is a community open to everyone. Share something from your day, ask a question, or read along.
 The home stream carries Malten’s own daily reflection and a question you can answer from your own experience.
-The public [#reminder stream](https://malten.me/#reminder) carries the original entry from Reminder.dev. Open **Explore the Islamic sources** on either post for the day’s Qur’an passage, hadith and Name of Allah.
 
-By default, messages expire 24 hours after posting and idle streams expire after 24 hours. 
+Messages expire 24 hours after posting and idle streams expire after 24 hours. 
 Each stream holds up to 1,024 messages of 4,096 UTF-8 bytes each (4 MiB of message text per stream).
 
-Choose **Reply** to quote a message in the same stream or private reflection. Select the quote to open the original. The excerpt is available for as long as the original remains in the conversation.
+## Private sessions
 
-Streams can be discovered through exploration or via the API.
-
-Use the flag beside a public reflection to report abuse, harassment or spam. A moderator reviews the post and can dismiss the report or remove the post from the stream and its quoted previews. Reports expire with the post. Private rooms and unlisted streams stay outside the public review queue.
-
-## Private reflections
-
-A private reflection gives you a room to work through an idea or a problem on your own or with guests. The booking covers a place for each participant for the time shown.
+A private session gives you a room to work through an idea or a problem on your own or with others.
 Select Malten’s name on a reply or an `@malten` mention to open [Malten’s profile](https://malten.me/@malten) and choose **Book a private reflection**.
-You can also book from **Join** or visit [the booking page](https://malten.me/session).
-Choose the number of places, including yours, to see the price and duration before paying through Mu.
-Once payment is confirmed, send one invite to each guest. Guests can join the waiting room before you press **Start reflection**.
-Everyone in the room can read and write. Choose **Ask Malten** or mention `@malten` if you want the AI to respond. Return in the same browser to keep your place.
-Clearing its cookies loses access to the booking. The conversation expires when the private reflection ends.
-
-## Features
-
-- [x] Presence - User presence status
-- [ ] Secure Pipes - Stream between two users
-- [x] Speech to text - Talk to malten and write speech
-- [ ] Decentralisation - Interconnect multiple Malten servers
-- [x] EventSource support - Real time messaging directly to the browser
-- [ ] Client side encryption - AES-256 on the user side so we never see the data
-- [x] Configurable stream TTL - Per stream configuration to increase or decrease for DMs or Notes
 
 ## Usage
 
